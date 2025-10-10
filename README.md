@@ -35,6 +35,8 @@ Images are automatically built and published to GHCR when:
 
 Each image has its own GitHub Actions workflow that only triggers when relevant files change.
 
+All published images are signed using [Cosign](https://github.com/sigstore/cosign) with keyless signing for enhanced security and supply chain integrity.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

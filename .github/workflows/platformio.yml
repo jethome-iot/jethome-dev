@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
       
     steps:
       - name: Checkout repository
@@ -112,6 +113,7 @@ jobs:
           fi
           
       - name: Build and push Docker image
+        id: build-and-push
         uses: docker/build-push-action@v5
         with:
           context: images/platformio
@@ -121,3 +123,19 @@ jobs:
           cache-from: ${{ steps.cache.outputs.CACHE_FROM }}
           cache-to: ${{ steps.cache.outputs.CACHE_TO }}
           platforms: linux/amd64,linux/arm64
+          
+      - name: Install Cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3.5.0
+        
+      - name: Sign the published Docker image
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.tags.outputs.TAGS }}
+        run: |
+          images=""
+          for tag in ${TAGS//,/ }; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
