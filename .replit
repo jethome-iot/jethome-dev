@@ -1,2 +1,28 @@
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Project Info"
+
+[[workflows.workflow]]
+name = "Project Info"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "echo \"JetHome Development Environment - Docker CI/CD Project\" && echo \"=================================================\" && echo \"\" && echo \"This project builds Docker images via GitHub Actions.\" && echo \"Push to GitHub to trigger automated builds:\" && echo \"  - dev branch → dev images\" && echo \"  - master branch → stable images\" && echo \"\" && echo \"Images are published to: ghcr.io/jethome-iot/jethome-dev-platformio\" && sleep infinity"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[nix]
+packages = ["docker"]

@@ -1,0 +1,4 @@
+.pio/
+CMakeLists.txt
+/sdkconfig.*
+
