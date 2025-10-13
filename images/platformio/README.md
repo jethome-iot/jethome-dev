@@ -60,6 +60,14 @@ pio run --environment esp32
 - `manual-YYYYMMDD-HHMMSS` - Manual workflow dispatch builds
 - `YYYY.MM.DD` - Date-based version tags
 
+All published images are signed using [Cosign](https://github.com/sigstore/cosign) for supply chain security. You can verify image signatures using:
+
+```bash
+cosign verify ghcr.io/jethome-iot/jethome-dev-platformio:latest \
+  --certificate-identity-regexp=https://github.com/jethome-iot/jethome-dev \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
 ## Environment Variables
 
 The image sets these PlatformIO environment variables:
