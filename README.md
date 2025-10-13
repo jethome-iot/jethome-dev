@@ -1,24 +1,34 @@
 # JetHome Development Environment
 
-Reusable GitHub Actions for embedded development with PlatformIO.
+Development tools for embedded systems with PlatformIO - available as both GitHub Actions and Docker images.
 
 ## Quick Start
 
-Add to your workflow:
+### Option 1: GitHub Action (Recommended)
+
+Fast, cached PlatformIO installation using GitHub Actions:
 
 ```yaml
 - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
 - run: pio run
 ```
 
-## Available Actions
+### Option 2: Docker Image
+
+Use pre-built Docker images with PlatformIO:
+
+```bash
+docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
+```
+
+## GitHub Actions
 
 ### setup-platformio
 
 Install and cache PlatformIO Core with support for ESP-IDF framework on ESP32 microcontrollers.
 
 **Features:**
-- ⚡ Fast installation with intelligent caching
+- ⚡ Fast installation with intelligent caching (50-80% faster than Docker)
 - 📌 Optional version pinning for reproducible builds  
 - 🔧 Python 3.12 by default (configurable)
 - 💾 Automatic caching of pip and PlatformIO packages
@@ -44,35 +54,42 @@ steps:
 
 See [full documentation](.github/actions/setup-platformio/README.md) for more examples.
 
-## Why Use These Actions?
+## Docker Images
 
-- **Faster CI/CD** - Intelligent caching reduces build time by 50-80%
-- **Consistent Builds** - Pin versions for reproducible builds
-- **Simple Integration** - One line to add PlatformIO to any workflow
-- **Cost Effective** - Reduce GitHub Actions minutes with caching
-- **No Docker Overhead** - Direct installation is faster than container pulls
+### jethome-dev-platformio
+
+Pre-configured Docker image with PlatformIO and ESP32 support.
+
+**Available Tags:**
+
+| Tag | Description |
+|-----|-------------|
+| `latest`, `stable` | Latest stable release |
+| `dev` | Development version |
+| `YYYY.MM.DD` | Date-versioned releases |
+| `monthly-YYYYMMDD` | Monthly rebuilds |
+
+**Usage in GitHub Actions:**
+
+```yaml
+- name: Build with Docker
+  run: docker run --rm -v $(pwd):/workspace ghcr.io/jethome-iot/jethome-dev-platformio:latest pio run
+```
+
+**Local Usage:**
+
+```bash
+docker run --rm -v $(pwd):/workspace ghcr.io/jethome-iot/jethome-dev-platformio:latest pio run
+```
+
+See [Docker image documentation](./images/platformio/README.md) for details.
 
 ## Example Workflows
 
-### Build ESP32 Project
+### Using GitHub Action
 
 ```yaml
 name: Build ESP32 Firmware
-on: [push]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
-      - run: pio run -e esp32
-```
-
-### Matrix Build for Multiple Boards
-
-```yaml
-name: Multi-Board Build
 on: [push]
 
 jobs:
@@ -87,49 +104,48 @@ jobs:
       - run: pio run -e ${{ matrix.board }}
 ```
 
-### Run Unit Tests
+### Using Docker Image
 
 ```yaml
-name: Test
+name: Build with Docker
 on: [push]
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
-      - run: pio test -e native
+      - name: Build firmware
+        run: docker run --rm -v $(pwd):/workspace ghcr.io/jethome-iot/jethome-dev-platformio:latest pio run
 ```
 
-## Migration from Docker
+## Comparison: Action vs Docker
 
-If you're currently using Docker images for PlatformIO:
+| Feature | GitHub Action | Docker Image |
+|---------|---------------|--------------|
+| **Speed** | ✅ Faster (caching) | ⏱️ Slower (image pull) |
+| **Cache** | ✅ Native GitHub cache | ❌ Limited caching |
+| **Setup** | ✅ One line | ⚙️ Requires Docker |
+| **Flexibility** | ✅ Configurable Python/version | ⚙️ Pre-configured |
+| **Local dev** | ❌ CI/CD only | ✅ Works locally |
+| **Hardware access** | ✅ Direct access | ❌ Limited in containers |
 
-**Before (Docker):**
-```yaml
-- name: Build with Docker
-  run: docker run --rm -v $(pwd):/workspace ghcr.io/jethome-iot/platformio:latest pio run
-```
-
-**After (Action):**
-```yaml
-- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
-- run: pio run
-```
-
-Benefits:
-- ✅ Faster builds (no Docker pull/start overhead)
-- ✅ Better caching (GitHub's native cache)
-- ✅ Simpler workflow syntax
-- ✅ Direct hardware access if needed
+**Recommendation:** Use GitHub Action for CI/CD workflows, Docker for local development.
 
 ## Supported Platforms
 
-The action has been tested with:
-- **ESP32** - All variants (ESP32, S2, S3, C3, C6)
-- **Native** - For unit testing
-- **Operating Systems** - Ubuntu, macOS, Windows
+Both options support:
+- **ESP32** - All variants (ESP32, S2, S3, C3, C6) via ESP-IDF framework
+- **Native** - For unit testing with Unity framework
+- **Operating Systems** - Linux, macOS, Windows (Action only for all three)
+
+## CI/CD
+
+Docker images are automatically built and published to GHCR when:
+- Changes are pushed to `master` branch (tagged as `latest`, `stable`, and date-versioned)
+- Changes are pushed to `dev` branch (tagged as `dev`, `dev-YYYYMMDD`)
+- Monthly scheduled rebuild on the 1st of each month (tagged as `monthly-YYYYMMDD`)
+- Manual workflow dispatch (tagged as `manual-YYYYMMDD-HHMMSS`)
 
 ## Contributing
 
