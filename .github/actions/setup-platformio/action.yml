@@ -1,0 +1,50 @@
+name: 'Setup PlatformIO'
+description: 'Install and cache PlatformIO Core with optional version pinning'
+author: 'JetHome IoT'
+
+inputs:
+  version:
+    description: 'PlatformIO version to install (e.g., "6.1.11" or "latest")'
+    required: false
+    default: 'latest'
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.12'
+
+outputs:
+  version:
+    description: 'Installed PlatformIO version'
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache PlatformIO
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/pip
+          ~/.platformio/.cache
+        key: ${{ runner.os }}-pio
+
+    - name: Install PlatformIO Core
+      id: install
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          pip install --upgrade platformio
+        else
+          pip install platformio==${{ inputs.version }}
+        fi
+        
+        # Output the installed version
+        INSTALLED_VERSION=$(pio --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+        echo "version=$INSTALLED_VERSION" >> $GITHUB_OUTPUT
+        
+        echo "✅ PlatformIO Core $INSTALLED_VERSION installed"

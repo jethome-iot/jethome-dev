@@ -1,0 +1,72 @@
+name: Test Setup PlatformIO
+
+on:
+  push:
+    paths:
+      - '.github/actions/setup-platformio/**'
+      - '.github/workflows/test-setup-platformio.yml'
+  pull_request:
+    paths:
+      - '.github/actions/setup-platformio/**'
+  workflow_dispatch:
+
+jobs:
+  test-basic:
+    name: Test Basic Installation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test action with defaults
+        uses: ./.github/actions/setup-platformio
+      
+      - name: Verify PlatformIO installed
+        run: pio --version
+
+  test-version-pinning:
+    name: Test Version Pinning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test with specific version
+        uses: ./.github/actions/setup-platformio
+        with:
+          version: '6.1.11'
+      
+      - name: Verify version
+        run: |
+          pio --version | grep -q "6.1.11"
+          echo "✅ Version pinning works"
+
+  test-python-versions:
+    name: Test Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test with Python ${{ matrix.python }}
+        uses: ./.github/actions/setup-platformio
+        with:
+          python-version: ${{ matrix.python }}
+      
+      - name: Verify installation
+        run: pio --version
+
+  test-multi-os:
+    name: Test on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Test action on ${{ matrix.os }}
+        uses: ./.github/actions/setup-platformio
+      
+      - name: Verify installation
+        run: pio --version
