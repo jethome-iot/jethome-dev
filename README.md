@@ -7,7 +7,7 @@ Reusable GitHub Actions for embedded development with PlatformIO.
 Add to your workflow:
 
 ```yaml
-- uses: jethome-iot/jethome-dev@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
 - run: pio run
 ```
 
@@ -29,14 +29,14 @@ Install and cache PlatformIO Core with support for ESP-IDF framework on ESP32 mi
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: jethome-iot/jethome-dev/setup-platformio@v1
+  - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
   - run: pio run
 ```
 
 **With Options:**
 
 ```yaml
-- uses: jethome-iot/jethome-dev/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
   with:
     version: '6.1.11'     # Pin PlatformIO version
     python-version: '3.11' # Use specific Python version
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/jethome-dev/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       - run: pio run -e esp32
 ```
 
@@ -83,7 +83,7 @@ jobs:
         board: [esp32, esp32s2, esp32s3, esp32c3, esp32c6]
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/jethome-dev/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       - run: pio run -e ${{ matrix.board }}
 ```
 
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/jethome-dev/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       - run: pio test -e native
 ```
 
@@ -114,7 +114,7 @@ If you're currently using Docker images for PlatformIO:
 
 **After (Action):**
 ```yaml
-- uses: jethome-iot/jethome-dev/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
 - run: pio run
 ```
 

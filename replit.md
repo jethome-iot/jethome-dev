@@ -35,7 +35,7 @@ Preferred communication style: Simple, everyday language.
 
 **Usage Pattern**:
 ```yaml
-- uses: jethome-iot/jethome-dev/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
 ```
 
 **Versioning Strategy**:

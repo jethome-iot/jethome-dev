@@ -17,7 +17,7 @@ A GitHub Action that installs and caches PlatformIO Core for faster CI/CD workfl
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: jethome-iot/setup-platformio@v1
+  - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
   - run: pio run
 ```
 
@@ -26,7 +26,7 @@ steps:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: jethome-iot/setup-platformio@v1
+  - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
     with:
       version: '6.1.11'
   - run: pio run
@@ -37,7 +37,7 @@ steps:
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: jethome-iot/setup-platformio@v1
+  - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
     with:
       python-version: '3.11'
   - run: pio run
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup PlatformIO
-        uses: jethome-iot/setup-platformio@v1
+        uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       
       - name: Build firmware
         run: pio run -e ${{ matrix.environment }}
@@ -101,7 +101,7 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       - run: pio test -e native
 ```
 
@@ -122,7 +122,7 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       - run: pio run
 ```
 
@@ -140,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - uses: jethome-iot/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
         with:
           version: '6.1.11'  # Pin for consistent checks
       
@@ -166,7 +166,7 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      - uses: jethome-iot/setup-platformio@v1
+      - uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
       
       - name: Build examples
         run: pio ci --lib="." --board=esp32dev --board=esp32s3
@@ -194,7 +194,7 @@ If you're migrating from Docker-based builds:
 
 **After (Action):**
 ```yaml
-- uses: jethome-iot/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
 - run: pio run
 ```
 
@@ -218,7 +218,7 @@ The cache key is `${{ runner.os }}-pio`. If you need to bust the cache:
 
 If you need a specific PlatformIO version for compatibility:
 ```yaml
-- uses: jethome-iot/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
   with:
     version: '6.0.0'  # Use older version if needed
 ```
@@ -227,7 +227,7 @@ If you need a specific PlatformIO version for compatibility:
 
 For projects requiring specific Python versions:
 ```yaml
-- uses: jethome-iot/setup-platformio@v1
+- uses: jethome-iot/jethome-dev/.github/actions/setup-platformio@v1
   with:
     python-version: '3.10'  # Minimum Python version for PlatformIO
 ```
