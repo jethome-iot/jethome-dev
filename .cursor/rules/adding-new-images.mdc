@@ -3,17 +3,28 @@ description: Guidelines for adding new Docker images to the project
 ---
 # Adding New Docker Images
 
-Follow this checklist when adding a new image to the project.
+Follow this workflow when adding a new image to the project.
 
-## Directory Structure
+## ⚠️ Required Workflow
+
+**ALWAYS follow this order:**
+
+1. **Create Dockerfile** - Write and refine the Dockerfile
+2. **Build Locally** - Build and test the image thoroughly
+3. **Generate Documentation** - Only after successful build, create README
+
+**Never write documentation before the image is built and working!**
+
+---
+
+## Step 1: Directory Structure
 
 1. Create new directory: `images/<image-name>/`
-2. Required files:
-   - `Dockerfile` - Image definition
-   - `README.md` - Comprehensive documentation
+2. Initial files:
+   - `Dockerfile` - Start here
    - Supporting files as needed
 
-## Dockerfile Creation
+## Step 2: Dockerfile Creation
 
 Reference: [images/platformio/Dockerfile](mdc:images/platformio/Dockerfile)
 
