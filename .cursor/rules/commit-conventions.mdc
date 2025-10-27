@@ -7,8 +7,6 @@ description: Git commit message conventions for this project
 
 Use clear, descriptive commit messages that explain **what** and **why**.
 
-### Structure
-
 ```
 <Brief summary line>
 
@@ -17,70 +15,17 @@ Use clear, descriptive commit messages that explain **what** and **why**.
 - Detailed point 3
 ```
 
-### Good Examples
-
-```
-Complete README overhaul for Cursor migration
-
-- Restructure root README for multi-image project architecture
-- Complete rewrite of PlatformIO image README from scratch
-- Remove misleading claims about pre-cached toolchains
-- Add comprehensive usage examples (CI/CD, local dev)
-```
-
-```
-Add PlatformIO development image
-
-- Python 3.11 slim base with PlatformIO Core
-- Support for ESP32 (all variants) with ESP-IDF
-- Unity testing framework pre-installed
-- CI/CD optimized for automated builds
-```
-
-```
-Update Dockerfile to optimize image size
-
-- Remove pre-build step to reduce image from 2GB to 500MB
-- Toolchains now download on first build
-- Updated README to reflect changes
-```
-
-### Bad Examples
-
-❌ `Update files` - Too vague
-❌ `Fix` - No context
-❌ `WIP` - Not descriptive
-❌ `changes` - Not helpful
-
-## When to Commit
-
-### Do Commit:
-- ✅ After completing a logical unit of work
-- ✅ After fixing a bug
-- ✅ After adding a new feature/image
-- ✅ After documentation updates (if substantial)
-- ✅ Before switching tasks
-
-### Don't Commit:
-- ❌ Broken code (unless it's clearly marked WIP and on feature branch)
-- ❌ Half-finished features on main branches
-- ❌ Commented-out debugging code
-- ❌ Temporary test files
+Good: `Add new development image` with detailed list
+Bad: `Update files`, `Fix`, `WIP`, `changes`
 
 ## AI/Cursor Commit Policy
 
 **🚫 NEVER AUTO-COMMIT**
 
-- ❌ AI assistants must NEVER commit changes automatically
-- ❌ AI assistants must NEVER use `git commit` without explicit user confirmation
-- ❌ AI assistants must NEVER stage files automatically for commit (unless explicitly asked)
-- ✅ AI CAN suggest commit messages for user review
-- ✅ AI CAN propose what should be committed
-- ✅ AI can make file changes, edits, and create new files
-- ✅ Only the USER decides when to commit (explicit confirmation required)
-- ✅ USER must review and approve all commits
-
-**Rationale:** Commits are permanent records. The developer must review all changes and explicitly approve commits, even if the AI suggests the commit message.
+- AI assistants must NEVER commit changes automatically
+- AI assistants must NEVER use `git commit` without explicit user confirmation
+- Only the USER decides when to commit
+- USER must review and approve all commits
 
 ## Branch Strategy
 
@@ -91,36 +36,10 @@ Update Dockerfile to optimize image size
 ## Commit Grouping
 
 Group related changes in single commit:
-- ✅ Dockerfile + README for same feature
-- ✅ All files needed for new image
-- ✅ Related documentation updates
+- Dockerfile + README for same feature
+- All files needed for new image
 
 Keep separate:
-- ❌ Don't mix unrelated changes
-- ❌ Don't combine feature + bugfix
-- ❌ Don't combine multiple images in one commit
-
-## Files to Always Review
-
-Before committing, double-check:
-1. [README.md](mdc:README.md) - Stays generic?
-2. [images/*/README.md](mdc:images/) - Accurate?
-3. [images/*/Dockerfile](mdc:images/) - Optimized?
-4. No debug/temporary files included
-5. No sensitive data (secrets, keys)
-
-## Useful Git Commands
-
-```bash
-# Check what's staged
-git diff --cached
-
-# Commit with detailed message
-git commit -m "Summary" -m "Detail 1" -m "Detail 2"
-
-# Amend last commit (if not pushed)
-git commit --amend
-
-# Show last commit
-git show HEAD --stat
-```
+- Don't mix unrelated changes
+- Don't combine feature + bugfix
+- Don't combine multiple images in one commit

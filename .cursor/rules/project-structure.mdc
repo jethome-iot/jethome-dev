@@ -3,7 +3,7 @@ alwaysApply: true
 ---
 # JetHome Development Environment - Project Structure
 
-This is a **multi-image Docker project** providing development environments for embedded systems.
+Multi-image Docker project providing development environments for embedded systems.
 
 ## Repository Structure
 
@@ -21,24 +21,17 @@ jethome-dev/
 
 ## Key Principles
 
-1. **Root README**: Keep minimal and generic. It's an overview for multiple images.
-2. **Image READMEs**: Comprehensive and detailed. All specifics go here.
+1. **Root README**: Keep minimal and generic - overview for multiple images
+2. **Image READMEs**: Comprehensive and detailed - all specifics go here
 3. **One image per directory**: Each in `images/<image-name>/`
 4. **Self-contained**: Each image directory contains everything needed to build it
 
-## Current Images
-
-- **platformio** - PlatformIO with ESP32 support and Unity testing
-  - Location: [images/platformio/](mdc:images/platformio/)
-  - Dockerfile: [images/platformio/Dockerfile](mdc:images/platformio/Dockerfile)
-  - README: [images/platformio/README.md](mdc:images/platformio/README.md)
-
 ## Registry
 
-Images are published to GitHub Container Registry (GHCR):
+Images published to GitHub Container Registry (GHCR):
 - Format: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
 
 ## Branch Strategy
 
-- `dev` - Development branch (current)
+- `dev` - Development branch
 - `master` - Stable releases

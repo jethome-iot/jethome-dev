@@ -5,11 +5,9 @@ globs: **/Dockerfile
 
 ## General Guidelines
 
-All Dockerfiles in this project should follow these conventions:
-
 ### Base Image
-- Prefer `python:3.11-slim-bookworm` for Python-based tools
 - Use slim variants to minimize image size
+- Pin versions
 - Document base image choice in README
 
 ### Build Arguments
@@ -17,15 +15,8 @@ All Dockerfiles in this project should follow these conventions:
 - Provide sensible defaults
 - Document all build args in README
 
-Example from [images/platformio/Dockerfile](mdc:images/platformio/Dockerfile):
-```dockerfile
-ARG ESP32_PLATFORM_VERSION=6.11.0
-ARG NATIVE_PLATFORM_VERSION=1.2.1
-ARG UNITY_VERSION=2.6.0
-```
-
 ### Environment Variables
-- Centralize tool directories (e.g., PlatformIO in `/opt/platformio`)
+- Centralize tool directories
 - Set all relevant `ENV` variables at image level
 - Document in README
 
@@ -34,35 +25,14 @@ ARG UNITY_VERSION=2.6.0
 - Clean up in same layer (`apt-get clean`, `rm -rf`)
 - Use `--no-cache-dir` for pip installs
 
-### Comments
-- Explain non-obvious decisions
-- Note compatibility issues (e.g., "6.12 don't work")
-- Mark disabled sections clearly
-
 ### Working Directory
 - Set to `/workspace` for user projects
 - Mount user code here as volume
 
 ### Verification
 - Add verification `RUN` at end to check installations
-- Test that tools are accessible
 
 ### CI/CD Focus
 - Optimize for automated builds
-- Exclude hardware-dependent tools (USB, serial) unless needed
-- Pre-install platforms but allow toolchains to download at runtime
-
-## Image Size Strategy
-
-**Keep images small:**
-- Don't pre-download large toolchains unless absolutely necessary
+- Keep images small - don't pre-download large toolchains unless necessary
 - Let frameworks download on first build (toolchains cache in volumes)
-- Comment explains trade-offs (e.g., build speed vs image size)
-
-## Disabled Code
-
-If a build step is disabled (commented):
-- Keep the code for reference
-- Add clear comment explaining why disabled
-- Document in README that feature is not active
-- Consider: `# VERY LONG step, temporarily disabled`
