@@ -1,127 +1,337 @@
-# JetHome PlatformIO Development Image
+# PlatformIO Development Image
 
-Docker image for PlatformIO CI/CD builds with pre-installed ESP32 and native platforms.
+Docker image for embedded systems development with PlatformIO, optimized for CI/CD pipelines and local builds.
 
-## Features
+## Overview
 
-- Python 3.11 slim base (Debian Bookworm)
+This image provides a ready-to-use PlatformIO environment with ESP32 platform support and native testing capabilities. Toolchains download automatically on first build, keeping the image size minimal while providing full functionality.
+
+## What's Inside
+
+**Base Environment:**
+- Python 3.11 slim (Debian Bookworm)
 - PlatformIO Core (latest)
-- Supported platforms (auto-installed during build):
-  - ESP32 (variants: ESP32, S2, S3, C3, C6)
-  - Native platform for unit testing
-- Framework: ESP-IDF (pre-downloaded for all ESP32 variants)
-- Unity testing framework
-- Python packages: protobuf, jinja2
-- Essential build tools (build-essential, pkg-config, cmake, clang-format, git, curl, wget, jq)
+
+**Pre-installed Platforms:**
+- `espressif32@6.11.0` - ESP32 platform (all chip variants)
+- `native@1.2.1` - Native platform for unit testing
+
+**Build Tools:**
+- build-essential (gcc, g++, make)
+- cmake, pkg-config
+- clang-format
+- git, curl, wget, jq
+
+**Python Packages:**
+- protobuf - Protocol buffer support
+- jinja2 - Template engine
+
+**Testing:**
+- Unity 2.6.0 - Globally installed test framework
 
 ## Quick Start
 
+### Pull Image
+
 ```bash
-# Pull the image
 docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
+```
 
-# Run interactively
-docker run -it --rm \
-  -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-platformio:latest
+### Build Your Project
 
-# For CI/CD pipelines
+```bash
 docker run --rm \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-platformio:latest \
-  pio run --environment esp32
+  pio run
 ```
 
-## Building Projects
+### Run Tests
+
+```bash
+docker run --rm \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest \
+  pio test
+```
+
+### Interactive Shell
+
+```bash
+docker run -it --rm \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest
+```
+
+## Supported Hardware
+
+The ESP32 platform supports all Espressif chip variants:
+
+| Chip | Example Board | Environment Name |
+|------|---------------|------------------|
+| ESP32 | ESP32 DevKit | `esp32dev` |
+| ESP32-S2 | ESP32-S2 Saola | `esp32-s2-saola-1` |
+| ESP32-S3 | ESP32-S3 DevKitC | `esp32-s3-devkitc-1` |
+| ESP32-C3 | ESP32-C3 DevKitM | `esp32-c3-devkitm-1` |
+| ESP32-C6 | ESP32-C6 DevKitC | `esp32-c6-devkitc-1` |
+
+**Note:** ESP-IDF toolchains for specific chips download automatically on first build.
+
+## Usage Examples
+
+### Basic PlatformIO Commands
 
 Inside the container:
 
 ```bash
-# Create new ESP32 project
-pio init --board esp32dev --framework espidf
+# Check versions
+pio --version
+pio platform list
 
 # Build project
 pio run
 
-# Run tests
-pio test --environment native
+# Build specific environment
+pio run -e esp32
 
-# Build for specific environment
-pio run --environment esp32
+# Clean build
+pio run --target clean
+
+# Upload (requires hardware access)
+pio run --target upload
+
+# Run tests
+pio test
+
+# Run native tests only
+pio test -e native
 ```
 
-## Available Tags
+### CI/CD Integration
 
-- `latest`, `stable` - Latest stable release from master branch
-- `dev` - Development version from dev branch
-- `dev-YYYYMMDD` - Date-stamped dev builds
-- `sha-XXXXXXX` - Specific commit builds
-- `monthly-YYYYMMDD` - Monthly scheduled rebuilds (1st of each month)
-- `manual-YYYYMMDD-HHMMSS` - Manual workflow dispatch builds
-- `YYYY.MM.DD` - Date-based version tags
+**GitHub Actions:**
 
-All published images are signed using [Cosign](https://github.com/sigstore/cosign) for supply chain security. You can verify image signatures using:
+```yaml
+name: Build Firmware
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jethome-iot/jethome-dev-platformio:latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build firmware
+        run: pio run
+      
+      - name: Run tests
+        run: pio test -e native
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: .pio/build/*/firmware.bin
+```
+
+**GitLab CI:**
+
+```yaml
+build:
+  image: ghcr.io/jethome-iot/jethome-dev-platformio:latest
+  
+  script:
+    - pio run
+    - pio test -e native
+  
+  artifacts:
+    paths:
+      - .pio/build/*/firmware.bin
+    expire_in: 1 week
+```
+
+### Local Development
 
 ```bash
-cosign verify ghcr.io/jethome-iot/jethome-dev-platformio:latest \
-  --certificate-identity-regexp=https://github.com/jethome-iot/jethome-dev \
-  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+# Build and watch for changes
+docker run -it --rm \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest \
+  bash -c "while true; do pio run; sleep 5; done"
+
+# Run with specific user permissions
+docker run --rm \
+  -u $(id -u):$(id -g) \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest \
+  pio run
+```
+
+## Project Configuration
+
+Example `platformio.ini` for ESP32 with ESP-IDF:
+
+```ini
+[env:esp32]
+platform = espressif32
+board = esp32dev
+framework = espidf
+
+[env:esp32s3]
+platform = espressif32
+board = esp32-s3-devkitc-1
+framework = espidf
+
+[env:native]
+platform = native
+test_framework = unity
 ```
 
 ## Environment Variables
 
-The image sets these PlatformIO environment variables:
+PlatformIO directories are centralized in `/opt/platformio`:
 
-- `PLATFORMIO_CORE_DIR=/opt/platformio` - Core installation
-- `PLATFORMIO_CACHE_DIR=/opt/platformio/.cache` - Cache directory
-- `PLATFORMIO_PACKAGES_DIR=/opt/platformio/packages` - Toolchains
-- `PLATFORMIO_PLATFORMS_DIR=/opt/platformio/platforms` - Platforms
-- `PLATFORMIO_GLOBALLIB_DIR=/opt/platformio/lib` - Global libraries
-- `PLATFORMIO_BUILD_CACHE_DIR=/opt/platformio/.cache/build` - Build cache
-
-Project-specific directories remain in `/workspace`.
-
-## Pre-installed Boards
-
-ESP32 variants with ESP-IDF framework support:
-- `esp32dev` - Classic ESP32 (ESP-IDF)
-- `esp32-s2-saola-1` - ESP32-S2 (ESP-IDF)
-- `esp32-s3-devkitc-1` - ESP32-S3 (ESP-IDF)
-- `esp32-c3-devkitm-1` - ESP32-C3 (ESP-IDF)
-- `esp32-c6-devkitc-1` - ESP32-C6 (ESP-IDF)
-
-## Volumes
-
-Mount your project directory to `/workspace`:
-
-```bash
-docker run -v /path/to/project:/workspace ...
+```
+PLATFORMIO_CORE_DIR=/opt/platformio
+PLATFORMIO_CACHE_DIR=/opt/platformio/.cache
+PLATFORMIO_PACKAGES_DIR=/opt/platformio/packages
+PLATFORMIO_PLATFORMS_DIR=/opt/platformio/platforms
+PLATFORMIO_GLOBALLIB_DIR=/opt/platformio/lib
+PLATFORMIO_BUILD_CACHE_DIR=/opt/platformio/.cache/build
 ```
 
-## Notes
+Your project files live in `/workspace` (mount as volume).
 
-- This image is optimized for CI/CD pipelines and build automation
-- USB device access and serial monitoring tools are not included
-- For local development with hardware access, consider using PlatformIO IDE or CLI directly
-- All toolchains and platforms are pre-downloaded using a single `pio run` command for faster builds
+## Building the Image
+
+### Standard Build
+
+```bash
+cd images/platformio
+docker build -t jethome-dev-platformio .
+```
+
+### Custom Build Arguments
+
+```bash
+docker build \
+  --build-arg ESP32_PLATFORM_VERSION=6.11.0 \
+  --build-arg NATIVE_PLATFORM_VERSION=1.2.1 \
+  --build-arg UNITY_VERSION=2.6.0 \
+  -t jethome-dev-platformio .
+```
+
+Available build arguments:
+- `ESP32_PLATFORM_VERSION` - Espressif32 platform version (default: 6.11.0)
+- `NATIVE_PLATFORM_VERSION` - Native platform version (default: 1.2.1)
+- `UNITY_VERSION` - Unity test framework version (default: 2.6.0)
+- `PIO_ENVS` - Environments for pre-build (currently disabled)
 
 ## Troubleshooting
 
-### Build Failures
+### First Build is Slow
 
-Ensure your `platformio.ini` is properly configured and all dependencies are specified.
+**Problem:** First build takes a long time downloading toolchains.
 
-### Out of Space
+**Solution:** This is expected. ESP-IDF toolchains (~500MB+) download on first build. Subsequent builds use cached toolchains.
 
-Clean up old Docker images:
+### Permission Errors on Build Artifacts
+
+**Problem:** Generated files owned by root.
+
+**Solution:** Run with your user ID:
+
 ```bash
-docker system prune -a
+docker run --rm -u $(id -u):$(id -g) \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest \
+  pio run
 ```
 
-### Missing Libraries
+### Library Not Found
 
-Install project-specific libraries in your `platformio.ini`:
+**Problem:** Missing library dependencies.
+
+**Solution:** Add to `platformio.ini`:
+
 ```ini
-lib_deps = 
-    SomeLibrary
+[env:esp32]
+platform = espressif32
+board = esp32dev
+framework = espidf
+lib_deps =
+    bblanchon/ArduinoJson@^6.21.0
+    knolleary/PubSubClient@^2.8
 ```
+
+### Platform Version Mismatch
+
+**Problem:** Need specific platform version.
+
+**Solution:** Specify in `platformio.ini`:
+
+```ini
+[env:esp32]
+platform = espressif32@6.11.0
+board = esp32dev
+framework = espidf
+```
+
+### Out of Disk Space
+
+**Problem:** Docker using too much space.
+
+**Solution:** Clean up:
+
+```bash
+# Remove unused images
+docker image prune -a
+
+# Full system cleanup
+docker system prune -a --volumes
+```
+
+## Design Decisions
+
+**Why not pre-download toolchains?**
+- Keeps image size small (~500MB vs ~2GB+)
+- Toolchains cache in volume mounts anyway
+- First build downloads once, then cached
+
+**Why Python slim base?**
+- Minimal attack surface
+- Faster pulls
+- PlatformIO is Python-based
+
+**Why no USB/serial tools?**
+- CI/CD focus - no hardware access needed
+- Reduces image size
+- Hardware access needs host privileges anyway
+
+**Why global Unity install?**
+- Native tests work out of the box
+- No per-project configuration needed
+- Consistent test environment
+
+## Version Information
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Base Image | Python 3.11 slim | Debian Bookworm |
+| ESP32 Platform | 6.11.0 | Version 6.12.0 has compatibility issues |
+| Native Platform | 1.2.1 | For unit testing |
+| Unity Framework | 2.6.0 | Globally installed |
+
+## License
+
+MIT License - see [LICENSE](../../LICENSE) file.
+
+## Related
+
+- [PlatformIO Documentation](https://docs.platformio.org/)
+- [ESP-IDF Documentation](https://docs.espressif.com/projects/esp-idf/)
+- [Unity Testing Framework](https://github.com/ThrowTheSwitch/Unity)
