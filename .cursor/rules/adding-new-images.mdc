@@ -1,0 +1,113 @@
+---
+description: Guidelines for adding new Docker images to the project
+---
+# Adding New Docker Images
+
+Follow this checklist when adding a new image to the project.
+
+## Directory Structure
+
+1. Create new directory: `images/<image-name>/`
+2. Required files:
+   - `Dockerfile` - Image definition
+   - `README.md` - Comprehensive documentation
+   - Supporting files as needed
+
+## Dockerfile Creation
+
+Reference: [images/platformio/Dockerfile](mdc:images/platformio/Dockerfile)
+
+**Must include:**
+- Appropriate base image with version
+- Build arguments for version pinning
+- Environment variables for tool paths
+- Installation steps with cleanup
+- Working directory (`/workspace`)
+- Verification step
+- Default CMD
+
+**Follow:** [Dockerfile Standards](.cursor/rules/dockerfile-standards.mdc)
+
+## README Creation
+
+Reference: [images/platformio/README.md](mdc:images/platformio/README.md)
+
+**Must include all sections:**
+1. Title and brief description
+2. Overview
+3. What's Inside (with specific versions)
+4. Quick Start
+5. Supported platforms/hardware (if applicable)
+6. Usage Examples
+7. CI/CD Integration examples (GitHub Actions, GitLab CI)
+8. Configuration examples
+9. Environment Variables
+10. Building the Image
+11. Troubleshooting
+12. Design Decisions
+13. Version Information table
+14. License
+15. Related Links
+
+**Follow:** [Documentation Standards](.cursor/rules/documentation-standards.mdc)
+
+## Update Root README
+
+Add new image to the table in [README.md](mdc:README.md):
+
+```markdown
+| Image | Description | Documentation |
+|-------|-------------|---------------|
+| [platformio](./images/platformio/) | PlatformIO with ESP32... | [README](./images/platformio/README.md) |
+| [new-image](./images/new-image/) | Brief description | [README](./images/new-image/README.md) |
+```
+
+**Keep root README generic** - don't add image-specific details there.
+
+## Registry Naming
+
+Images will be published as:
+```
+ghcr.io/jethome-iot/jethome-dev-<image-name>
+```
+
+Document the full registry path in the image's README.
+
+## CI/CD Configuration
+
+If GitHub Actions workflows exist:
+- Create workflow file: `.github/workflows/<image-name>.yml`
+- Configure to build on relevant file changes
+- Use branch-based tagging (dev, latest, stable)
+
+## Testing
+
+Before committing:
+1. ✅ Build locally: `docker build -t test-image .`
+2. ✅ Run basic commands to verify functionality
+3. ✅ Check image size is reasonable
+4. ✅ Verify all documentation links work
+5. ✅ Spell check README
+6. ✅ Test examples in README actually work
+
+## Commit Message
+
+Use descriptive commit message:
+```
+Add <image-name> development image
+
+- <Brief description>
+- Include key features
+- Document purpose
+```
+
+## Checklist
+
+- [ ] Created `images/<image-name>/` directory
+- [ ] Written comprehensive Dockerfile
+- [ ] Created detailed README with all required sections
+- [ ] Updated root README table
+- [ ] Tested build locally
+- [ ] Verified all examples work
+- [ ] Checked documentation accuracy
+- [ ] Committed with descriptive message

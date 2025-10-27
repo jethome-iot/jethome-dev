@@ -1,0 +1,63 @@
+---
+globs: **/README.md
+---
+# Documentation Standards
+
+## README File Guidelines
+
+### Root README.md
+
+The root [README.md](mdc:README.md) must be:
+- **Generic**: Suitable for multi-image architecture
+- **Minimal**: Brief overview, not detailed
+- **Scalable**: Easy to add new images (just add row to table)
+- **Clear**: Simple quick start examples
+
+**Structure:**
+1. Brief project description
+2. Table of current images with links
+3. Generic quick start
+4. Project structure diagram
+5. Registry information
+6. License
+
+### Image-Specific READMEs
+
+Each image's README (e.g., [images/platformio/README.md](mdc:images/platformio/README.md)) must be:
+- **Comprehensive**: All details about the image
+- **Accurate**: No misleading claims
+- **Practical**: Real-world usage examples
+- **Complete**: Troubleshooting section
+
+**Required Sections:**
+1. Overview
+2. What's Inside (specific versions and tools)
+3. Quick Start (pull, build, run commands)
+4. Supported Hardware/Platforms (if applicable)
+5. Usage Examples (basic commands, CI/CD integration)
+6. Configuration Examples
+7. Environment Variables
+8. Building the Image (local build instructions)
+9. Troubleshooting (common issues and solutions)
+10. Design Decisions (explain architectural choices)
+11. Version Information (table with versions)
+12. License
+13. Related Links
+
+## Documentation Accuracy
+
+**Critical Rules:**
+- ✅ Only document what's actually in the Dockerfile
+- ✅ Clearly state what downloads at runtime vs pre-installed
+- ✅ Include actual version numbers from build args
+- ✅ Explain disabled features (commented code)
+- ❌ Never claim features that aren't implemented
+- ❌ Don't use aspirational language for missing features
+
+## Style Guide
+
+- Use clear, simple language
+- Include code examples for all commands
+- Use tables for structured data (versions, hardware support)
+- Add notes/warnings where needed
+- Link to official documentation for external tools
