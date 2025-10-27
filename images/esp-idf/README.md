@@ -33,8 +33,6 @@ This image provides a complete ESP-IDF development environment with additional t
 - pylint 4.0.2
 - flake8 7.3.0
 - black 25.9.0
-- clang-format 18
-- clang-tidy 18
 
 **Documentation:**
 - Sphinx 8.2.3
@@ -289,10 +287,6 @@ docker run --rm -u $(id -u):$(id -g) \
 pylint main/python_code.py
 flake8 main/
 black --check main/
-
-# C/C++ formatting
-clang-format -i main/*.c main/*.cpp
-clang-tidy main/*.c
 ```
 
 ## Environment Variables

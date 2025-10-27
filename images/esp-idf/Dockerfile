@@ -16,8 +16,6 @@ RUN apt-get update && apt-get install -y \
     # Build acceleration
     ccache \
     # Additional useful tools
-    clang-format \
-    clang-tidy \
     vim \
     nano \
     rsync \
