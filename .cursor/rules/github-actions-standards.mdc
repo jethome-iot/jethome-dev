@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+---
+# GitHub Actions Standards
+
+## Workflow Naming
+
+Use emoji icons for better visibility:
+
+```yaml
+name: 🐳 Docker Build Workflow
+```
+
+Common icons:
+- 🐳 Docker builds
+- 🔧 Build/compile
+- 🧪 Testing
+- 📦 Package/release
+- 🚀 Deployment
+
+## Step Icons
+
+Add emoji to step names for readability:
+
+- 📥 Checkout code
+- 🔧 Setup/configure tools
+- 🔐 Authentication
+- 🐳 Docker operations
+- 🧪 Run tests
+- 🚀 Deploy
+
+## Per-Image Workflows
+
+Each image should have its own workflow file:
+- Naming: `.github/workflows/<image-name>.yml`
+- Trigger on relevant file changes only
+- Use branch-based tagging (dev, latest, stable)
+- Use reusable workflow: `.github/workflows/reusable-docker-build.yml`
+
+## Local Testing
+
+Test workflows locally using `act`:
+- Configuration in `.actrc`
+- Test specific job: `act -j build`
+- Use `.secrets` file for local secrets (gitignored)

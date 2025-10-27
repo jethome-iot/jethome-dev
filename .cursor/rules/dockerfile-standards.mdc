@@ -1,0 +1,38 @@
+---
+alwaysApply: true
+---
+# Dockerfile Standards
+
+## General Guidelines
+
+### Base Image
+- Use slim variants to minimize image size
+- Pin versions
+- Document base image choice in README
+
+### Build Arguments
+- Use `ARG` for version pinning
+- Provide sensible defaults
+- Document all build args in README
+
+### Environment Variables
+- Centralize tool directories
+- Set all relevant `ENV` variables at image level
+- Document in README
+
+### Layer Optimization
+- Combine `RUN` commands where logical
+- Clean up in same layer (`apt-get clean`, `rm -rf`)
+- Use `--no-cache-dir` for pip installs
+
+### Working Directory
+- Set to `/workspace` for user projects
+- Mount user code here as volume
+
+### Verification
+- Add verification `RUN` at end to check installations
+
+### CI/CD Focus
+- Optimize for automated builds
+- Keep images small - don't pre-download large toolchains unless necessary
+- Let frameworks download on first build (toolchains cache in volumes)

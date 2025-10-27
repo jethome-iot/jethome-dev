@@ -1,0 +1,12 @@
+# act configuration for local workflow testing
+# Usage: act -j build-and-push
+
+# Use medium Ubuntu runner image for better compatibility
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Enable verbose output
+--verbose
+
+# Container options
+--container-options "--platform linux/amd64"
+

@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+---
+# Git Commit Conventions
+
+## Commit Message Format
+
+Use clear, descriptive commit messages that explain **what** and **why**.
+
+```
+<Brief summary line>
+
+- Detailed point 1
+- Detailed point 2
+- Detailed point 3
+```
+
+Good: `Add new development image` with detailed list
+Bad: `Update files`, `Fix`, `WIP`, `changes`
+
+## AI/Cursor Commit Policy
+
+**🚫 NEVER AUTO-COMMIT**
+
+- AI assistants must NEVER commit changes automatically
+- AI assistants must NEVER use `git commit` without explicit user confirmation
+- Only the USER decides when to commit
+- USER must review and approve all commits
+
+## Branch Strategy
+
+- **dev** - Development work, testing
+- **master** - Stable releases only
+- Feature branches - For experimental work
+
+## Commit Grouping
+
+Group related changes in single commit:
+- Dockerfile + README for same feature
+- All files needed for new image
+
+Keep separate:
+- Don't mix unrelated changes
+- Don't combine feature + bugfix
+- Don't combine multiple images in one commit

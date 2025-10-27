@@ -1,0 +1,46 @@
+---
+alwaysApply: true
+---
+# Documentation Standards
+
+## Root README
+
+Must be:
+- **Generic**: Suitable for multi-image architecture
+- **Minimal**: Brief overview, not detailed
+- **Scalable**: Easy to add new images
+
+Structure:
+1. Brief project description
+2. Table of current images with links
+3. Generic quick start
+4. Project structure diagram
+5. Registry information
+6. License
+
+## Image READMEs
+
+Must be:
+- **Comprehensive**: All details about the image
+- **Accurate**: No misleading claims
+- **Practical**: Real-world usage examples
+
+Required sections:
+1. Overview
+2. What's Inside (specific versions)
+3. Quick Start
+4. Usage Examples
+5. Environment Variables
+6. Building the Image
+7. Version Information table
+
+Sections to AVOID:
+- Troubleshooting (users can refer to upstream documentation)
+- Design Decisions (keep documentation focused on usage)
+
+## Accuracy Rules
+
+- Only document what's actually in the Dockerfile
+- Clearly state what downloads at runtime vs pre-installed
+- Include actual version numbers
+- Never claim features that aren't implemented

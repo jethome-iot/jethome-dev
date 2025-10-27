@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+# JetHome Development Environment - Project Structure
+
+Multi-image Docker project providing development environments for embedded systems.
+
+## Repository Structure
+
+```
+jethome-dev/
+├── images/
+│   └── <image-name>/          # Each image in its own directory
+│       ├── Dockerfile         # Image definition
+│       ├── README.md          # Detailed image documentation
+│       └── ...                # Supporting files
+├── .cursor/rules/             # Cursor AI rules
+├── LICENSE                    # MIT License
+└── README.md                  # Root README (minimal, generic)
+```
+
+## Key Principles
+
+1. **Root README**: Keep minimal and generic - overview for multiple images
+2. **Image READMEs**: Comprehensive and detailed - all specifics go here
+3. **One image per directory**: Each in `images/<image-name>/`
+4. **Self-contained**: Each image directory contains everything needed to build it
+
+## Registry
+
+Images published to GitHub Container Registry (GHCR):
+- Format: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
+
+## Branch Strategy
+
+- `dev` - Development branch
+- `master` - Stable releases
