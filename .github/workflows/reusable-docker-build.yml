@@ -22,6 +22,11 @@ on:
         required: false
         default: ''
         type: string
+      build_args:
+        description: 'Build arguments (newline-separated, e.g., "ARG1=value1\nARG2=value2")'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -120,6 +125,7 @@ jobs:
           cache-from: ${{ steps.cache.outputs.CACHE_FROM }}
           cache-to: ${{ steps.cache.outputs.CACHE_TO }}
           platforms: linux/amd64,linux/arm64
+          build-args: ${{ inputs.build_args }}
           
       - name: 📝 Install Cosign
         if: github.event_name != 'pull_request'
