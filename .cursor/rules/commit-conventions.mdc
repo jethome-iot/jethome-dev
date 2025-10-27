@@ -67,6 +67,21 @@ Update Dockerfile to optimize image size
 - ❌ Commented-out debugging code
 - ❌ Temporary test files
 
+## AI/Cursor Commit Policy
+
+**🚫 NEVER AUTO-COMMIT**
+
+- ❌ AI assistants must NEVER commit changes automatically
+- ❌ AI assistants must NEVER use `git commit` without explicit user confirmation
+- ❌ AI assistants must NEVER stage files automatically for commit (unless explicitly asked)
+- ✅ AI CAN suggest commit messages for user review
+- ✅ AI CAN propose what should be committed
+- ✅ AI can make file changes, edits, and create new files
+- ✅ Only the USER decides when to commit (explicit confirmation required)
+- ✅ USER must review and approve all commits
+
+**Rationale:** Commits are permanent records. The developer must review all changes and explicitly approve commits, even if the AI suggests the commit message.
+
 ## Branch Strategy
 
 - **dev** - Development work, testing
