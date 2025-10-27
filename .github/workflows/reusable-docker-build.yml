@@ -110,8 +110,8 @@ jobs:
             echo "CACHE_FROM=" >> $GITHUB_OUTPUT
             echo "CACHE_TO=" >> $GITHUB_OUTPUT
           else
-            echo "CACHE_FROM=type=gha" >> $GITHUB_OUTPUT
-            echo "CACHE_TO=type=gha,mode=max" >> $GITHUB_OUTPUT
+            echo "CACHE_FROM=type=gha,scope=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
+            echo "CACHE_TO=type=gha,mode=max,scope=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
           fi
           
       - name: 🐳 Build and push Docker image
