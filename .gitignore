@@ -1,6 +1,13 @@
+# IDEs
 .idea/
 .vscode/
+
+# Build artifacts
 .pio/
 
+# act (local workflow testing)
+.secrets
+.env
 
-
+# macOS
+.DS_Store

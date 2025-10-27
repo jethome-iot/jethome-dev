@@ -35,3 +35,11 @@ Each image should have its own workflow file:
 - Naming: `.github/workflows/<image-name>.yml`
 - Trigger on relevant file changes only
 - Use branch-based tagging (dev, latest, stable)
+- Use reusable workflow: `.github/workflows/reusable-docker-build.yml`
+
+## Local Testing
+
+Test workflows locally using `act`:
+- Configuration in `.actrc`
+- Test specific job: `act -j build`
+- Use `.secrets` file for local secrets (gitignored)

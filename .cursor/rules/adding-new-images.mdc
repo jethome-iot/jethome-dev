@@ -7,7 +7,8 @@ alwaysApply: true
 
 1. **Create Dockerfile** - Write and refine the Dockerfile
 2. **Build Locally** - Build and test the image thoroughly
-3. **Generate Documentation** - Only after successful build, create README
+3. **Create Workflow** - Add GitHub Actions workflow for CI/CD
+4. **Generate Documentation** - Only after successful build, create README
 
 ## Directory Structure
 
@@ -46,9 +47,19 @@ Add new image to the table in root README. Keep it minimal - just image name, br
 
 Images published as: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
 
+## GitHub Actions Workflow
+
+Create `.github/workflows/<image-name>.yml`:
+- Use reusable workflow: `.github/workflows/reusable-docker-build.yml`
+- Set triggers for image directory and workflow file changes
+- Pass `image_name` and `context_path` parameters
+- Include manual trigger and monthly rebuild schedule
+- Test locally with `act -j build -W .github/workflows/<image-name>.yml --dryrun`
+
 ## Testing
 
 Before committing:
-- Build locally and verify functionality
+- Build Docker image locally and verify functionality
+- Test workflow with `act` in dry-run mode
 - Test all README examples
 - Check image size is reasonable

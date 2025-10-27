@@ -6,11 +6,13 @@ on:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
+      - '.github/workflows/reusable-docker-build.yml'
       - 'images/platformio/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
+      - '.github/workflows/reusable-docker-build.yml'
       - 'images/platformio/**'
   # Manual trigger
   workflow_dispatch:
@@ -20,8 +22,8 @@ on:
         required: false
         default: false
         type: boolean
-      custom_tag:
-        description: 'Additional custom tag (optional)'
+      custom_tags:
+        description: 'Additional custom tags (comma-separated, optional)'
         required: false
         default: ''
         type: string
@@ -29,113 +31,15 @@ on:
   schedule:
     - cron: '0 2 1 * *'
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: jethome-dev-platformio
-
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  build:
+    uses: ./.github/workflows/reusable-docker-build.yml
     permissions:
       contents: read
       packages: write
       id-token: write
-      
-    steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: 🔧 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        
-      - name: 🔐 Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: 🏷️ Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
-          
-      - name: 🎯 Generate tags based on branch
-        id: tags
-        run: |
-          TAGS=""
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          VERSION=$(date +%Y.%m.%d)
-          
-          # Determine branch (for manual/scheduled triggers)
-          if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            BRANCH="${{ github.ref_name }}"
-          else
-            BRANCH="${{ github.ref }}"
-          fi
-          
-          if [[ "$BRANCH" == "refs/heads/master" ]] || [[ "$BRANCH" == "master" ]]; then
-            TAGS="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:$VERSION"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-$SHA_SHORT"
-          elif [[ "$BRANCH" == "refs/heads/dev" ]] || [[ "$BRANCH" == "dev" ]]; then
-            TAGS="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:dev"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:dev-$VERSION"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-$SHA_SHORT"
-          fi
-          
-          # Add custom tag if provided
-          if [[ "${{ github.event.inputs.custom_tag }}" != "" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.custom_tag }}"
-          fi
-          
-          # Add rebuild tag for scheduled/manual rebuilds
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:monthly-$(date +%Y%m%d)"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:manual-$(date +%Y%m%d-%H%M%S)"
-          fi
-          
-          echo "TAGS=$TAGS" >> $GITHUB_OUTPUT
-          
-      - name: 💾 Determine cache strategy
-        id: cache
-        run: |
-          if [[ "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
-            echo "CACHE_FROM=" >> $GITHUB_OUTPUT
-            echo "CACHE_TO=" >> $GITHUB_OUTPUT
-          else
-            echo "CACHE_FROM=type=gha" >> $GITHUB_OUTPUT
-            echo "CACHE_TO=type=gha,mode=max" >> $GITHUB_OUTPUT
-          fi
-          
-      - name: 🐳 Build and push Docker image
-        id: build-and-push
-        uses: docker/build-push-action@v5
-        with:
-          context: images/platformio
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.tags.outputs.TAGS }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: ${{ steps.cache.outputs.CACHE_FROM }}
-          cache-to: ${{ steps.cache.outputs.CACHE_TO }}
-          platforms: linux/amd64,linux/arm64
-          
-      - name: 📝 Install Cosign
-        if: github.event_name != 'pull_request'
-        uses: sigstore/cosign-installer@v3.5.0
-        
-      - name: ✍️ Sign the published Docker image
-        if: github.event_name != 'pull_request'
-        env:
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-          TAGS: ${{ steps.tags.outputs.TAGS }}
-        run: |
-          images=""
-          for tag in ${TAGS//,/ }; do
-            images+="${tag}@${DIGEST} "
-          done
-          cosign sign --yes ${images}
+    with:
+      image_name: jethome-dev-platformio
+      context_path: images/platformio
+      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      custom_tags: ${{ github.event.inputs.custom_tags || '' }}
