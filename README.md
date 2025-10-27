@@ -6,32 +6,55 @@ Docker-based development environment for embedded systems, providing containeriz
 
 | Image | Description | Documentation |
 |-------|-------------|---------------|
+| [esp-idf](./images/esp-idf/) | ESP-IDF 5.4.1 with QEMU, pytest, and testing tools for all ESP32 chips | [README](./images/esp-idf/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 (all variants) + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
 
-Pull the image:
+### ESP-IDF
 
 ```bash
-docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
+# Pull image
+docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+
+# Build project
+docker run --rm -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
+  idf.py build
+
+# Interactive development
+docker run -it --rm -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
 ```
 
-Build your PlatformIO project:
+### PlatformIO
 
 ```bash
+# Pull image
+docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
+
+# Build project
 docker run --rm -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-platformio:latest \
   pio run
-```
 
-Interactive development:
-
-```bash
+# Interactive development
 docker run -it --rm -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-platformio:latest
 ```
 
 ## What's Included
+
+### ESP-IDF Image
+
+- **Base**: espressif/idf:v5.4.1 (Ubuntu 24.04 LTS)
+- **ESP-IDF**: 5.4.1 with all ESP32 toolchains
+- **QEMU**: Xtensa and RISC-V emulation support
+- **Supported Chips**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6, ESP32-H2, ESP32-P4
+- **Testing**: pytest, pytest-embedded, gcovr, lcov
+- **Code Quality**: pylint, flake8, black, clang-format, clang-tidy
+- **Documentation**: Sphinx, sphinx-rtd-theme
+- **Tools**: jq, vim, nano, rsync, git
 
 ### PlatformIO Image
 
@@ -56,6 +79,9 @@ docker build -t jethome-dev-platformio .
 ```
 jethome-dev/
 ├── images/
+│   ├── esp-idf/             # ESP-IDF 5.4.1 development image
+│   │   ├── Dockerfile       # Image definition
+│   │   └── README.md        # Detailed documentation
 │   └── platformio/          # PlatformIO development image
 │       ├── Dockerfile       # Image definition
 │       ├── README.md        # Detailed documentation
@@ -66,8 +92,9 @@ jethome-dev/
 
 ## Registry
 
-Images are published to:
-- **GHCR**: `ghcr.io/jethome-iot/jethome-dev-platformio`
+Images are published to GitHub Container Registry (GHCR):
+- **ESP-IDF**: `ghcr.io/jethome-iot/jethome-dev-esp-idf`
+- **PlatformIO**: `ghcr.io/jethome-iot/jethome-dev-platformio`
 
 ## Use Cases
 
