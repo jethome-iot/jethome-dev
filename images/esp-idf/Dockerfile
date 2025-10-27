@@ -67,6 +67,7 @@ ENV PATH="/opt/qemu-xtensa/bin:/opt/qemu-riscv32/bin:${PATH}"
 RUN bash -c '. ${IDF_PATH}/export.sh && pip install --no-cache-dir \
     # Testing frameworks - let pip resolve compatible versions
     pytest \
+    pytest-embedded \
     pytest-embedded-serial-esp \
     pytest-embedded-idf \
     pytest-embedded-qemu \
