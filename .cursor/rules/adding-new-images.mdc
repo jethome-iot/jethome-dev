@@ -1,5 +1,5 @@
 ---
-description: Guidelines for adding new Docker images to the project
+alwaysApply: true
 ---
 # Adding New Docker Images
 

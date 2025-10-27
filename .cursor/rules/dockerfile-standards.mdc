@@ -1,5 +1,5 @@
 ---
-globs: **/Dockerfile
+alwaysApply: true
 ---
 # Dockerfile Standards
 

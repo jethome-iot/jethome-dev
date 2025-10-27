@@ -1,5 +1,5 @@
 ---
-globs: .github/workflows/*.yml,.github/workflows/*.yaml
+alwaysApply: true
 ---
 # GitHub Actions Standards
 

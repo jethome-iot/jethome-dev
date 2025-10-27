@@ -1,5 +1,5 @@
 ---
-globs: **/README.md
+alwaysApply: true
 ---
 # Documentation Standards
 
