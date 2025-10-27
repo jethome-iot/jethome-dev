@@ -32,9 +32,11 @@ Required sections:
 4. Usage Examples
 5. Environment Variables
 6. Building the Image
-7. Troubleshooting
-8. Design Decisions
-9. Version Information table
+7. Version Information table
+
+Sections to AVOID:
+- Troubleshooting (users can refer to upstream documentation)
+- Design Decisions (keep documentation focused on usage)
 
 ## Accuracy Rules
 
