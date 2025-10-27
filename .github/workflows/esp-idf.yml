@@ -49,11 +49,15 @@ jobs:
           ESP_IDF_VERSION="${{ github.event.inputs.esp_idf_version || env.ESP_IDF_VERSION }}"
           CUSTOM_TAGS="${{ github.event.inputs.custom_tags || '' }}"
           
-          # Add ESP-IDF version tag
-          if [ -n "$CUSTOM_TAGS" ]; then
-            TAGS="${CUSTOM_TAGS},${ESP_IDF_VERSION}"
+          # Add ESP-IDF version tag only on master branch
+          if [ "${{ github.ref_name }}" == "master" ]; then
+            if [ -n "$CUSTOM_TAGS" ]; then
+              TAGS="${CUSTOM_TAGS},${ESP_IDF_VERSION}"
+            else
+              TAGS="${ESP_IDF_VERSION}"
+            fi
           else
-            TAGS="${ESP_IDF_VERSION}"
+            TAGS="${CUSTOM_TAGS}"
           fi
           
           echo "esp_idf_version=${ESP_IDF_VERSION}" >> $GITHUB_OUTPUT
