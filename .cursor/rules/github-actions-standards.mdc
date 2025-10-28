@@ -56,6 +56,7 @@ on:
     paths:
       - '.github/workflows/<image-name>.yml'
       - 'images/<image-name>/**'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -149,6 +150,7 @@ jobs:
 - Manifest job combines platform images into multi-arch manifest
 - Only master branch pushes images; dev/PR do build-only validation
 - Version matrix can be expanded to build multiple versions
+- Simple `workflow_dispatch` trigger allows manual runs from GitHub UI (no parameters)
 
 ### Version Handling
 
@@ -187,8 +189,9 @@ Use `gh` CLI to test workflows on GitHub Actions:
 
 **Triggering Workflows:**
 
-Workflows are triggered automatically by pushing to master or dev branches. To test:
+Workflows can be triggered in two ways:
 
+1. **Automatically** - by pushing to master or dev branches:
 ```bash
 # Push to dev branch for testing (build-only, no push to GHCR)
 git checkout dev
@@ -199,6 +202,11 @@ git checkout master
 git merge dev
 git push origin master
 ```
+
+2. **Manually** - via GitHub Actions UI:
+   - Go to Actions tab → Select workflow → Run workflow
+   - Select branch (master or dev) and click "Run workflow"
+   - Uses default versions from matrix
 
 **Monitoring Workflows:**
 ```bash

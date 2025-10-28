@@ -12,6 +12,7 @@ on:
     paths:
       - '.github/workflows/platformio.yml'
       - 'images/platformio/**'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

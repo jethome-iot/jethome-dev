@@ -13,6 +13,7 @@ on:
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

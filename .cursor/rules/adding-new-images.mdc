@@ -52,6 +52,7 @@ Images published as: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
 Create `.github/workflows/<image-name>.yml`:
 - Use inline matrix builds for multi-platform support (amd64/arm64)
 - Set triggers for image directory and workflow file changes
+- Add simple `workflow_dispatch` trigger for manual runs (no parameters)
 - Define versions directly in matrix strategy
 - Build job creates platform-specific images in parallel
 - Create-manifest job combines platform images into multi-arch manifest
@@ -91,8 +92,9 @@ Use `gh` CLI for remote workflow testing:
 
 **Trigger workflows:**
 
-Workflows are triggered automatically by pushing to master or dev branches:
+Workflows can be triggered:
 
+1. **Automatically** - by pushing to master or dev branches:
 ```bash
 # Push to dev branch for testing (build-only, no push to GHCR)
 git checkout dev
@@ -103,6 +105,10 @@ git checkout master
 git merge dev
 git push origin master
 ```
+
+2. **Manually** - via GitHub Actions UI (workflow_dispatch):
+   - Actions tab → Select workflow → Run workflow
+   - Select branch and click "Run workflow"
 
 **Monitor workflow status:**
 ```bash
