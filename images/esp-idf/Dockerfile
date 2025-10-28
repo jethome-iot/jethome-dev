@@ -92,14 +92,15 @@ WORKDIR /workspace
 
 # Verify installation
 ARG ESP_IDF_VERSION
-RUN python --version && \
+RUN bash -c '. ${IDF_PATH}/export.sh && \
+    python --version && \
     pytest --version && \
     jq --version && \
     qemu-system-xtensa --version && \
     qemu-system-riscv32 --version && \
     gcovr --version && \
     ccache --version && \
-    echo "ESP-IDF ${ESP_IDF_VERSION} installation verified successfully"
+    echo "ESP-IDF ${ESP_IDF_VERSION} installation verified successfully"'
 
 CMD ["/bin/bash"]
 
