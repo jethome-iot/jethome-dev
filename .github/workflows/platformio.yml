@@ -54,6 +54,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+    secrets: inherit
     with:
       image_name: jethome-dev-platformio
       context_path: images/platformio
