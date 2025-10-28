@@ -111,9 +111,11 @@ jobs:
           if [[ "${{ inputs.force_rebuild }}" == "true" ]]; then
             echo "CACHE_FROM=" >> $GITHUB_OUTPUT
             echo "CACHE_TO=" >> $GITHUB_OUTPUT
+            echo "NO_CACHE=true" >> $GITHUB_OUTPUT
           else
             echo "CACHE_FROM=type=gha,scope=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
             echo "CACHE_TO=type=gha,mode=max,scope=${{ inputs.image_name }}" >> $GITHUB_OUTPUT
+            echo "NO_CACHE=false" >> $GITHUB_OUTPUT
           fi
           
       - name: 🐳 Build and push Docker image
@@ -126,6 +128,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: ${{ steps.cache.outputs.CACHE_FROM }}
           cache-to: ${{ steps.cache.outputs.CACHE_TO }}
+          no-cache: ${{ steps.cache.outputs.NO_CACHE }}
           platforms: linux/amd64,linux/arm64
           build-args: ${{ inputs.build_args }}
 
