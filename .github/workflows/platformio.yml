@@ -34,7 +34,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       image_name: jethome-dev-platformio
       context_path: images/platformio

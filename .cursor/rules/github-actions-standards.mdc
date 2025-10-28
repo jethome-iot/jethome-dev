@@ -36,7 +36,7 @@ Each image should have its own workflow file:
 - Trigger on relevant file changes only
 - Use reusable workflow: `.github/workflows/docker-build.yml`
 - Images are **only pushed to GHCR from master branch**
-- Dev and PR branches build only (no push/sign)
+- Dev and PR branches build only (no push)
 
 ### Workflow Structure
 
@@ -82,7 +82,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     with:
       image_name: jethome-dev-<image-name>
       context_path: images/<image-name>
@@ -108,7 +107,7 @@ jobs:
 
 **Rationale:**
 - Keeps GHCR clean with only released images
-- Faster CI on dev branches (no push/sign operations)
+- Faster CI on dev branches (build-only validation)
 - Clear release strategy: master = production/stable
 - Dev branch for testing before release
 

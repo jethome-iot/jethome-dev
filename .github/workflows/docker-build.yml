@@ -37,7 +37,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
       
     steps:
       - name: 📥 Checkout repository
@@ -124,20 +123,4 @@ jobs:
           cache-to: ${{ steps.cache.outputs.CACHE_TO }}
           platforms: linux/amd64,linux/arm64
           build-args: ${{ inputs.build_args }}
-          
-      - name: 📝 Install Cosign
-        if: github.event_name != 'pull_request' && github.ref_name == 'master'
-        uses: sigstore/cosign-installer@v3.5.0
-        
-      - name: ✍️ Sign the published Docker image
-        if: github.event_name != 'pull_request' && github.ref_name == 'master'
-        env:
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-          TAGS: ${{ steps.tags.outputs.TAGS }}
-        run: |
-          images=""
-          for tag in ${TAGS//,/ }; do
-            images+="${tag}@${DIGEST} "
-          done
-          cosign sign --yes ${images}
 
