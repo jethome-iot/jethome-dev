@@ -63,7 +63,8 @@ Create `.github/workflows/<image-name>.yml`:
 ## Testing
 
 Before committing:
-- Build Docker image locally and verify functionality
-- Test workflow with `act` in dry-run mode
+- Build Docker image locally and verify functionality: `./scripts/build.sh -r <image-name>`
+- Test the image interactively to ensure all tools work correctly
+- Test workflow with `act` in dry-run mode: `./scripts/test-workflow.sh <image-name>`
 - Test all README examples
 - Check image size is reasonable

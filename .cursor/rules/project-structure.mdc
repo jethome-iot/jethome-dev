@@ -20,7 +20,7 @@ jethome-dev/
 │       ├── README.md          # Detailed image documentation
 │       └── ...                # Supporting files
 ├── scripts/
-│   ├── build.sh               # Local image build helper
+│   ├── build.sh               # Local image build helper (supports -r flag to run after build)
 │   └── test-workflow.sh       # Workflow testing with act
 ├── .cursor/rules/             # Cursor AI rules
 ├── LICENSE                    # MIT License

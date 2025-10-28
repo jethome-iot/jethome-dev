@@ -76,18 +76,22 @@ The repository includes helper scripts in the `scripts/` directory for local dev
 **Build Images Locally:**
 
 ```bash
-# Interactive mode - select image to build
+# Interactive mode - select image to build and run
 ./scripts/build.sh
 
 # Build specific image
 ./scripts/build.sh esp-idf
 ./scripts/build.sh platformio
 
+# Build and run image interactively
+./scripts/build.sh -r esp-idf
+./scripts/build.sh --run platformio
+
 # Build all images
 ./scripts/build.sh all
 ```
 
-After building, the script displays commands to run the image interactively.
+The script supports interactive mode where you can select which image to build and optionally run it. Use the `-r` or `--run` flag to automatically run the image in interactive mode after a successful build.
 
 **Test Workflows with act:**
 

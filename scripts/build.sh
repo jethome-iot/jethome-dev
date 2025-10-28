@@ -29,9 +29,13 @@ print_color() {
 # Print usage
 usage() {
     cat << EOF
-Usage: $0 [IMAGE_NAME|all]
+Usage: $0 [OPTIONS] [IMAGE_NAME|all]
 
 Build Docker images locally.
+
+Options:
+    -r, --run     Run the image interactively after successful build (single image only)
+    -h, --help    Show this help message
 
 Arguments:
     IMAGE_NAME    Name of the image to build (esp-idf, platformio)
@@ -40,17 +44,31 @@ Arguments:
 Without arguments, runs in interactive mode.
 
 Examples:
-    $0 esp-idf        # Build ESP-IDF image
-    $0 platformio     # Build PlatformIO image
-    $0 all            # Build all images
-    $0                # Interactive mode
+    $0 esp-idf           # Build ESP-IDF image
+    $0 -r esp-idf        # Build and run ESP-IDF image interactively
+    $0 platformio --run  # Build and run PlatformIO image interactively
+    $0 all               # Build all images
+    $0                   # Interactive mode
 
 EOF
+}
+
+# Run an image interactively
+run_image() {
+    local name=$1
+    
+    print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print_color "$GREEN" "Running: jethome-dev-${name}:latest"
+    print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo
+    
+    docker run -it --rm -v "$(pwd):/workspace" "jethome-dev-${name}:latest"
 }
 
 # Build a specific image
 build_image() {
     local name=$1
+    local run_after_build=${2:-false}
     local context=${IMAGES[$name]}
     
     if [ -z "$context" ]; then
@@ -75,6 +93,13 @@ build_image() {
     print_color "$GREEN" "✓ Successfully built: jethome-dev-${name}:latest"
     print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
+    
+    # Run the image if requested
+    if [ "$run_after_build" == "true" ]; then
+        echo
+        run_image "$name"
+        return 0
+    fi
     
     print_color "$YELLOW" "To enter the image in interactive mode:"
     echo
@@ -125,12 +150,27 @@ interactive_mode() {
     elif [ "$choice" == "$idx" ]; then
         # Build all
         for name in "${image_names[@]}"; do
-            build_image "$name"
+            if build_image "$name" "false"; then
+                # Prompt to run after successful build
+                read -p "Do you want to run this image in interactive mode? (y/n): " run_choice
+                if [[ "$run_choice" =~ ^[Yy]$ ]]; then
+                    echo
+                    run_image "$name"
+                fi
+                echo
+            fi
         done
     elif [ "$choice" -ge 1 ] && [ "$choice" -lt "$idx" ]; then
         # Build selected
         local selected="${image_names[$((choice-1))]}"
-        build_image "$selected"
+        if build_image "$selected" "false"; then
+            # Prompt to run after successful build
+            read -p "Do you want to run this image in interactive mode? (y/n): " run_choice
+            if [[ "$run_choice" =~ ^[Yy]$ ]]; then
+                echo
+                run_image "$selected"
+            fi
+        fi
     else
         print_color "$RED" "Invalid choice."
         exit 1
@@ -142,20 +182,58 @@ main() {
     # Change to repository root
     cd "$(dirname "$0")/.."
     
-    if [ $# -eq 0 ]; then
+    # Parse command-line flags
+    local run_flag=false
+    local image_name=""
+    
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -r|--run)
+                run_flag=true
+                shift
+                ;;
+            -*)
+                print_color "$RED" "Error: Unknown option '$1'"
+                usage
+                exit 1
+                ;;
+            *)
+                if [ -z "$image_name" ]; then
+                    image_name="$1"
+                else
+                    print_color "$RED" "Error: Multiple image names provided"
+                    usage
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Handle different modes
+    if [ -z "$image_name" ]; then
         # Interactive mode
+        if [ "$run_flag" == "true" ]; then
+            print_color "$YELLOW" "Warning: -r/--run flag is ignored in interactive mode"
+            echo
+        fi
         interactive_mode
-    elif [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-        usage
-        exit 0
-    elif [ "$1" == "all" ]; then
+    elif [ "$image_name" == "all" ]; then
         # Build all images
+        if [ "$run_flag" == "true" ]; then
+            print_color "$YELLOW" "Warning: -r/--run flag is only supported for single image builds"
+            echo
+        fi
         for name in "${!IMAGES[@]}"; do
-            build_image "$name"
+            build_image "$name" "false"
         done
     else
         # Build specific image
-        build_image "$1"
+        build_image "$image_name" "$run_flag"
     fi
 }
 
