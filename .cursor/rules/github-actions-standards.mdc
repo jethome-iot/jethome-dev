@@ -97,15 +97,21 @@ jobs:
     permissions:
       contents: read
       packages: write
+    secrets: inherit
     with:
       image_name: jethome-dev-<image-name>
       context_path: images/<image-name>
       version_tag: <prefix>-${{ needs.prepare.outputs.version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild == 'true' }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
         VERSION=${{ needs.prepare.outputs.version }}
 ```
+
+**Critical Details:**
+- `secrets: inherit` - Required for reusable workflows to access GITHUB_TOKEN
+- `force_rebuild: ${{ ... == 'true' }}` - Convert string to boolean (not `|| false`)
+- Boolean inputs from workflow_dispatch come as strings and need explicit comparison
 
 ### Version Handling
 
@@ -242,6 +248,13 @@ done
 
 1. **Local first**: Test with `act` before pushing
 2. **Force rebuild**: Use `force_rebuild=true` to bypass Docker cache when testing fixes
+   - Required when Dockerfile changes but Docker might use cached layers
+   - The `no-cache` option in reusable workflow ensures true rebuild
 3. **Monitor logs**: Always check logs for build errors, even on "success"
+   - Check both amd64 and arm64 build logs if multi-platform
+   - Look for 0.1s completion times (indicates QEMU failure on arm64)
 4. **Verify image**: Pull and test the published image after successful build
+   - Test with actual commands: `docker run --rm <image> pytest --version`
+   - Verify imports work: `python3 -c 'import pytest_embedded'`
 5. **Branch strategy**: Test on `dev` branch first, then merge to `master` for release
+   - Remember: dev builds don't push to GHCR (build validation only)

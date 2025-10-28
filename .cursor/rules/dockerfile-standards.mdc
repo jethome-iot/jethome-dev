@@ -45,20 +45,21 @@ alwaysApply: true
 - Commands complete in ~0.1s indicate QEMU emulation failure
 
 **Solutions:**
-1. **Use direct paths for installations:**
+1. **Use direct venv paths for installations:**
    - Instead of: `bash -c '. ${IDF_PATH}/export.sh && pip install'`
-   - Use: `/path/to/venv/bin/pip install`
+   - Use: `/opt/esp/python_env/idf5.4_py3.12_env/bin/pip install`
    - This bypasses shell initialization that fails under QEMU
 
-2. **Use `python -m` for verification:**
-   - Instead of: `/path/to/venv/bin/pytest --version`
-   - Use: `python3 -m pytest --version`
-   - More portable and works across platforms
+2. **For verification on amd64-only builds:**
+   - Use: `bash -c '. ${IDF_PATH}/export.sh && pytest --version'`
+   - Clean commands without hardcoded paths
+   - Works because amd64 doesn't have QEMU emulation issues
 
 3. **Consider amd64-only builds:**
    - If ARM64 emulation issues persist, build `linux/amd64` only
    - Docker Desktop on Mac M1/M2 runs amd64 via Rosetta 2 automatically
    - ARM64 Linux users can use Docker's built-in emulation
+   - **Strategy:** Direct paths for install, sourced environment for verification
 
 **Platform Configuration:**
 ```dockerfile
