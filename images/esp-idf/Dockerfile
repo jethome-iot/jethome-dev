@@ -91,14 +91,14 @@ RUN /opt/esp/python_env/idf5.4_py3.12_env/bin/pip install --no-cache-dir \
 WORKDIR /workspace
 
 # Verify installation
-# Use python -m to run installed packages (more portable than hardcoded paths)
+# Use venv python -m to verify packages (packages are installed in venv)
 ARG ESP_IDF_VERSION
 RUN python3 --version && \
-    python3 -m pytest --version && \
+    /opt/esp/python_env/idf5.4_py3.12_env/bin/python3 -m pytest --version && \
     jq --version && \
     qemu-system-xtensa --version && \
     qemu-system-riscv32 --version && \
-    python3 -m gcovr --version && \
+    /opt/esp/python_env/idf5.4_py3.12_env/bin/python3 -m gcovr --version && \
     ccache --version && \
     echo "ESP-IDF ${ESP_IDF_VERSION} installation verified successfully"
 
