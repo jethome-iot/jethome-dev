@@ -45,6 +45,9 @@ Standard pattern for image workflows:
 ```yaml
 name: 🐳 <Image Name> Docker Image
 
+env:
+  DEFAULT_VERSION: v1.0.0
+
 on:
   push:
     branches: [master, dev]
@@ -63,7 +66,6 @@ on:
       version:
         description: 'Version (e.g., v1.0.0)'
         required: true
-        default: 'v1.0.0'
         type: string
       force_rebuild:
         description: 'Force rebuild without cache'
@@ -77,7 +79,20 @@ on:
         type: string
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: 🏷️ Resolve version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version || env.DEFAULT_VERSION }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION}"
+
   build:
+    needs: prepare
     uses: ./.github/workflows/docker-build.yml
     permissions:
       contents: read
@@ -85,18 +100,20 @@ jobs:
     with:
       image_name: jethome-dev-<image-name>
       context_path: images/<image-name>
-      version_tag: <prefix>-${{ github.event.inputs.version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
+      version_tag: <prefix>-${{ needs.prepare.outputs.version }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        VERSION=${{ github.event.inputs.version }}
+        VERSION=${{ needs.prepare.outputs.version }}
 ```
 
 ### Version Handling
 
-- Put version defaults in `workflow_dispatch` input defaults
-- Pass versions to Dockerfile via `build_args`
-- Easy to override manually via GitHub UI
+- Define default versions in `env` at workflow level (single source of truth)
+- Use `prepare` job to resolve version (inputs or env default)
+- Pass resolved version via job outputs to build job
+- `env` context available in job steps, outputs available in `with:`
+- Easy to override manually via GitHub UI (workflow_dispatch inputs)
 
 ### Push Behavior by Branch
 

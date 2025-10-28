@@ -1,6 +1,9 @@
 # PlatformIO Docker Build Workflow
 name: 🐳 PlatformIO Docker Image
 
+env:
+  DEFAULT_PIO_VERSION: 6.1.18
+
 on:
   push:
     branches: [master, dev]
@@ -20,7 +23,6 @@ on:
       pio_version:
         description: 'PlatformIO Core version (e.g., 6.1.18)'
         required: true
-        default: '6.1.18'
         type: string
       force_rebuild:
         description: 'Force rebuild without cache'
@@ -34,7 +36,20 @@ on:
         type: string
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      pio_version: ${{ steps.version.outputs.pio_version }}
+    steps:
+      - name: 🏷️ Resolve PlatformIO version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.pio_version || env.DEFAULT_PIO_VERSION }}"
+          echo "pio_version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using PlatformIO version: ${VERSION}"
+
   build:
+    needs: prepare
     uses: ./.github/workflows/docker-build.yml
     permissions:
       contents: read
@@ -42,8 +57,8 @@ jobs:
     with:
       image_name: jethome-dev-platformio
       context_path: images/platformio
-      version_tag: pio-${{ github.event.inputs.pio_version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
+      version_tag: pio-${{ needs.prepare.outputs.pio_version }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        PIO_VERSION=${{ github.event.inputs.pio_version }}
+        PIO_VERSION=${{ needs.prepare.outputs.pio_version }}

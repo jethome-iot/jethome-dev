@@ -1,6 +1,9 @@
 # ESP-IDF Docker Build Workflow
 name: 🐳 ESP-IDF Docker Image
 
+env:
+  DEFAULT_ESP_IDF_VERSION: v5.4.1
+
 on:
   push:
     branches: [master, dev]
@@ -20,7 +23,6 @@ on:
       esp_idf_version:
         description: 'ESP-IDF version (e.g., v5.4.1, v5.3.1)'
         required: true
-        default: 'v5.4.1'
         type: string
       force_rebuild:
         description: 'Force rebuild without cache'
@@ -34,7 +36,20 @@ on:
         type: string
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      esp_idf_version: ${{ steps.version.outputs.esp_idf_version }}
+    steps:
+      - name: 🏷️ Resolve ESP-IDF version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.esp_idf_version || env.DEFAULT_ESP_IDF_VERSION }}"
+          echo "esp_idf_version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using ESP-IDF version: ${VERSION}"
+
   build:
+    needs: prepare
     uses: ./.github/workflows/docker-build.yml
     permissions:
       contents: read
@@ -42,9 +57,9 @@ jobs:
     with:
       image_name: jethome-dev-esp-idf
       context_path: images/esp-idf
-      version_tag: idf-${{ github.event.inputs.esp_idf_version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
+      version_tag: idf-${{ needs.prepare.outputs.esp_idf_version }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        ESP_IDF_VERSION=${{ github.event.inputs.esp_idf_version }}
+        ESP_IDF_VERSION=${{ needs.prepare.outputs.esp_idf_version }}
 
