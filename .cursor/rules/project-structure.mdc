@@ -9,11 +9,19 @@ Multi-image Docker project providing development environments for embedded syste
 
 ```
 jethome-dev/
+├── .github/
+│   └── workflows/             # GitHub Actions workflows
+│       ├── docker-build.yml   # Reusable Docker build workflow
+│       ├── esp-idf.yml        # ESP-IDF image workflow
+│       └── platformio.yml     # PlatformIO image workflow
 ├── images/
 │   └── <image-name>/          # Each image in its own directory
 │       ├── Dockerfile         # Image definition
 │       ├── README.md          # Detailed image documentation
 │       └── ...                # Supporting files
+├── scripts/
+│   ├── build.sh               # Local image build helper
+│   └── test-workflow.sh       # Workflow testing with act
 ├── .cursor/rules/             # Cursor AI rules
 ├── LICENSE                    # MIT License
 └── README.md                  # Root README (minimal, generic)

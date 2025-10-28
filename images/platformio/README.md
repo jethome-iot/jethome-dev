@@ -219,6 +219,7 @@ docker build -t jethome-dev-platformio .
 
 ```bash
 docker build \
+  --build-arg PIO_VERSION=6.1.18 \
   --build-arg ESP32_PLATFORM_VERSION=6.11.0 \
   --build-arg NATIVE_PLATFORM_VERSION=1.2.1 \
   --build-arg UNITY_VERSION=2.6.0 \
@@ -226,6 +227,7 @@ docker build \
 ```
 
 Available build arguments:
+- `PIO_VERSION` - PlatformIO Core version (default: 6.1.18)
 - `ESP32_PLATFORM_VERSION` - Espressif32 platform version (default: 6.11.0)
 - `NATIVE_PLATFORM_VERSION` - Native platform version (default: 1.2.1)
 - `UNITY_VERSION` - Unity test framework version (default: 2.6.0)
@@ -236,6 +238,7 @@ Available build arguments:
 | Component | Version | Notes |
 |-----------|---------|-------|
 | Base Image | Python 3.11 slim | Debian Bookworm |
+| PlatformIO Core | 6.1.18 | Latest stable release |
 | ESP32 Platform | 6.11.0 | Version 6.12.0 has compatibility issues |
 | Native Platform | 1.2.1 | For unit testing |
 | Unity Framework | 2.6.0 | Globally installed |

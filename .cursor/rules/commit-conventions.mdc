@@ -18,6 +18,84 @@ Use clear, descriptive commit messages that explain **what** and **why**.
 Good: `Add new development image` with detailed list
 Bad: `Update files`, `Fix`, `WIP`, `changes`
 
+## Message Generation Guidelines
+
+When generating commit messages, analyze the actual changes:
+
+### Documentation-Only Changes
+
+If ONLY documentation files changed (README.md, .mdc files):
+
+```
+Update documentation for <feature/component>
+
+- Update <specific doc> to reflect <change>
+- Add <new information> to <doc>
+- Fix outdated <information> in <doc>
+```
+
+Example:
+```
+Update documentation for workflow changes
+
+- Update adding-new-images.mdc with prepare job pattern
+- Add PIO_VERSION to platformio README
+- Update project structure with scripts/ directory
+```
+
+### Code-Only Changes
+
+If ONLY code/workflow files changed:
+
+```
+<Action> <component/feature>
+
+- Detailed code change 1
+- Detailed code change 2
+```
+
+Example:
+```
+Add version tag parameter to workflows
+
+- Add version_tag to docker-build.yml
+- Implement prepare job for version resolution
+- Pass versions via build_args
+```
+
+### Mixed Changes (Code + Docs)
+
+If BOTH code AND documentation changed together:
+
+```
+<Action> <component/feature>
+
+Code changes:
+- Code change 1
+- Code change 2
+
+Documentation:
+- Doc update 1
+- Doc update 2
+```
+
+### Change Type Detection
+
+Analyze changed files to determine type:
+
+**Documentation files:**
+- `*.md` (README files)
+- `*.mdc` (Cursor rules)
+- Files in `.cursor/rules/`
+
+**Code files:**
+- `Dockerfile`
+- `*.yml` (workflows)
+- `*.sh` (scripts)
+- Source code files
+
+**Accurate classification is critical** - don't claim code changes if only docs changed!
+
 ## AI/Cursor Commit Policy
 
 **🚫 NEVER AUTO-COMMIT**

@@ -50,10 +50,14 @@ Images published as: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
 ## GitHub Actions Workflow
 
 Create `.github/workflows/<image-name>.yml`:
-- Use reusable workflow: `.github/workflows/reusable-docker-build.yml`
+- Use reusable workflow: `.github/workflows/docker-build.yml`
 - Set triggers for image directory and workflow file changes
-- Pass `image_name` and `context_path` parameters
-- Include manual trigger and monthly rebuild schedule
+- Define default version in `env` section
+- Add `prepare` job to resolve versions
+- Pass `image_name`, `context_path`, and `version_tag` parameters
+- Pass version to Dockerfile via `build_args`
+- Include manual trigger with required version input
+- Images only pushed to GHCR from master branch
 - Test locally with `act -j build -W .github/workflows/<image-name>.yml --dryrun`
 
 ## Testing
