@@ -62,9 +62,9 @@ RUN ARCH=$(uname -m) && \
 ENV PATH="/opt/qemu-xtensa/bin:/opt/qemu-riscv32/bin:${PATH}"
 
 # Install Python testing and development packages
-# Use IDF_PATH to find the ESP-IDF Python environment
+# Use ESP-IDF Python virtual environment directly to avoid QEMU emulation issues
 # Let pip resolve compatible versions automatically to avoid dependency conflicts
-RUN bash -c '. ${IDF_PATH}/export.sh && pip install --no-cache-dir \
+RUN /opt/esp/python_env/idf5.4_py3.12_env/bin/pip install --no-cache-dir \
     # Testing frameworks - let pip resolve compatible versions
     pytest \
     pytest-embedded \
@@ -85,22 +85,21 @@ RUN bash -c '. ${IDF_PATH}/export.sh && pip install --no-cache-dir \
     # Utilities (these are already in ESP-IDF venv but may need updates)
     pyserial \
     requests \
-    pyyaml'
+    pyyaml
 
 # Set working directory
 WORKDIR /workspace
 
 # Verify installation
 ARG ESP_IDF_VERSION
-RUN bash -c '. ${IDF_PATH}/export.sh && \
-    python3 --version && \
-    pytest --version && \
+RUN python3 --version && \
+    /opt/esp/python_env/idf5.4_py3.12_env/bin/pytest --version && \
     jq --version && \
     qemu-system-xtensa --version && \
     qemu-system-riscv32 --version && \
-    gcovr --version && \
+    /opt/esp/python_env/idf5.4_py3.12_env/bin/gcovr --version && \
     ccache --version && \
-    echo "ESP-IDF ${ESP_IDF_VERSION} installation verified successfully"'
+    echo "ESP-IDF ${ESP_IDF_VERSION} installation verified successfully"
 
 CMD ["/bin/bash"]
 
