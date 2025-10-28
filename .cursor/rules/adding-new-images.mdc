@@ -68,3 +68,48 @@ Before committing:
 - Test workflow with `act` in dry-run mode: `./scripts/test-workflow.sh <image-name>`
 - Test all README examples
 - Check image size is reasonable
+
+### Testing Workflows with GitHub CLI
+
+Use `gh` CLI for remote workflow testing:
+
+**Trigger workflow manually:**
+```bash
+# ESP-IDF example
+gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
+  -f esp_idf_version=v5.4.1 \
+  -f force_rebuild=true
+
+# PlatformIO example
+gh workflow run "🐳 PlatformIO Docker Image" --ref master \
+  -f pio_version=6.1.18 \
+  -f force_rebuild=true
+```
+
+**Monitor workflow status:**
+```bash
+# List recent runs
+gh run list --workflow="🐳 ESP-IDF Docker Image" --limit 5
+
+# Watch live progress
+gh run watch
+
+# View specific run
+gh run view <run-id>
+
+# Open in browser
+gh run view <run-id> --web
+
+# Check logs
+gh run view <run-id> --log
+gh run view <run-id> --log-failed
+```
+
+**Automated monitoring script:**
+```bash
+# Trigger and monitor until completion
+RUN_ID=$(gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
+  -f esp_idf_version=v5.4.1 -f force_rebuild=true --json 2>&1 | \
+  gh run list --limit 1 --json databaseId -q '.[0].databaseId')
+gh run watch $RUN_ID
+```

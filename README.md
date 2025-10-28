@@ -114,6 +114,24 @@ The script builds images with the `local` tag by default to distinguish them fro
 
 Requires [act](https://github.com/nektos/act) to be installed.
 
+**Test Workflows on GitHub Actions:**
+
+```bash
+# Trigger workflow with force rebuild (bypasses cache)
+gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
+  -f esp_idf_version=v5.4.1 \
+  -f force_rebuild=true
+
+# Monitor workflow progress
+gh run list --workflow="🐳 ESP-IDF Docker Image" --limit 5
+gh run watch
+
+# View logs
+gh run view <run-id> --log
+```
+
+Requires [GitHub CLI](https://cli.github.com/) to be installed.
+
 ### Manual Building
 
 ```bash

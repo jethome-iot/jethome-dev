@@ -129,9 +129,119 @@ jobs:
 - Clear release strategy: master = production/stable
 - Dev branch for testing before release
 
-## Local Testing
+## Workflow Testing
+
+### Local Testing with act
 
 Test workflows locally using `act`:
 - Configuration in `.actrc`
 - Test specific job: `act -j build`
 - Use `.secrets` file for local secrets (gitignored)
+- Helper script: `./scripts/test-workflow.sh <image-name>`
+
+### Remote Testing with GitHub CLI
+
+Use `gh` CLI to test workflows on GitHub Actions:
+
+**Manual Workflow Dispatch:**
+```bash
+# Trigger workflow with parameters
+gh workflow run "🐳 <Workflow Name>" --ref master \
+  -f version=v1.0.0 \
+  -f force_rebuild=true \
+  -f custom_tags=test
+
+# Example: ESP-IDF
+gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
+  -f esp_idf_version=v5.4.1 \
+  -f force_rebuild=true
+
+# Example: PlatformIO
+gh workflow run "🐳 PlatformIO Docker Image" --ref master \
+  -f pio_version=6.1.18 \
+  -f force_rebuild=false
+```
+
+**Monitoring Workflows:**
+```bash
+# List recent workflow runs
+gh run list --workflow="🐳 ESP-IDF Docker Image" --limit 10
+
+# Watch workflow in real-time
+gh run watch
+
+# View specific run details
+gh run view <run-id>
+gh run view <run-id> --json
+
+# Open run in browser
+gh run view <run-id> --web
+
+# View logs
+gh run view <run-id> --log
+gh run view <run-id> --log-failed  # Only failed jobs
+```
+
+**Query Run Status:**
+```bash
+# Get run status programmatically
+gh run view <run-id> --json status,conclusion | \
+  jq -r '"\(.status):\(.conclusion // "N/A")"'
+
+# Get all jobs status
+gh api /repos/:owner/:repo/actions/runs/<run-id>/jobs | \
+  jq -r '.jobs[] | "\(.name): \(.status) - \(.conclusion // "N/A")"'
+```
+
+**Automated Testing Script Example:**
+```bash
+#!/bin/bash
+# Trigger workflow and wait for completion
+
+WORKFLOW="🐳 ESP-IDF Docker Image"
+VERSION="v5.4.1"
+
+# Trigger workflow
+gh workflow run "$WORKFLOW" --ref master \
+  -f esp_idf_version=$VERSION \
+  -f force_rebuild=true
+
+# Wait for workflow to appear
+sleep 10
+
+# Get latest run ID
+RUN_ID=$(gh run list --workflow="$WORKFLOW" --limit 1 \
+  --json databaseId -q '.[0].databaseId')
+
+echo "Monitoring workflow run: $RUN_ID"
+
+# Monitor until completion
+while true; do
+  STATUS=$(gh run view $RUN_ID --json status,conclusion | \
+    jq -r '.status')
+  
+  if [ "$STATUS" = "completed" ]; then
+    CONCLUSION=$(gh run view $RUN_ID --json conclusion | \
+      jq -r '.conclusion')
+    echo "Workflow completed: $CONCLUSION"
+    
+    if [ "$CONCLUSION" = "success" ]; then
+      exit 0
+    else
+      gh run view $RUN_ID --log-failed
+      exit 1
+    fi
+  fi
+  
+  echo "Status: $STATUS"
+  sleep 20
+done
+```
+
+### Testing Best Practices
+
+1. **Local first**: Test with `act` before pushing
+2. **Force rebuild**: Use `force_rebuild=true` to bypass Docker cache when testing fixes
+3. **Monitor logs**: Always check logs for build errors, even on "success"
+4. **Verify image**: Pull and test the published image after successful build
+5. **Branch strategy**: Test on `dev` branch first, then merge to `master` for release
