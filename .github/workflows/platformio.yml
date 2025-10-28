@@ -41,5 +41,5 @@ jobs:
     with:
       image_name: jethome-dev-platformio
       context_path: images/platformio
-      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}

@@ -73,7 +73,7 @@ jobs:
     with:
       image_name: jethome-dev-esp-idf
       context_path: images/esp-idf
-      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
       custom_tags: ${{ needs.prepare.outputs.custom_tags }}
       build_args: |
         ESP_IDF_VERSION=${{ needs.prepare.outputs.esp_idf_version }}
