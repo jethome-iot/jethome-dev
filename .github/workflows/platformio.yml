@@ -17,6 +17,11 @@ on:
   # Manual trigger
   workflow_dispatch:
     inputs:
+      pio_version:
+        description: 'PlatformIO Core version (e.g., 6.1.18)'
+        required: true
+        default: '6.1.18'
+        type: string
       force_rebuild:
         description: 'Force rebuild without cache'
         required: false
@@ -37,5 +42,8 @@ jobs:
     with:
       image_name: jethome-dev-platformio
       context_path: images/platformio
+      version_tag: pio-${{ github.event.inputs.pio_version }}
       force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
+      build_args: |
+        PIO_VERSION=${{ github.event.inputs.pio_version }}

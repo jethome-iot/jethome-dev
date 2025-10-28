@@ -12,6 +12,10 @@ on:
         description: 'Build context path (e.g., images/platformio)'
         required: true
         type: string
+      version_tag:
+        description: 'Primary version tag (e.g., idf-v5.4.1, pio-6.1.15)'
+        required: true
+        type: string
       force_rebuild:
         description: 'Force rebuild without cache'
         required: false
@@ -78,6 +82,7 @@ jobs:
             
             TAGS="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:stable"
+            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:${{ inputs.version_tag }}"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$VERSION"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:sha-$SHA_SHORT"
             

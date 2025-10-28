@@ -60,9 +60,9 @@ on:
       - 'images/<image-name>/**'
   workflow_dispatch:
     inputs:
-      version_var:
-        description: 'Version description'
-        required: false
+      version:
+        description: 'Version (e.g., v1.0.0)'
+        required: true
         default: 'v1.0.0'
         type: string
       force_rebuild:
@@ -85,10 +85,11 @@ jobs:
     with:
       image_name: jethome-dev-<image-name>
       context_path: images/<image-name>
+      version_tag: <prefix>-${{ github.event.inputs.version }}
       force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        VERSION_VAR=${{ github.event.inputs.version_var || 'v1.0.0' }}
+        VERSION=${{ github.event.inputs.version }}
 ```
 
 ### Version Handling

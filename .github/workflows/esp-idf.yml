@@ -19,7 +19,7 @@ on:
     inputs:
       esp_idf_version:
         description: 'ESP-IDF version (e.g., v5.4.1, v5.3.1)'
-        required: false
+        required: true
         default: 'v5.4.1'
         type: string
       force_rebuild:
@@ -42,8 +42,9 @@ jobs:
     with:
       image_name: jethome-dev-esp-idf
       context_path: images/esp-idf
+      version_tag: idf-${{ github.event.inputs.esp_idf_version }}
       force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        ESP_IDF_VERSION=${{ github.event.inputs.esp_idf_version || 'v5.4.1' }}
+        ESP_IDF_VERSION=${{ github.event.inputs.esp_idf_version }}
 

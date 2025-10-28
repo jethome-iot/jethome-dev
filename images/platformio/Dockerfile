@@ -1,7 +1,8 @@
 # Use Python 3.11 slim as base for minimal footprint
 FROM python:3.11-slim-bookworm
 
-# 6.12 don't work with this image (tested on 2025-10-09)
+# Build arguments
+ARG PIO_VERSION=6.1.18
 ARG ESP32_PLATFORM_VERSION=6.11.0
 ARG NATIVE_PLATFORM_VERSION=1.2.1
 ARG UNITY_VERSION=2.6.0
@@ -35,7 +36,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install PlatformIO and additional Python packages
 RUN pip install --no-cache-dir \
-    platformio \
+    platformio==${PIO_VERSION} \
     protobuf \
     jinja2
 
