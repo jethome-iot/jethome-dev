@@ -67,7 +67,47 @@ docker run -it --rm -v $(pwd):/workspace \
 - **Tools**: git, cmake, clang-format, curl, wget, jq
 - **Python**: protobuf, jinja2
 
-## Building Locally
+## Local Development
+
+### Helper Scripts
+
+The repository includes helper scripts in the `scripts/` directory for local development:
+
+**Build Images Locally:**
+
+```bash
+# Interactive mode - select image to build
+./scripts/build.sh
+
+# Build specific image
+./scripts/build.sh esp-idf
+./scripts/build.sh platformio
+
+# Build all images
+./scripts/build.sh all
+```
+
+After building, the script displays commands to run the image interactively.
+
+**Test Workflows with act:**
+
+```bash
+# Interactive mode - select workflow to test
+./scripts/test-workflow.sh
+
+# Test specific workflow (dry-run)
+./scripts/test-workflow.sh esp-idf
+
+# Test all workflows
+./scripts/test-workflow.sh all
+
+# Actually run workflow (not dry-run)
+./scripts/test-workflow.sh esp-idf --no-dryrun
+```
+
+Requires [act](https://github.com/nektos/act) to be installed.
+
+### Manual Building
 
 ```bash
 cd images/platformio
@@ -86,6 +126,9 @@ jethome-dev/
 │       ├── Dockerfile       # Image definition
 │       ├── README.md        # Detailed documentation
 │       └── pio_project/     # Reference configuration
+├── scripts/
+│   ├── build.sh             # Local image build helper
+│   └── test-workflow.sh     # Workflow testing with act
 ├── LICENSE
 └── README.md
 ```
