@@ -34,8 +34,9 @@ Add emoji to step names for readability:
 Each image should have its own workflow file:
 - Naming: `.github/workflows/<image-name>.yml`
 - Trigger on relevant file changes only
-- Use branch-based tagging (dev, latest, stable)
 - Use reusable workflow: `.github/workflows/docker-build.yml`
+- Images are **only pushed to GHCR from master branch**
+- Dev and PR branches build only (no push/sign)
 
 ### Workflow Structure
 
@@ -96,6 +97,20 @@ jobs:
 - Put version defaults in `workflow_dispatch` input defaults
 - Pass versions to Dockerfile via `build_args`
 - Easy to override manually via GitHub UI
+
+### Push Behavior by Branch
+
+| Branch/Event | Build | Push to GHCR | Tags Generated |
+|--------------|-------|--------------|----------------|
+| Master | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA` |
+| Dev | Yes | No | None |
+| Pull Request | Yes | No | None |
+
+**Rationale:**
+- Keeps GHCR clean with only released images
+- Faster CI on dev branches (no push/sign operations)
+- Clear release strategy: master = production/stable
+- Dev branch for testing before release
 
 ## Local Testing
 

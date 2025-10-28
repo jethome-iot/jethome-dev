@@ -47,7 +47,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
         
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == 'master'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -60,12 +60,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}
           
-      - name: 🎯 Generate tags based on branch
+      - name: 🎯 Generate tags for master branch
         id: tags
         run: |
           TAGS=""
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          VERSION=$(date +%Y.%m.%d)
           
           # Determine branch (for manual/scheduled triggers)
           if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -74,31 +72,31 @@ jobs:
             BRANCH="${{ github.ref }}"
           fi
           
+          # Only generate tags for master branch (images only pushed from master)
           if [[ "$BRANCH" == "refs/heads/master" ]] || [[ "$BRANCH" == "master" ]]; then
+            SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+            VERSION=$(date +%Y.%m.%d)
+            
             TAGS="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:latest"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:stable"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$VERSION"
             TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:sha-$SHA_SHORT"
-          elif [[ "$BRANCH" == "refs/heads/dev" ]] || [[ "$BRANCH" == "dev" ]]; then
-            TAGS="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:dev"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:dev-$VERSION"
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:sha-$SHA_SHORT"
-          fi
-          
-          # Add custom tags if provided
-          if [[ "${{ inputs.custom_tags }}" != "" ]]; then
-            IFS=',' read -ra CUSTOM_TAGS <<< "${{ inputs.custom_tags }}"
-            for tag in "${CUSTOM_TAGS[@]}"; do
-              tag=$(echo "$tag" | xargs)  # trim whitespace
-              TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$tag"
-            done
-          fi
-          
-          # Add rebuild tag for scheduled/manual rebuilds
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:monthly-$(date +%Y%m%d)"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:manual-$(date +%Y%m%d-%H%M%S)"
+            
+            # Add custom tags if provided
+            if [[ "${{ inputs.custom_tags }}" != "" ]]; then
+              IFS=',' read -ra CUSTOM_TAGS <<< "${{ inputs.custom_tags }}"
+              for tag in "${CUSTOM_TAGS[@]}"; do
+                tag=$(echo "$tag" | xargs)  # trim whitespace
+                TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:$tag"
+              done
+            fi
+            
+            # Add rebuild tag for scheduled/manual rebuilds
+            if [[ "${{ github.event_name }}" == "schedule" ]]; then
+              TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:monthly-$(date +%Y%m%d)"
+            elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              TAGS="$TAGS,${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ inputs.image_name }}:manual-$(date +%Y%m%d-%H%M%S)"
+            fi
           fi
           
           echo "TAGS=$TAGS" >> $GITHUB_OUTPUT
@@ -119,7 +117,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ${{ inputs.context_path }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' && github.ref_name == 'master' }}
           tags: ${{ steps.tags.outputs.TAGS }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: ${{ steps.cache.outputs.CACHE_FROM }}
@@ -128,11 +126,11 @@ jobs:
           build-args: ${{ inputs.build_args }}
           
       - name: 📝 Install Cosign
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == 'master'
         uses: sigstore/cosign-installer@v3.5.0
         
       - name: ✍️ Sign the published Docker image
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == 'master'
         env:
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
           TAGS: ${{ steps.tags.outputs.TAGS }}
