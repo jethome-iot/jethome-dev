@@ -36,3 +36,32 @@ alwaysApply: true
 - Optimize for automated builds
 - Keep images small - don't pre-download large toolchains unless necessary
 - Let frameworks download on first build (toolchains cache in volumes)
+
+### Multi-Platform Builds
+
+**QEMU Emulation Issues:**
+- ARM64 builds under QEMU emulation can fail silently
+- Scripts that source shell files (e.g., `source export.sh`) may exit immediately under QEMU
+- Commands complete in ~0.1s indicate QEMU emulation failure
+
+**Solutions:**
+1. **Use direct paths for installations:**
+   - Instead of: `bash -c '. ${IDF_PATH}/export.sh && pip install'`
+   - Use: `/path/to/venv/bin/pip install`
+   - This bypasses shell initialization that fails under QEMU
+
+2. **Use `python -m` for verification:**
+   - Instead of: `/path/to/venv/bin/pytest --version`
+   - Use: `python3 -m pytest --version`
+   - More portable and works across platforms
+
+3. **Consider amd64-only builds:**
+   - If ARM64 emulation issues persist, build `linux/amd64` only
+   - Docker Desktop on Mac M1/M2 runs amd64 via Rosetta 2 automatically
+   - ARM64 Linux users can use Docker's built-in emulation
+
+**Platform Configuration:**
+```dockerfile
+# In GitHub Actions workflow
+platforms: linux/amd64  # or linux/amd64,linux/arm64 if both work
+```
