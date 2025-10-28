@@ -59,7 +59,7 @@ jobs:
       image_name: jethome-dev-platformio
       context_path: images/platformio
       version_tag: pio-${{ needs.prepare.outputs.pio_version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild == 'true' }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
         PIO_VERSION=${{ needs.prepare.outputs.pio_version }}

@@ -1,4 +1,5 @@
 # ESP-IDF Docker Build Workflow
+# Builds ESP-IDF development image with pytest, QEMU, and testing tools
 name: 🐳 ESP-IDF Docker Image
 
 env:
@@ -59,7 +60,7 @@ jobs:
       image_name: jethome-dev-esp-idf
       context_path: images/esp-idf
       version_tag: idf-${{ needs.prepare.outputs.esp_idf_version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild || false }}
+      force_rebuild: ${{ github.event.inputs.force_rebuild == 'true' }}
       custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
         ESP_IDF_VERSION=${{ needs.prepare.outputs.esp_idf_version }}
