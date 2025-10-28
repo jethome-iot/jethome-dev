@@ -337,24 +337,9 @@ Available build arguments:
 - `QEMU_RELEASE_TAG` - GitHub release tag (default: `esp-develop-9.0.0-20240606`)
 - `QEMU_VERSION` - QEMU binary version string (default: `esp_develop_9.0.0_20240606`)
 
-### Platform Notes
+### Multi-Platform Support
 
-This image is built for **linux/amd64** only due to QEMU emulation issues with ARM64 builds during GitHub Actions multi-platform builds.
-
-**For Mac M1/M2 users:**
-- Docker Desktop automatically runs AMD64 images via Rosetta 2
-- Performance is excellent with transparent emulation
-- No action needed - just use the image normally
-
-**For ARM64 Linux users:**
-- Docker automatically emulates AMD64 when needed
-- Alternatively, build locally on ARM64 hardware (works perfectly)
-
-**Technical reason:**
-- ARM64 builds under QEMU emulation in GitHub Actions fail silently when executing shell initialization scripts
-- The `source ${IDF_PATH}/export.sh` command exits immediately under QEMU without error
-- Direct pip install paths work, but verification and testing require the activated environment
-- Building AMD64 only ensures consistent, reliable images for all users
+This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
 
 ## Version Information
 

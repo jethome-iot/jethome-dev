@@ -233,6 +233,10 @@ Available build arguments:
 - `UNITY_VERSION` - Unity test framework version (default: 2.6.0)
 - `PIO_ENVS` - Environments for pre-build (currently disabled)
 
+### Multi-Platform Support
+
+This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
+
 ## Version Information
 
 | Component | Version | Notes |

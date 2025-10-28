@@ -39,30 +39,15 @@ alwaysApply: true
 
 ### Multi-Platform Builds
 
-**QEMU Emulation Issues:**
-- ARM64 builds under QEMU emulation can fail silently
-- Scripts that source shell files (e.g., `source export.sh`) may exit immediately under QEMU
-- Commands complete in ~0.1s indicate QEMU emulation failure
+All images should support both **linux/amd64** and **linux/arm64** platforms.
 
-**Solutions:**
-1. **Use direct venv paths for installations:**
-   - Instead of: `bash -c '. ${IDF_PATH}/export.sh && pip install'`
-   - Use: `/opt/esp/python_env/idf5.4_py3.12_env/bin/pip install`
-   - This bypasses shell initialization that fails under QEMU
-
-2. **For verification on amd64-only builds:**
-   - Use: `bash -c '. ${IDF_PATH}/export.sh && pytest --version'`
-   - Clean commands without hardcoded paths
-   - Works because amd64 doesn't have QEMU emulation issues
-
-3. **Consider amd64-only builds:**
-   - If ARM64 emulation issues persist, build `linux/amd64` only
-   - Docker Desktop on Mac M1/M2 runs amd64 via Rosetta 2 automatically
-   - ARM64 Linux users can use Docker's built-in emulation
-   - **Strategy:** Direct paths for install, sourced environment for verification
+**Best Practices:**
+- Use direct paths to tools when possible for better compatibility
+- Test builds on both platforms during development
+- Verify multi-arch manifest is created correctly
 
 **Platform Configuration:**
-```dockerfile
+```yaml
 # In GitHub Actions workflow
-platforms: linux/amd64  # or linux/amd64,linux/arm64 if both work
+platforms: [linux/amd64, linux/arm64]
 ```

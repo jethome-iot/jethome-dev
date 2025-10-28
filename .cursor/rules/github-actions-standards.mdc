@@ -260,8 +260,8 @@ fi
    - Merge to master only after successful dev validation
 3. **Monitor logs**: Always check logs for build errors, even on "success"
    - Check both amd64 and arm64 build logs (matrix creates separate jobs)
-   - Look for 0.1s completion times (indicates QEMU failure on arm64)
    - Verify both platform builds complete successfully
+   - Ensure build times are reasonable for both architectures
 4. **Verify images**: Pull and test the published image after successful master build
    - Test multi-arch manifest: `docker pull <image>:latest`
    - Verify on your architecture: `docker run --rm <image>:latest <command>`

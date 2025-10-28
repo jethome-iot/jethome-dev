@@ -94,39 +94,19 @@ docker run --platform=linux/amd64 --rm <image> <command>
 docker run --platform=linux/arm64 --rm <image> <command>
 ```
 
-### Symptom: ARM64 Build Completes in 0.1s (QEMU Emulation Failure)
+### Symptom: Multi-Platform Build Issues
 
-**Problem:** ARM64 build shows `DONE 0.1s` for steps that should take minutes.
+**Problem:** One platform builds successfully but another fails or behaves differently.
 
-**Example Log:**
-```
-#17 [linux/arm64 5/7] RUN bash -c '. ${IDF_PATH}/export.sh && pip install ...'
-#17 0.057 qemu-aarch64 version 10.0.4
-#17 DONE 0.1s  ← Should take 1-2 minutes!
-```
+**Verification:**
+1. Check build logs for both platforms individually
+2. Verify build times are reasonable for both architectures
+3. Test both platform images after build
 
-**Cause:** QEMU emulation fails when executing shell initialization (source, export.sh).
-
-**Solutions:**
-1. **Use direct venv paths for installation:**
-   ```dockerfile
-   # Instead of:
-   RUN bash -c '. ${IDF_PATH}/export.sh && pip install packages'
-   
-   # Use:
-   RUN /opt/esp/python_env/idf5.4_py3.12_env/bin/pip install packages
-   ```
-
-2. **For verification, use sourced environment (amd64 only):**
-   ```dockerfile
-   RUN bash -c '. ${IDF_PATH}/export.sh && pytest --version'
-   ```
-
-3. **Build amd64 only if ARM64 fails:**
-   ```yaml
-   # In docker-build.yml
-   platforms: linux/amd64  # Instead of linux/amd64,linux/arm64
-   ```
+**Best Practices:**
+- Use direct paths to binaries when possible for better cross-platform compatibility
+- Avoid shell sourcing in RUN commands when direct paths are available
+- Test multi-arch manifests after deployment
 
 ### Symptom: Verification Step Fails - "No module named pytest"
 
@@ -215,7 +195,7 @@ docker run --rm <image>:latest <test-command>
 1. **Auto-build uses cache** - Automatic builds from commits use cache by default
 2. **Multiple layers can be cached** - Force rebuild is needed to ensure fresh build
 3. **GHCR tags aren't updated** - Check digest to verify new image is different
-4. **Platform mismatch** - ARM64 Mac pulls arm64 by default, may need `--platform=linux/amd64`
+4. **Platform-specific issue** - Docker pulls the architecture-specific image automatically
 5. **Dev branch doesn't push** - Only master branch publishes to GHCR
 
 ## Debugging Checklist
@@ -225,8 +205,8 @@ When packages are missing from published image:
 - [ ] Check if Dockerfile has the package in pip install
 - [ ] Verify workflow ran successfully (both prepare AND build jobs)
 - [ ] Check build logs for "CACHED" vs actual execution
-- [ ] Look for 0.1s completion times (indicates cache or QEMU failure)
-- [ ] Test both platforms if multi-platform build
+- [ ] Verify build times are reasonable for all platforms
+- [ ] Test both platforms (amd64 and arm64) if multi-platform build
 - [ ] Trigger force rebuild to bypass cache
 - [ ] Pull fresh image and test with exact commands
 - [ ] Verify image digest changed after rebuild

@@ -79,21 +79,11 @@ Before committing:
 
 When building for `linux/amd64,linux/arm64`:
 
-**Check for QEMU emulation issues:**
+**Verification:**
 1. Monitor build logs for both platforms
-2. Look for suspiciously fast completion times (~0.1s) on ARM64
-3. Verify that long-running commands (pip install) actually execute
-4. Test the published image on both platforms if possible
-
-**Signs of QEMU failure:**
-- ARM64 build step completes in 0.1s while AMD64 takes minutes
-- No error messages but packages aren't installed
-- Shell initialization scripts (source, export.sh) exit silently
-
-**Solutions if ARM64 fails:**
-1. Use direct venv paths instead of shell sourcing
-2. Use `python -m` for command verification
-3. Consider building AMD64 only (works via Rosetta 2 on Mac M1/M2)
+2. Verify that both amd64 and arm64 builds complete successfully
+3. Check build times are reasonable for both architectures
+4. Test the published multi-arch image on different platforms
 
 ### Testing Workflows with GitHub CLI
 
