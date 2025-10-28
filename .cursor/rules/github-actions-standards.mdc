@@ -34,92 +34,128 @@ Add emoji to step names for readability:
 Each image should have its own workflow file:
 - Naming: `.github/workflows/<image-name>.yml`
 - Trigger on relevant file changes only
-- Use reusable workflow: `.github/workflows/docker-build.yml`
+- Use inline matrix builds for multi-platform support (amd64/arm64)
 - Images are **only pushed to GHCR from master branch**
 - Dev and PR branches build only (no push)
 
 ### Workflow Structure
 
-Standard pattern for image workflows:
+Standard pattern for image workflows with matrix builds:
 
 ```yaml
 name: 🐳 <Image Name> Docker Image
-
-env:
-  DEFAULT_VERSION: v1.0.0
 
 on:
   push:
     branches: [master, dev]
     paths:
       - '.github/workflows/<image-name>.yml'
-      - '.github/workflows/docker-build.yml'
       - 'images/<image-name>/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/<image-name>.yml'
-      - '.github/workflows/docker-build.yml'
       - 'images/<image-name>/**'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version (e.g., v1.0.0)'
-        required: true
-        type: string
-      force_rebuild:
-        description: 'Force rebuild without cache'
-        required: false
-        default: false
-        type: boolean
-      custom_tags:
-        description: 'Additional custom tags (comma-separated, optional)'
-        required: false
-        default: ''
-        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: jethome-dev-<image-name>
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - name: 🏷️ Resolve version
-        id: version
-        run: |
-          VERSION="${{ github.event.inputs.version || env.DEFAULT_VERSION }}"
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Using version: ${VERSION}"
-
   build:
-    needs: prepare
-    uses: ./.github/workflows/docker-build.yml
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    secrets: inherit
-    with:
-      image_name: jethome-dev-<image-name>
-      context_path: images/<image-name>
-      version_tag: <prefix>-${{ needs.prepare.outputs.version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild == 'true' }}
-      custom_tags: ${{ github.event.inputs.custom_tags || '' }}
-      build_args: |
-        VERSION=${{ needs.prepare.outputs.version }}
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        version: ['1.0.0']  # Can expand to multiple versions
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: 🔐 Log in to GitHub Container Registry
+        if: github.ref_name == 'master'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🏷️ Prepare platform tag
+        id: platform
+        run: |
+          PLATFORM_PAIR=${{ matrix.platform }}
+          PLATFORM_TAG=$(echo $PLATFORM_PAIR | sed 's/\//-/g')
+          echo "tag=${PLATFORM_TAG}" >> $GITHUB_OUTPUT
+          
+      - name: 🐳 Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: images/<image-name>
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.ref_name == 'master' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:<prefix>-${{ matrix.version }}-${{ steps.platform.outputs.tag }}
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          build-args: |
+            VERSION=${{ matrix.version }}
+
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'master'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        version: ['1.0.0']  # Must match build job matrix
+    steps:
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: 🏷️ Generate version and date tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          DATE_TAG=$(date +%Y.%m.%d)
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          
+      - name: 🎯 Create multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:<prefix>-${{ matrix.version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:<prefix>-${{ matrix.version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:<prefix>-${{ matrix.version }}-linux-arm64
 ```
 
 **Critical Details:**
-- `secrets: inherit` - Required for reusable workflows to access GITHUB_TOKEN
-- `force_rebuild: ${{ ... == 'true' }}` - Convert string to boolean (not `|| false`)
-- Boolean inputs from workflow_dispatch come as strings and need explicit comparison
+- Matrix builds both platforms in parallel for faster CI
+- Platform-specific images tagged with arch suffix (e.g., `pio-6.1.18-linux-amd64`)
+- Manifest job combines platform images into multi-arch manifest
+- Only master branch pushes images; dev/PR do build-only validation
+- Version matrix can be expanded to build multiple versions
 
 ### Version Handling
 
-- Define default versions in `env` at workflow level (single source of truth)
-- Use `prepare` job to resolve version (inputs or env default)
-- Pass resolved version via job outputs to build job
-- `env` context available in job steps, outputs available in `with:`
-- Easy to override manually via GitHub UI (workflow_dispatch inputs)
+- Define versions directly in matrix strategy
+- Can expand to multiple versions: `version: ['1.0.0', '1.1.0']`
+- Each version builds for all platforms in the matrix
+- Matrix generates all combinations: platforms × versions
 
 ### Push Behavior by Branch
 
@@ -149,23 +185,19 @@ Test workflows locally using `act`:
 
 Use `gh` CLI to test workflows on GitHub Actions:
 
-**Manual Workflow Dispatch:**
+**Triggering Workflows:**
+
+Workflows are triggered automatically by pushing to master or dev branches. To test:
+
 ```bash
-# Trigger workflow with parameters
-gh workflow run "🐳 <Workflow Name>" --ref master \
-  -f version=v1.0.0 \
-  -f force_rebuild=true \
-  -f custom_tags=test
+# Push to dev branch for testing (build-only, no push to GHCR)
+git checkout dev
+git push origin dev
 
-# Example: ESP-IDF
-gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
-  -f esp_idf_version=v5.4.1 \
-  -f force_rebuild=true
-
-# Example: PlatformIO
-gh workflow run "🐳 PlatformIO Docker Image" --ref master \
-  -f pio_version=6.1.18 \
-  -f force_rebuild=false
+# After validation, merge to master (builds and pushes to GHCR)
+git checkout master
+git merge dev
+git push origin master
 ```
 
 **Monitoring Workflows:**
@@ -199,62 +231,41 @@ gh api /repos/:owner/:repo/actions/runs/<run-id>/jobs | \
   jq -r '.jobs[] | "\(.name): \(.status) - \(.conclusion // "N/A")"'
 ```
 
-**Automated Testing Script Example:**
+**Monitoring Latest Run:**
 ```bash
-#!/bin/bash
-# Trigger workflow and wait for completion
-
+# Get latest workflow run for a specific workflow
 WORKFLOW="🐳 ESP-IDF Docker Image"
-VERSION="v5.4.1"
-
-# Trigger workflow
-gh workflow run "$WORKFLOW" --ref master \
-  -f esp_idf_version=$VERSION \
-  -f force_rebuild=true
-
-# Wait for workflow to appear
-sleep 10
-
-# Get latest run ID
 RUN_ID=$(gh run list --workflow="$WORKFLOW" --limit 1 \
   --json databaseId -q '.[0].databaseId')
 
-echo "Monitoring workflow run: $RUN_ID"
-
 # Monitor until completion
-while true; do
-  STATUS=$(gh run view $RUN_ID --json status,conclusion | \
-    jq -r '.status')
-  
-  if [ "$STATUS" = "completed" ]; then
-    CONCLUSION=$(gh run view $RUN_ID --json conclusion | \
-      jq -r '.conclusion')
-    echo "Workflow completed: $CONCLUSION"
-    
-    if [ "$CONCLUSION" = "success" ]; then
-      exit 0
-    else
-      gh run view $RUN_ID --log-failed
-      exit 1
-    fi
-  fi
-  
-  echo "Status: $STATUS"
-  sleep 20
-done
+gh run watch $RUN_ID
+
+# Check final status
+CONCLUSION=$(gh run view $RUN_ID --json conclusion -q '.conclusion')
+if [ "$CONCLUSION" = "success" ]; then
+  echo "✅ Workflow succeeded"
+else
+  echo "❌ Workflow failed"
+  gh run view $RUN_ID --log-failed
+fi
 ```
 
 ### Testing Best Practices
 
 1. **Local first**: Test with `act` before pushing
-2. **Force rebuild**: Use `force_rebuild=true` to bypass Docker cache when testing fixes
-   - Required when Dockerfile changes but Docker might use cached layers
-   - The `no-cache` option in reusable workflow ensures true rebuild
+2. **Branch strategy**: Always test on `dev` branch first
+   - Push to dev for build validation (no GHCR push)
+   - Review workflow logs for both platforms
+   - Merge to master only after successful dev validation
 3. **Monitor logs**: Always check logs for build errors, even on "success"
-   - Check both amd64 and arm64 build logs if multi-platform
+   - Check both amd64 and arm64 build logs (matrix creates separate jobs)
    - Look for 0.1s completion times (indicates QEMU failure on arm64)
-4. **Verify image**: Pull and test the published image after successful build
-   - Test with actual commands: `docker run --rm <image> pytest --version`
-   - Verify imports work: `python3 -c 'import pytest_embedded'`
-5. **Branch strategy**: Test on `dev` branch first, then merge to `master` for release
-   - Remember: dev builds don't push to GHCR (build validation only)
+   - Verify both platform builds complete successfully
+4. **Verify images**: Pull and test the published image after successful master build
+   - Test multi-arch manifest: `docker pull <image>:latest`
+   - Verify on your architecture: `docker run --rm <image>:latest <command>`
+   - Check that correct platform is pulled automatically
+5. **Cache management**: GitHub Actions cache persists between runs
+   - Cache is per-platform (separate for amd64/arm64)
+   - To force fresh build, clear GitHub Actions cache via Settings → Actions → Caches

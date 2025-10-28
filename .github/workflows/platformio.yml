@@ -1,65 +1,99 @@
 # PlatformIO Docker Build Workflow
 name: 🐳 PlatformIO Docker Image
 
-env:
-  DEFAULT_PIO_VERSION: 6.1.18
-
 on:
   push:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
-      - '.github/workflows/docker-build.yml'
       - 'images/platformio/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
-      - '.github/workflows/docker-build.yml'
       - 'images/platformio/**'
-  # Manual trigger
-  workflow_dispatch:
-    inputs:
-      pio_version:
-        description: 'PlatformIO Core version (e.g., 6.1.18)'
-        required: true
-        type: string
-      force_rebuild:
-        description: 'Force rebuild without cache'
-        required: false
-        default: false
-        type: boolean
-      custom_tags:
-        description: 'Additional custom tags (comma-separated, optional)'
-        required: false
-        default: ''
-        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: jethome-dev-platformio
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      pio_version: ${{ steps.version.outputs.pio_version }}
-    steps:
-      - name: 🏷️ Resolve PlatformIO version
-        id: version
-        run: |
-          VERSION="${{ github.event.inputs.pio_version || env.DEFAULT_PIO_VERSION }}"
-          echo "pio_version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Using PlatformIO version: ${VERSION}"
-
   build:
-    needs: prepare
-    uses: ./.github/workflows/docker-build.yml
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    secrets: inherit
-    with:
-      image_name: jethome-dev-platformio
-      context_path: images/platformio
-      version_tag: pio-${{ needs.prepare.outputs.pio_version }}
-      force_rebuild: ${{ github.event.inputs.force_rebuild == 'true' }}
-      custom_tags: ${{ github.event.inputs.custom_tags || '' }}
-      build_args: |
-        PIO_VERSION=${{ needs.prepare.outputs.pio_version }}
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        pio_version: ['6.1.18']
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: 🔐 Log in to GitHub Container Registry
+        if: github.ref_name == 'master'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🏷️ Prepare platform tag
+        id: platform
+        run: |
+          PLATFORM_PAIR=${{ matrix.platform }}
+          PLATFORM_TAG=$(echo $PLATFORM_PAIR | sed 's/\//-/g')
+          echo "tag=${PLATFORM_TAG}" >> $GITHUB_OUTPUT
+          
+      - name: 🐳 Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: images/platformio
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.ref_name == 'master' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-${{ steps.platform.outputs.tag }}
+          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          build-args: |
+            PIO_VERSION=${{ matrix.pio_version }}
+
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref_name == 'master'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        pio_version: ['6.1.18']
+    steps:
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: 🏷️ Generate version and date tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          DATE_TAG=$(date +%Y.%m.%d)
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          
+      - name: 🎯 Create multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64
