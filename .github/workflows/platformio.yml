@@ -6,13 +6,13 @@ on:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
-      - '.github/workflows/reusable-docker-build.yml'
+      - '.github/workflows/docker-build.yml'
       - 'images/platformio/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/platformio.yml'
-      - '.github/workflows/reusable-docker-build.yml'
+      - '.github/workflows/docker-build.yml'
       - 'images/platformio/**'
   # Manual trigger
   workflow_dispatch:
@@ -27,13 +27,10 @@ on:
         required: false
         default: ''
         type: string
-  # Scheduled monthly rebuild (1st of each month at 2 AM UTC)
-  schedule:
-    - cron: '0 2 1 * *'
 
 jobs:
   build:
-    uses: ./.github/workflows/reusable-docker-build.yml
+    uses: ./.github/workflows/docker-build.yml
     permissions:
       contents: read
       packages: write

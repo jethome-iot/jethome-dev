@@ -1,21 +1,18 @@
 # ESP-IDF Docker Build Workflow
 name: 🐳 ESP-IDF Docker Image
 
-env:
-  ESP_IDF_VERSION: v5.4.1
-
 on:
   push:
     branches: [master, dev]
     paths:
       - '.github/workflows/esp-idf.yml'
-      - '.github/workflows/reusable-docker-build.yml'
+      - '.github/workflows/docker-build.yml'
       - 'images/esp-idf/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/esp-idf.yml'
-      - '.github/workflows/reusable-docker-build.yml'
+      - '.github/workflows/docker-build.yml'
       - 'images/esp-idf/**'
   # Manual trigger
   workflow_dispatch:
@@ -37,35 +34,8 @@ on:
         type: string
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      esp_idf_version: ${{ steps.prepare.outputs.esp_idf_version }}
-      custom_tags: ${{ steps.prepare.outputs.custom_tags }}
-    steps:
-      - name: 🏷️ Prepare ESP-IDF version and tags
-        id: prepare
-        run: |
-          ESP_IDF_VERSION="${{ github.event.inputs.esp_idf_version || env.ESP_IDF_VERSION }}"
-          CUSTOM_TAGS="${{ github.event.inputs.custom_tags || '' }}"
-          
-          # Add ESP-IDF version tag only on master branch
-          if [ "${{ github.ref_name }}" == "master" ]; then
-            if [ -n "$CUSTOM_TAGS" ]; then
-              TAGS="${CUSTOM_TAGS},${ESP_IDF_VERSION}"
-            else
-              TAGS="${ESP_IDF_VERSION}"
-            fi
-          else
-            TAGS="${CUSTOM_TAGS}"
-          fi
-          
-          echo "esp_idf_version=${ESP_IDF_VERSION}" >> $GITHUB_OUTPUT
-          echo "custom_tags=${TAGS}" >> $GITHUB_OUTPUT
-  
   build:
-    needs: prepare
-    uses: ./.github/workflows/reusable-docker-build.yml
+    uses: ./.github/workflows/docker-build.yml
     permissions:
       contents: read
       packages: write
@@ -74,7 +44,7 @@ jobs:
       image_name: jethome-dev-esp-idf
       context_path: images/esp-idf
       force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
-      custom_tags: ${{ needs.prepare.outputs.custom_tags }}
+      custom_tags: ${{ github.event.inputs.custom_tags || '' }}
       build_args: |
-        ESP_IDF_VERSION=${{ needs.prepare.outputs.esp_idf_version }}
+        ESP_IDF_VERSION=${{ github.event.inputs.esp_idf_version || 'v5.4.1' }}
 

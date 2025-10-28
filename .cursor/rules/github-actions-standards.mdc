@@ -35,7 +35,67 @@ Each image should have its own workflow file:
 - Naming: `.github/workflows/<image-name>.yml`
 - Trigger on relevant file changes only
 - Use branch-based tagging (dev, latest, stable)
-- Use reusable workflow: `.github/workflows/reusable-docker-build.yml`
+- Use reusable workflow: `.github/workflows/docker-build.yml`
+
+### Workflow Structure
+
+Standard pattern for image workflows:
+
+```yaml
+name: 🐳 <Image Name> Docker Image
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/<image-name>.yml'
+      - '.github/workflows/docker-build.yml'
+      - 'images/<image-name>/**'
+  pull_request:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/<image-name>.yml'
+      - '.github/workflows/docker-build.yml'
+      - 'images/<image-name>/**'
+  workflow_dispatch:
+    inputs:
+      version_var:
+        description: 'Version description'
+        required: false
+        default: 'v1.0.0'
+        type: string
+      force_rebuild:
+        description: 'Force rebuild without cache'
+        required: false
+        default: false
+        type: boolean
+      custom_tags:
+        description: 'Additional custom tags (comma-separated, optional)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build:
+    uses: ./.github/workflows/docker-build.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      image_name: jethome-dev-<image-name>
+      context_path: images/<image-name>
+      force_rebuild: ${{ github.event.inputs.force_rebuild == true }}
+      custom_tags: ${{ github.event.inputs.custom_tags || '' }}
+      build_args: |
+        VERSION_VAR=${{ github.event.inputs.version_var || 'v1.0.0' }}
+```
+
+### Version Handling
+
+- Put version defaults in `workflow_dispatch` input defaults
+- Pass versions to Dockerfile via `build_args`
+- Easy to override manually via GitHub UI
 
 ## Local Testing
 
