@@ -117,10 +117,10 @@ Requires [act](https://github.com/nektos/act) to be installed.
 **Test Workflows on GitHub Actions:**
 
 ```bash
-# Trigger workflow with force rebuild (bypasses cache)
-gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
-  -f esp_idf_version=v5.4.1 \
-  -f force_rebuild=true
+# Workflows are triggered automatically by pushing to dev or master branches
+# Push to dev for testing (build-only, no push to GHCR)
+git checkout dev
+git push origin dev
 
 # Monitor workflow progress
 gh run list --workflow="🐳 ESP-IDF Docker Image" --limit 5

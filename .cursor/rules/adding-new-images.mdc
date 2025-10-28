@@ -50,15 +50,21 @@ Images published as: `ghcr.io/jethome-iot/jethome-dev-<image-name>`
 ## GitHub Actions Workflow
 
 Create `.github/workflows/<image-name>.yml`:
-- Use reusable workflow: `.github/workflows/docker-build.yml`
+- Use inline matrix builds for multi-platform support (amd64/arm64)
 - Set triggers for image directory and workflow file changes
-- Define default version in `env` section
-- Add `prepare` job to resolve versions
-- Pass `image_name`, `context_path`, and `version_tag` parameters
-- Pass version to Dockerfile via `build_args`
-- Include manual trigger with required version input
+- Define versions directly in matrix strategy
+- Build job creates platform-specific images in parallel
+- Create-manifest job combines platform images into multi-arch manifest
+- Pass version to Dockerfile via `build_args` in matrix
 - Images only pushed to GHCR from master branch
+- Dev and PR branches: build-only validation (no push)
 - Test locally with `act -j build -W .github/workflows/<image-name>.yml --dryrun`
+
+**Workflow structure:**
+- `build` job: Matrix with platforms [amd64, arm64] × versions
+- `create-manifest` job: Combines platform images (only on master)
+- Platform-specific tags: `<prefix>-<version>-linux-amd64`, `<prefix>-<version>-linux-arm64`
+- Multi-arch tags: `latest`, `stable`, `<prefix>-<version>`, date, SHA
 
 ## Testing
 
@@ -93,17 +99,19 @@ When building for `linux/amd64,linux/arm64`:
 
 Use `gh` CLI for remote workflow testing:
 
-**Trigger workflow manually:**
-```bash
-# ESP-IDF example
-gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
-  -f esp_idf_version=v5.4.1 \
-  -f force_rebuild=true
+**Trigger workflows:**
 
-# PlatformIO example
-gh workflow run "🐳 PlatformIO Docker Image" --ref master \
-  -f pio_version=6.1.18 \
-  -f force_rebuild=true
+Workflows are triggered automatically by pushing to master or dev branches:
+
+```bash
+# Push to dev branch for testing (build-only, no push to GHCR)
+git checkout dev
+git push origin dev
+
+# After validation, merge to master (builds and pushes to GHCR)
+git checkout master
+git merge dev
+git push origin master
 ```
 
 **Monitor workflow status:**
@@ -125,11 +133,22 @@ gh run view <run-id> --log
 gh run view <run-id> --log-failed
 ```
 
-**Automated monitoring script:**
+**Monitor latest run:**
 ```bash
-# Trigger and monitor until completion
-RUN_ID=$(gh workflow run "🐳 ESP-IDF Docker Image" --ref master \
-  -f esp_idf_version=v5.4.1 -f force_rebuild=true --json 2>&1 | \
-  gh run list --limit 1 --json databaseId -q '.[0].databaseId')
+# Get latest workflow run
+WORKFLOW="🐳 ESP-IDF Docker Image"
+RUN_ID=$(gh run list --workflow="$WORKFLOW" --limit 1 \
+  --json databaseId -q '.[0].databaseId')
+
+# Monitor until completion
 gh run watch $RUN_ID
+
+# Check final status
+CONCLUSION=$(gh run view $RUN_ID --json conclusion -q '.conclusion')
+if [ "$CONCLUSION" = "success" ]; then
+  echo "✅ Workflow succeeded"
+else
+  echo "❌ Workflow failed"
+  gh run view $RUN_ID --log-failed
+fi
 ```
