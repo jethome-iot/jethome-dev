@@ -13,6 +13,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Image tag for local builds
+IMAGE_TAG="${IMAGE_TAG:-local}"
+
 # Available images
 declare -A IMAGES=(
     ["esp-idf"]="images/esp-idf"
@@ -41,14 +44,18 @@ Arguments:
     IMAGE_NAME    Name of the image to build (esp-idf, platformio)
     all           Build all images
 
+Environment Variables:
+    IMAGE_TAG     Docker image tag to use (default: local)
+
 Without arguments, runs in interactive mode.
 
 Examples:
-    $0 esp-idf           # Build ESP-IDF image
-    $0 -r esp-idf        # Build and run ESP-IDF image interactively
-    $0 platformio --run  # Build and run PlatformIO image interactively
-    $0 all               # Build all images
-    $0                   # Interactive mode
+    $0 esp-idf                    # Build ESP-IDF image with 'local' tag
+    $0 -r esp-idf                 # Build and run ESP-IDF image interactively
+    $0 platformio --run           # Build and run PlatformIO image interactively
+    IMAGE_TAG=latest $0 esp-idf   # Build with custom tag
+    $0 all                        # Build all images
+    $0                            # Interactive mode
 
 EOF
 }
@@ -58,11 +65,11 @@ run_image() {
     local name=$1
     
     print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    print_color "$GREEN" "Running: jethome-dev-${name}:latest"
+    print_color "$GREEN" "Running: jethome-dev-${name}:${IMAGE_TAG}"
     print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
-    docker run -it --rm -v "$(pwd):/workspace" "jethome-dev-${name}:latest"
+    docker run -it --rm -v "$(pwd):/workspace" "jethome-dev-${name}:${IMAGE_TAG}"
 }
 
 # Build a specific image
@@ -78,19 +85,19 @@ build_image() {
     fi
     
     print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    print_color "$BLUE" "Building: jethome-dev-${name}"
+    print_color "$BLUE" "Building: jethome-dev-${name}:${IMAGE_TAG}"
     print_color "$BLUE" "Context:  ${context}"
     print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
-    if ! docker build -t "jethome-dev-${name}:latest" "$context"; then
+    if ! docker build -t "jethome-dev-${name}:${IMAGE_TAG}" "$context"; then
         print_color "$RED" "✗ Build failed for ${name}"
         return 1
     fi
     
     echo
     print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    print_color "$GREEN" "✓ Successfully built: jethome-dev-${name}:latest"
+    print_color "$GREEN" "✓ Successfully built: jethome-dev-${name}:${IMAGE_TAG}"
     print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
@@ -103,15 +110,15 @@ build_image() {
     
     print_color "$YELLOW" "To enter the image in interactive mode:"
     echo
-    print_color "$BLUE" "  docker run -it --rm -v \$(pwd):/workspace jethome-dev-${name}:latest"
+    print_color "$BLUE" "  docker run -it --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG}"
     echo
     print_color "$YELLOW" "To build your project:"
     echo
     
     if [ "$name" == "esp-idf" ]; then
-        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:latest idf.py build"
+        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG} idf.py build"
     elif [ "$name" == "platformio" ]; then
-        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:latest pio run"
+        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG} pio run"
     fi
     
     echo

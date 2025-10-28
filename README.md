@@ -79,7 +79,7 @@ The repository includes helper scripts in the `scripts/` directory for local dev
 # Interactive mode - select image to build and run
 ./scripts/build.sh
 
-# Build specific image
+# Build specific image (tagged as 'local')
 ./scripts/build.sh esp-idf
 ./scripts/build.sh platformio
 
@@ -87,11 +87,14 @@ The repository includes helper scripts in the `scripts/` directory for local dev
 ./scripts/build.sh -r esp-idf
 ./scripts/build.sh --run platformio
 
+# Build with custom tag
+IMAGE_TAG=dev ./scripts/build.sh esp-idf
+
 # Build all images
 ./scripts/build.sh all
 ```
 
-The script supports interactive mode where you can select which image to build and optionally run it. Use the `-r` or `--run` flag to automatically run the image in interactive mode after a successful build.
+The script builds images with the `local` tag by default to distinguish them from registry images. Use the `-r` or `--run` flag to automatically run the image in interactive mode after a successful build. You can customize the tag using the `IMAGE_TAG` environment variable.
 
 **Test Workflows with act:**
 
@@ -115,8 +118,10 @@ Requires [act](https://github.com/nektos/act) to be installed.
 
 ```bash
 cd images/platformio
-docker build -t jethome-dev-platformio .
+docker build -t jethome-dev-platformio:local .
 ```
+
+**Note:** Locally built images use the `local` tag by default to distinguish them from registry images tagged with `latest`.
 
 ## Project Structure
 
