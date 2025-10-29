@@ -7,6 +7,7 @@ Docker-based development environment for embedded systems, providing containeriz
 | Image | Description | Documentation |
 |-------|-------------|---------------|
 | [esp-idf](./images/esp-idf/) | ESP-IDF 5.4.1 with QEMU, pytest, and testing tools for all ESP32 chips | [README](./images/esp-idf/README.md) |
+| [esp-matter](./images/esp-matter/) | ESP-Matter v1.4.2 SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 (all variants) + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
@@ -25,6 +26,22 @@ docker run --rm -v $(pwd):/workspace \
 # Interactive development
 docker run -it --rm -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+```
+
+### ESP-Matter
+
+```bash
+# Pull image
+docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
+
+# Build Matter project
+docker run --rm -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest \
+  idf.py build
+
+# Interactive development
+docker run -it --rm -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
 ```
 
 ### PlatformIO
@@ -55,6 +72,16 @@ docker run -it --rm -v $(pwd):/workspace \
 - **Code Quality**: pylint, flake8, black, clang-format, clang-tidy
 - **Documentation**: Sphinx, sphinx-rtd-theme
 - **Tools**: jq, vim, nano, rsync, git
+
+### ESP-Matter Image
+
+- **Base**: jethome-dev-esp-idf:idf-v5.4.1 (inherits all ESP-IDF tools)
+- **ESP-Matter**: v1.4.2 with ConnectedHomeIP SDK
+- **Matter Protocol**: Support for Matter 1.0 and 1.1 (partial)
+- **Supported Chips**: ESP32-C3, ESP32-C6, ESP32-S3, ESP32-H2 (full Matter support)
+- **Features**: Matter device clusters, commissioning, OTA updates
+- **Examples**: Light, switch, bridge, temperature sensor, door lock, fan, thermostat
+- **Note**: Host tools (chip-tool, chip-cert) not included for minimal image size
 
 ### PlatformIO Image
 
@@ -147,10 +174,13 @@ docker build -t jethome-dev-platformio:local .
 jethome-dev/
 ├── .github/
 │   └── workflows/           # GitHub Actions workflows
-│       ├── esp-idf.yml      # ESP-IDF image workflow
+│       ├── esp-idf.yml      # ESP-IDF and ESP-Matter image workflows
 │       └── platformio.yml   # PlatformIO image workflow
 ├── images/
 │   ├── esp-idf/             # ESP-IDF 5.4.1 development image
+│   │   ├── Dockerfile       # Image definition
+│   │   └── README.md        # Detailed documentation
+│   ├── esp-matter/          # ESP-Matter v1.4.2 development image
 │   │   ├── Dockerfile       # Image definition
 │   │   └── README.md        # Detailed documentation
 │   └── platformio/          # PlatformIO development image
@@ -168,6 +198,7 @@ jethome-dev/
 
 Images are published to GitHub Container Registry (GHCR):
 - **ESP-IDF**: `ghcr.io/jethome-iot/jethome-dev-esp-idf`
+- **ESP-Matter**: `ghcr.io/jethome-iot/jethome-dev-esp-matter`
 - **PlatformIO**: `ghcr.io/jethome-iot/jethome-dev-platformio`
 
 ## Use Cases
