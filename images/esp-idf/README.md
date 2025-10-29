@@ -98,69 +98,6 @@ All ESP32 series chips are supported:
 
 ## Usage Examples
 
-### Basic ESP-IDF Commands
-
-Inside the container (ESP-IDF environment is automatically activated):
-
-```bash
-# Create new project
-idf.py create-project my_project
-
-# Configure project
-idf.py menuconfig
-
-# Build project
-idf.py build
-
-# Clean build
-idf.py fullclean
-
-# Flash to device (requires hardware access)
-idf.py flash
-
-# Monitor serial output
-idf.py monitor
-```
-
-### Testing with pytest
-
-ESP-IDF supports pytest-embedded for automated testing:
-
-```python
-# test_example.py
-import pytest
-
-@pytest.mark.esp32
-@pytest.mark.qemu
-def test_app(dut):
-    dut.expect('Hello world!')
-```
-
-Run tests:
-
-```bash
-# Test on QEMU
-pytest --target=esp32 --embedded-services=qemu
-
-# Test on real hardware
-pytest --target=esp32 --embedded-services=esp,serial
-```
-
-### Code Coverage
-
-Generate coverage reports:
-
-```bash
-# Build with coverage
-idf.py build -DCMAKE_BUILD_TYPE=Debug
-
-# Run tests
-pytest --cov
-
-# Generate HTML report
-gcovr --html-details coverage.html
-```
-
 ### CI/CD Integration
 
 **GitHub Actions:**
@@ -278,15 +215,6 @@ docker run --rm -u $(id -u):$(id -g) \
   -v ~/.cache/ccache-esp-idf:/opt/ccache \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   ccache -s
-```
-
-### Code Quality Checks
-
-```bash
-# Python linting
-pylint main/python_code.py
-flake8 main/
-black --check main/
 ```
 
 ## Environment Variables

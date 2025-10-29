@@ -24,17 +24,24 @@ Must be:
 - **Comprehensive**: All details about the image
 - **Accurate**: No misleading claims
 - **Practical**: Real-world usage examples
+- **Image-Focused**: About using the image, not framework tutorials
+
+**Important:** READMEs should focus on **how to use the Docker image**, not **how to develop with the framework inside it**. See [Image README Standards](image-readme-standards.mdc) for detailed guidelines.
 
 Required sections:
 1. Overview
 2. What's Inside (specific versions)
 3. Quick Start
-4. Usage Examples
+4. Usage Examples (Docker commands, CI/CD integration)
 5. Environment Variables
 6. Building the Image
 7. Version Information table
 
 Sections to AVOID:
+- Framework tutorials (create project, configure, etc.)
+- Development workflows (step-by-step guides)
+- Code examples (framework-specific code)
+- Feature explanations (framework features, not image features)
 - Troubleshooting (users can refer to upstream documentation)
 - Design Decisions (keep documentation focused on usage)
 

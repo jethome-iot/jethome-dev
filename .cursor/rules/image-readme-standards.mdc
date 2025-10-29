@@ -1,0 +1,214 @@
+# Image README Standards
+
+## Overview
+
+Image READMEs should focus on **how to use the Docker image**, not **how to develop with the framework/SDK inside it**. Users should refer to official framework documentation for tutorials and development workflows.
+
+## What to Include
+
+### ✅ Image-Specific Content
+
+**Required Sections:**
+1. **Overview** - What this image provides and its purpose
+2. **What's Inside** - Installed tools, versions, and components
+3. **Quick Start** - Pull, build, run commands using the image
+4. **Supported Chips/Platforms** - What the image supports
+5. **Usage Examples** - Docker commands showing image usage
+   - CI/CD Integration (GitHub Actions, GitLab CI)
+   - Docker Compose examples
+   - Volume mounting patterns
+   - Image-specific configurations (e.g., ccache setup)
+6. **Environment Variables** - Variables set by the image
+7. **Building the Image** - How to build locally, build args
+8. **Version Information** - Component versions in the image
+9. **Additional Resources** - Links to framework documentation
+10. **License** - License information
+11. **Related Images** - Links to other project images
+
+**Optional Sections:**
+- **Notes** - Image-specific notes (e.g., excluded tools, limitations)
+- **Multi-Platform Support** - Architecture information
+
+### ❌ Framework-Specific Content to Avoid
+
+**DO NOT include:**
+1. **Framework Tutorials** - How to create projects, configure, etc.
+   - Example: "Create new project: `idf.py create-project`"
+   - Example: "Configure project: `idf.py menuconfig`"
+   - These belong in framework documentation
+
+2. **Development Workflows** - Step-by-step development guides
+   - Example: "Matter Device Development Workflow"
+   - Example: "Define Data Model → Implement Callbacks → Build → Flash"
+   - Users should refer to official framework docs
+
+3. **Code Examples** - Framework code snippets
+   - Example: C/C++ code for implementing features
+   - Example: Python test fixtures (unless showing image usage)
+
+4. **Framework-Specific Features** - Detailed feature explanations
+   - Example: "Matter Protocol Versions", "Commissioning Flow"
+   - Example: "OTA Updates", "Bridge Mode limitations"
+   - Brief mentions are OK, but not detailed explanations
+
+5. **Testing Methodology** - Framework testing patterns
+   - Example: pytest fixture patterns, test decorators
+   - Exception: CI/CD examples showing how to run tests with the image
+
+6. **Tool Usage Tutorials** - How to use installed tools
+   - Example: "Python linting: `pylint main/`"
+   - Exception: Image-specific tool configurations
+
+## Structure Template
+
+```markdown
+# [Image Name] [Version]
+
+Brief one-line description optimized for CI/CD and development.
+
+## Overview
+
+What this image provides and its purpose.
+
+## What's Inside
+
+**Component Category:**
+- Component 1 (version)
+- Component 2 (version)
+
+## Quick Start
+
+### Pull Image
+### Build Your Project
+### Interactive Development
+
+## Supported Chips/Platforms
+
+Table or list of supported targets.
+
+## Usage Examples
+
+### CI/CD Integration
+**GitHub Actions:**
+**GitLab CI:**
+
+### Docker Compose for Local Development
+
+### [Image-Specific Feature]
+Example: Using ccache, volume mounts, etc.
+
+## Environment Variables
+
+Variables set by the image.
+
+## Building the Image
+
+### Standard Build
+### Custom Build Arguments
+### Multi-Platform Support
+
+## Version Information
+
+Table of component versions.
+
+## Notes
+
+Image-specific notes (optional).
+
+## Additional Resources
+
+Links to framework documentation.
+
+## License
+
+## Related Images
+```
+
+## Examples
+
+### ✅ Good: Image-Focused
+
+```markdown
+## Usage Examples
+
+### CI/CD Integration
+
+**GitHub Actions:**
+
+\```yaml
+name: ESP-IDF Build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build firmware
+        run: idf.py build
+\```
+```
+
+### ❌ Bad: Framework Tutorial
+
+```markdown
+## Development Workflow
+
+### 1. Create Project
+
+\```bash
+idf.py create-project my_app
+cd my_app
+\```
+
+### 2. Configure
+
+\```bash
+idf.py menuconfig
+# Navigate to: Component config → ESP32-specific
+\```
+
+### 3. Implement Features
+
+\```c
+void app_main(void) {
+    printf("Hello World\n");
+}
+\```
+```
+
+## Guidelines
+
+1. **Focus on Docker Usage** - Commands should show Docker operations
+2. **Link to Official Docs** - Provide links for framework-specific help
+3. **Keep It Concise** - Target ~250-350 lines for most images
+4. **Show Real Examples** - Use actual Docker commands, not pseudocode
+5. **Update Version Info** - Keep version table accurate
+
+## When Framework Content is Acceptable
+
+**Minimal framework references are OK when:**
+- Showing what commands work in the image: `idf.py build`
+- Demonstrating image features: ccache setup, volume mounts
+- CI/CD integration: complete pipeline examples
+
+**Framework content is NOT OK when:**
+- Teaching how to use the framework itself
+- Explaining framework concepts in detail
+- Providing code examples for framework development
+- Walking through development workflows
+
+## Enforcement
+
+When creating or updating image READMEs:
+1. Review each section: "Does this explain the image or the framework?"
+2. If it explains the framework, remove it or link to official docs
+3. Keep README length proportional to image complexity
+4. Ensure all code examples include Docker commands
+
+## Related Rules
+
+- [Documentation Standards](documentation-standards.mdc)
+- [Adding New Docker Images](adding-new-images.mdc)
