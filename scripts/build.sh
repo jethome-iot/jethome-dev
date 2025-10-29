@@ -16,11 +16,35 @@ NC='\033[0m' # No Color
 # Image tag for local builds
 IMAGE_TAG="${IMAGE_TAG:-local}"
 
-# Available images
-declare -A IMAGES=(
-    ["esp-idf"]="images/esp-idf"
-    ["platformio"]="images/platformio"
-)
+# Discover available images from images/ directory
+# Each subdirectory with a Dockerfile is considered an image
+declare -A IMAGES=()
+
+discover_images() {
+    local images_dir="images"
+    
+    if [ ! -d "$images_dir" ]; then
+        echo "Error: $images_dir directory not found"
+        exit 1
+    fi
+    
+    for dir in "$images_dir"/*/ ; do
+        if [ -d "$dir" ]; then
+            local name=$(basename "$dir")
+            if [ -f "$dir/Dockerfile" ]; then
+                IMAGES["$name"]="$images_dir/$name"
+            fi
+        fi
+    done
+    
+    if [ ${#IMAGES[@]} -eq 0 ]; then
+        echo "Error: No images found in $images_dir directory"
+        exit 1
+    fi
+}
+
+# Discover images on script start
+discover_images
 
 # Print colored message
 print_color() {
@@ -41,8 +65,15 @@ Options:
     -h, --help    Show this help message
 
 Arguments:
-    IMAGE_NAME    Name of the image to build (esp-idf, platformio)
+    IMAGE_NAME    Name of the image to build (auto-discovered from images/ directory)
     all           Build all images
+
+Available images:
+EOF
+    for name in $(printf '%s\n' "${!IMAGES[@]}" | sort); do
+        echo "    - $name"
+    done
+    cat << EOF
 
 Environment Variables:
     IMAGE_TAG     Docker image tag to use (default: local)
@@ -108,21 +139,13 @@ build_image() {
         return 0
     fi
     
-    print_color "$YELLOW" "To enter the image in interactive mode:"
+    print_color "$YELLOW" "To run the image interactively:"
     echo
     print_color "$BLUE" "  docker run -it --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG}"
     echo
-    print_color "$YELLOW" "To build your project:"
+    print_color "$YELLOW" "For usage examples and build commands, see:"
     echo
-    
-    if [ "$name" == "esp-idf" ]; then
-        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG} idf.py build"
-    elif [ "$name" == "platformio" ]; then
-        print_color "$BLUE" "  docker run --rm -v \$(pwd):/workspace jethome-dev-${name}:${IMAGE_TAG} pio run"
-    fi
-    
-    echo
-    print_color "$YELLOW" "See ${context}/README.md for more usage examples."
+    print_color "$BLUE" "  ${context}/README.md"
     echo
 }
 
