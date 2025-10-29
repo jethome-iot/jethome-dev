@@ -145,6 +145,10 @@ docker build -t jethome-dev-platformio:local .
 
 ```
 jethome-dev/
+├── .github/
+│   └── workflows/           # GitHub Actions workflows
+│       ├── esp-idf.yml      # ESP-IDF image workflow
+│       └── platformio.yml   # PlatformIO image workflow
 ├── images/
 │   ├── esp-idf/             # ESP-IDF 5.4.1 development image
 │   │   ├── Dockerfile       # Image definition
