@@ -144,7 +144,7 @@ jobs:
           cache-from: type=gha,scope=esp-matter-${{ steps.platform.outputs.tag }}
           cache-to: type=gha,mode=max,scope=esp-matter-${{ steps.platform.outputs.tag }}
           build-args: |
-            ESP_IDF_VERSION=${{ matrix.esp_idf_version }}
+            BASE_IMAGE_TAG=idf-${{ matrix.esp_idf_version }}-${{ steps.platform.outputs.tag }}
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
 
   create-manifest-matter:

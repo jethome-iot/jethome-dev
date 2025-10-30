@@ -252,13 +252,13 @@ docker build -t jethome-dev-esp-matter .
 
 ```bash
 docker build \
-  --build-arg ESP_IDF_VERSION=v5.4.1 \
+  --build-arg BASE_IMAGE_TAG=idf-v5.4.1 \
   --build-arg ESP_MATTER_VERSION=v1.4.2 \
   -t jethome-dev-esp-matter .
 ```
 
 Available build arguments:
-- `ESP_IDF_VERSION` - ESP-IDF version (default: `v5.4.1`)
+- `BASE_IMAGE_TAG` - ESP-IDF base image tag (default: `idf-v5.4.1`)
 - `ESP_MATTER_VERSION` - ESP-Matter version tag (default: `v1.4.2`)
 
 ### Multi-Platform Support

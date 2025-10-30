@@ -1,12 +1,11 @@
 # ESP-Matter Development Image
 # Build arguments for version pinning
-ARG ESP_IDF_VERSION=v5.4.1
+ARG BASE_IMAGE_TAG=idf-v5.4.1
 ARG ESP_MATTER_VERSION=v1.4.2
 
 # Use our esp-idf image as base
-# For local builds: Uses idf-${ESP_IDF_VERSION} tag
-# For CI/CD: Override with --build-arg BASE_IMAGE_TAG=idf-${ESP_IDF_VERSION}-linux-${ARCH}
-ARG BASE_IMAGE_TAG=idf-${ESP_IDF_VERSION}
+# For local builds: Uses default idf-v5.4.1 tag
+# For CI/CD: Override with --build-arg BASE_IMAGE_TAG=idf-v5.4.1-linux-${ARCH}
 FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:${BASE_IMAGE_TAG}
 
 # Re-declare build arguments after FROM
