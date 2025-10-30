@@ -2,6 +2,9 @@
 
 Docker-based development environment for embedded systems, providing containerized build environments for CI/CD workflows and local development.
 
+[![ESP-IDF Docker Image](https://github.com/jethome-iot/jethome-dev/actions/workflows/esp-idf.yml/badge.svg?branch=master)](https://github.com/jethome-iot/jethome-dev/actions/workflows/esp-idf.yml)
+[![PlatformIO Docker Image](https://github.com/jethome-iot/jethome-dev/actions/workflows/platformio.yml/badge.svg?branch=master)](https://github.com/jethome-iot/jethome-dev/actions/workflows/platformio.yml)
+
 ## Current Images
 
 | Image | Description | Documentation |
