@@ -31,10 +31,28 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 
 ## Quick Start
 
+### Available Tags
+
+| Tag Type | Example | Usage |
+|----------|---------|-------|
+| **Latest** | `latest` | Always points to newest build (floating) |
+| **Stable** | `stable` | Same as latest (semantic preference) |
+| **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
+| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+
+**Tag Recommendations:**
+- **Development**: Use `latest` for convenience
+- **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
+- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+
 ### Pull Image
 
 ```bash
+# Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+
+# Specific version (recommended for CI/CD)
+docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version>
 ```
 
 ### Build Your Project

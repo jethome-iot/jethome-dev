@@ -202,6 +202,8 @@ Images are published to GitHub Container Registry (GHCR):
 - **ESP-Matter**: `ghcr.io/jethome-iot/jethome-dev-esp-matter`
 - **PlatformIO**: `ghcr.io/jethome-iot/jethome-dev-platformio`
 
+See individual image documentation for available tags and usage examples.
+
 ## Use Cases
 
 - **CI/CD**: Automated firmware builds in GitHub Actions, GitLab CI

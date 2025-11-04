@@ -9,12 +9,12 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 ## What's Inside
 
 **Base Environment:**
-- Python 3.11 slim (Debian Bookworm)
-- PlatformIO Core (latest)
+- Python slim (Debian)
+- PlatformIO Core
 
 **Pre-installed Platforms:**
-- `espressif32@6.11.0` - ESP32 platform (all chip variants)
-- `native@1.2.1` - Native platform for unit testing
+- `espressif32` - ESP32 platform (all chip variants)
+- `native` - Native platform for unit testing
 
 **Build Tools:**
 - build-essential (gcc, g++, make)
@@ -27,14 +27,32 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 - jinja2 - Template engine
 
 **Testing:**
-- Unity 2.6.0 - Globally installed test framework
+- Unity - Globally installed test framework
 
 ## Quick Start
+
+### Available Tags
+
+| Tag Type | Example | Usage |
+|----------|---------|-------|
+| **Latest** | `latest` | Always points to newest build (floating) |
+| **Stable** | `stable` | Same as latest (semantic preference) |
+| **Version** | `pio-v<version>` | Pin to specific PlatformIO version (recommended for CI/CD) |
+| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+
+**Tag Recommendations:**
+- **Development**: Use `latest` for convenience
+- **CI/CD**: Use version tags (`pio-v<version>`) for reproducibility
+- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
 
 ### Pull Image
 
 ```bash
+# Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
+
+# Specific version (recommended for CI/CD)
+docker pull ghcr.io/jethome-iot/jethome-dev-platformio:pio-v<version>
 ```
 
 ### Build Your Project
@@ -219,33 +237,23 @@ docker build -t jethome-dev-platformio .
 
 ```bash
 docker build \
-  --build-arg PIO_VERSION=6.1.18 \
-  --build-arg ESP32_PLATFORM_VERSION=6.11.0 \
-  --build-arg NATIVE_PLATFORM_VERSION=1.2.1 \
-  --build-arg UNITY_VERSION=2.6.0 \
+  --build-arg PIO_VERSION=<version> \
+  --build-arg ESP32_PLATFORM_VERSION=<version> \
+  --build-arg NATIVE_PLATFORM_VERSION=<version> \
+  --build-arg UNITY_VERSION=<version> \
   -t jethome-dev-platformio .
 ```
 
 Available build arguments:
-- `PIO_VERSION` - PlatformIO Core version (default: 6.1.18)
-- `ESP32_PLATFORM_VERSION` - Espressif32 platform version (default: 6.11.0)
-- `NATIVE_PLATFORM_VERSION` - Native platform version (default: 1.2.1)
-- `UNITY_VERSION` - Unity test framework version (default: 2.6.0)
+- `PIO_VERSION` - PlatformIO Core version (default: see Dockerfile)
+- `ESP32_PLATFORM_VERSION` - Espressif32 platform version (default: see Dockerfile)
+- `NATIVE_PLATFORM_VERSION` - Native platform version (default: see Dockerfile)
+- `UNITY_VERSION` - Unity test framework version (default: see Dockerfile)
 - `PIO_ENVS` - Environments for pre-build (currently disabled)
 
 ### Multi-Platform Support
 
 This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
-
-## Version Information
-
-| Component | Version | Notes |
-|-----------|---------|-------|
-| Base Image | Python 3.11 slim | Debian Bookworm |
-| PlatformIO Core | 6.1.18 | Latest stable release |
-| ESP32 Platform | 6.11.0 | Version 6.12.0 has compatibility issues |
-| Native Platform | 1.2.1 | For unit testing |
-| Unity Framework | 2.6.0 | Globally installed |
 
 ## License
 

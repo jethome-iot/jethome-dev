@@ -1,6 +1,6 @@
-# ESP-Matter v1.4.2 Development Image
+# ESP-Matter Development Image
 
-Docker image for ESP32 Matter device development with ESP-Matter SDK v1.4.2. Built on our ESP-IDF image, it provides a complete environment for developing Matter-compatible smart home devices.
+Docker image for ESP32 Matter device development with ESP-Matter SDK. Built on our ESP-IDF image, it provides a complete environment for developing Matter-compatible smart home devices.
 
 ## Overview
 
@@ -9,15 +9,15 @@ This image extends the `jethome-dev-esp-idf` image with Espressif's ESP-Matter S
 ## What's Inside
 
 **Base Image:**
-- `jethome-dev-esp-idf:idf-v5.4.1` - Inherits all ESP-IDF tools
-  - ESP-IDF 5.4.1 with all ESP32 toolchains
+- `jethome-dev-esp-idf` - Inherits all ESP-IDF tools
+  - ESP-IDF with all ESP32 toolchains
   - QEMU emulation (Xtensa and RISC-V)
   - pytest, pytest-embedded, testing tools
-  - Python 3.12.3, Ubuntu 24.04 LTS
-  - Build tools: ccache, jq, vim, nano, rsync
+  - Python, Ubuntu LTS
+  - Build tools: ccache, jq
 
 **ESP-Matter SDK:**
-- ESP-Matter v1.4.2
+- ESP-Matter
 - ConnectedHomeIP SDK (Matter reference implementation)
 - Matter device libraries and clusters
 - Example applications (light, switch, bridge, etc.)
@@ -38,10 +38,30 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 
 ## Quick Start
 
+### Available Tags
+
+| Tag Type | Example | Usage |
+|----------|---------|-------|
+| **Latest** | `latest` | Always points to newest build (floating) |
+| **Stable** | `stable` | Same as latest (semantic preference) |
+| **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
+| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+
+**Tag Recommendations:**
+- **Development**: Use `latest` for convenience
+- **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
+- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+
+**Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
+
 ### Pull Image
 
 ```bash
+# Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
+
+# Specific version (recommended for CI/CD)
+docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:idf-v<idf-ver>-matter-v<matter-ver>
 ```
 
 ### Build Matter Example
@@ -252,30 +272,18 @@ docker build -t jethome-dev-esp-matter .
 
 ```bash
 docker build \
-  --build-arg BASE_IMAGE_TAG=idf-v5.4.1 \
-  --build-arg ESP_MATTER_VERSION=v1.4.2 \
+  --build-arg BASE_IMAGE_TAG=idf-v<version> \
+  --build-arg ESP_MATTER_VERSION=v<version> \
   -t jethome-dev-esp-matter .
 ```
 
 Available build arguments:
-- `BASE_IMAGE_TAG` - ESP-IDF base image tag (default: `idf-v5.4.1`)
-- `ESP_MATTER_VERSION` - ESP-Matter version tag (default: `v1.4.2`)
+- `BASE_IMAGE_TAG` - ESP-IDF base image tag (default: see Dockerfile)
+- `ESP_MATTER_VERSION` - ESP-Matter version tag (default: see Dockerfile)
 
 ### Multi-Platform Support
 
 This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
-
-## Version Information
-
-| Component | Version | Notes |
-|-----------|---------|-------|
-| Base Image | jethome-dev-esp-idf:idf-v5.4.1 | Our ESP-IDF image |
-| ESP-IDF | 5.4.1 | From base image |
-| ESP-Matter | v1.4.2 | Matter SDK for ESP32 |
-| ConnectedHomeIP | Included as submodule | Matter reference implementation |
-| Python | 3.12.3 | From base image |
-| Ubuntu | 24.04 LTS | From base image |
-| QEMU | 9.0.0 | From base image |
 
 ## Notes
 
