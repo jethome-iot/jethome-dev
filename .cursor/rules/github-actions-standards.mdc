@@ -129,9 +129,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:stable
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }}
           cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}
           cache-to: type=gha,mode=max,scope=${{ env.<IMAGE_NAME> }}
@@ -231,9 +231,10 @@ jobs:
 - **No date tags** - Version tags are semantic and clear; SHA tags provide precise tracking
 - All tags created simultaneously in single build step via `docker/build-push-action`
 
-**Tag Order:**
+**Tag Order (Critical for GHCR Display):**
 - List tags in the `tags:` field of `docker/build-push-action`
-- Order: `latest`, `stable`, version tag, `sha-<commit>` (last)
+- **Version tag MUST be first** - GHCR displays the first tag as the primary tag
+- Order: `<prefix>-v<version>` (first), `latest`, `stable`, `sha-<commit>` (last)
 - All tags point to the same multi-arch manifest automatically
 
 ## Workflow Testing

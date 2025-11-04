@@ -69,9 +69,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:stable
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}
           cache-from: type=gha,scope=${{ env.ESP_IDF_IMAGE_NAME }}
           cache-to: type=gha,mode=max,scope=${{ env.ESP_IDF_IMAGE_NAME }}
@@ -119,9 +119,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:stable
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}
           cache-from: type=gha,scope=${{ env.ESP_MATTER_IMAGE_NAME }}
           cache-to: type=gha,mode=max,scope=${{ env.ESP_MATTER_IMAGE_NAME }}
