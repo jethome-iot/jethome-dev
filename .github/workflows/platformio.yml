@@ -100,9 +100,9 @@ jobs:
           
       - name: 🎯 Create multi-arch manifest
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64

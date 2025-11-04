@@ -173,10 +173,10 @@ jobs:
           
       - name: 🎯 Create multi-arch manifest
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest \
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }} \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-amd64 \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-arm64
 ```
@@ -188,6 +188,7 @@ jobs:
 - **Cache scoping**: Use image name variable for cache scope: `scope=${{ env.<IMAGE_NAME> }}-${{ steps.platform.outputs.tag }}`
 - **Timeouts**: Build jobs use `timeout-minutes: 60`, manifest jobs use `timeout-minutes: 10`
 - **Fail-fast**: Use `fail-fast: false` to see all platform failures
+- **Tag ordering**: Version tag must be listed LAST in manifest creation (GHCR displays last tag as primary)
 - Matrix builds both platforms in parallel for faster CI
 - Platform-specific images tagged with arch suffix (e.g., `pio-6.1.18-linux-amd64`)
 - Manifest job combines platform images into multi-arch manifest
@@ -266,6 +267,12 @@ jobs:
 - `<prefix>-v<version>` - Main version tag (e.g., `idf-v5.4.1`, `pio-v6.1.18`)
 - `sha-<commit>` - Git commit tracking for debugging/rollback
 - **No date tags** - Version tags are semantic and clear; SHA tags provide precise tracking
+
+**Tag Ordering in Manifests:**
+- Version tag must be listed LAST in `docker buildx imagetools create` command
+- GHCR displays the last created tag as the "primary" tag in the UI
+- Order: `sha-<commit>` → `stable` → `latest` → `<prefix>-v<version>` (last = primary display)
+- This ensures GHCR shows the informative version tag (e.g., `idf-v5.4.1`) instead of `sha-XXXXXXX`
 
 ## Workflow Testing
 
