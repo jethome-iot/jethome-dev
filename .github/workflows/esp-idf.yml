@@ -20,15 +20,16 @@ env:
   IMAGE_NAME: jethome-dev-esp-idf
 
 jobs:
-  build-esp-idf:
+  esp-idf-build:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'jethome-iot'
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
-        esp_idf_version: ['v5.4.1']
+        idf_base_tag: ['v5.4.1']
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -58,22 +59,22 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.esp_idf_version }}-${{ steps.platform.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
           cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
           build-args: |
-            ESP_IDF_VERSION=${{ matrix.esp_idf_version }}
+            IDF_BASE_TAG=${{ matrix.idf_base_tag }}
 
-  create-manifest:
+  esp-idf-manifest:
     runs-on: ubuntu-latest
-    needs: build-esp-idf
-    if: github.ref_name == 'master'
+    needs: esp-idf-build
+    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
-        esp_idf_version: ['v5.4.1']
+        idf_base_tag: ['v5.4.1']
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -94,22 +95,23 @@ jobs:
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.esp_idf_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.esp_idf_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.esp_idf_version }}-linux-arm64
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-arm64
 
-  build-esp-matter:
+  esp-matter-build:
     runs-on: ubuntu-latest
-    needs: build-esp-idf
+    needs: esp-idf-build
+    if: false && github.repository_owner == 'jethome-iot'  # Temporarily disabled
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
-        esp_idf_version: ['v5.4.1']
+        jethome_idf_base_tag: ['v5.4.1']
         esp_matter_version: ['v1.4.2']
     steps:
       - name: 📥 Checkout repository
@@ -140,23 +142,23 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.esp_idf_version }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=esp-matter-${{ steps.platform.outputs.tag }}
           cache-to: type=gha,mode=max,scope=esp-matter-${{ steps.platform.outputs.tag }}
           build-args: |
-            BASE_IMAGE_TAG=idf-${{ matrix.esp_idf_version }}-${{ steps.platform.outputs.tag }}
+            BASE_IMAGE_TAG=idf-${{ matrix.jethome_idf_base_tag }}-${{ steps.platform.outputs.tag }}
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
 
-  create-manifest-matter:
+  esp-matter-manifest:
     runs-on: ubuntu-latest
-    needs: build-esp-matter
-    if: github.ref_name == 'master'
+    needs: esp-matter-build
+    if: false && github.repository_owner == 'jethome-iot' && github.ref_name == 'master'  # Temporarily disabled
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
-        esp_idf_version: ['v5.4.1']
+        jethome_idf_base_tag: ['v5.4.1']
         esp_matter_version: ['v1.4.2']
     steps:
       - name: 🔐 Log in to GitHub Container Registry
@@ -178,9 +180,9 @@ jobs:
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:stable \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.esp_idf_version }}-matter-${{ matrix.esp_matter_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:matter-${{ matrix.esp_matter_version }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:${{ steps.tags.outputs.date_tag }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:sha-${{ steps.tags.outputs.sha_short }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.esp_idf_version }}-matter-${{ matrix.esp_matter_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.esp_idf_version }}-matter-${{ matrix.esp_matter_version }}-linux-arm64
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-arm64

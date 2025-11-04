@@ -19,8 +19,9 @@ env:
   IMAGE_NAME: jethome-dev-platformio
 
 jobs:
-  build:
+  platformio-build:
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'jethome-iot'
     permissions:
       contents: read
       packages: write
@@ -63,10 +64,10 @@ jobs:
           build-args: |
             PIO_VERSION=${{ matrix.pio_version }}
 
-  create-manifest:
+  platformio-manifest:
     runs-on: ubuntu-latest
-    needs: build
-    if: github.ref_name == 'master'
+    needs: platformio-build
+    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
       packages: write

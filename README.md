@@ -9,8 +9,8 @@ Docker-based development environment for embedded systems, providing containeriz
 
 | Image | Description | Documentation |
 |-------|-------------|---------------|
-| [esp-idf](./images/esp-idf/) | ESP-IDF 5.4.1 with QEMU, pytest, and testing tools for all ESP32 chips | [README](./images/esp-idf/README.md) |
-| [esp-matter](./images/esp-matter/) | ESP-Matter v1.4.2 SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
+| [esp-idf](./images/esp-idf/) | ESP-IDF with QEMU, pytest, and testing tools for all ESP32 chips | [README](./images/esp-idf/README.md) |
+| [esp-matter](./images/esp-matter/) | ESP-Matter SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 (all variants) + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
@@ -67,19 +67,17 @@ docker run -it --rm -v $(pwd):/workspace \
 
 ### ESP-IDF Image
 
-- **Base**: espressif/idf:v5.4.1 (Ubuntu 24.04 LTS)
-- **ESP-IDF**: 5.4.1 with all ESP32 toolchains
-- **QEMU**: Xtensa and RISC-V emulation support
+- **Base**: Official espressif/idf (Ubuntu LTS)
+- **ESP-IDF**: All ESP32 toolchains included in base image
+- **QEMU**: Xtensa and RISC-V emulation support (from base image)
 - **Supported Chips**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6, ESP32-H2, ESP32-P4
-- **Testing**: pytest, pytest-embedded, gcovr, lcov
-- **Code Quality**: pylint, flake8, black, clang-format, clang-tidy
-- **Documentation**: Sphinx, sphinx-rtd-theme
-- **Tools**: jq, vim, nano, rsync, git
+- **Additional Tools**: jq (JSON processor), gcovr (code coverage)
+- **Testing**: pytest, pytest-embedded frameworks for ESP-IDF and QEMU
 
 ### ESP-Matter Image
 
-- **Base**: jethome-dev-esp-idf:idf-v5.4.1 (inherits all ESP-IDF tools)
-- **ESP-Matter**: v1.4.2 with ConnectedHomeIP SDK
+- **Base**: jethome-dev-esp-idf (inherits all ESP-IDF tools)
+- **ESP-Matter**: ConnectedHomeIP SDK included
 - **Matter Protocol**: Support for Matter 1.0 and 1.1 (partial)
 - **Supported Chips**: ESP32-C3, ESP32-C6, ESP32-S3, ESP32-H2 (full Matter support)
 - **Features**: Matter device clusters, commissioning, OTA updates
@@ -88,12 +86,12 @@ docker run -it --rm -v $(pwd):/workspace \
 
 ### PlatformIO Image
 
-- **Base**: Python 3.11 slim (Debian Bookworm)
+- **Base**: Python slim (Debian)
 - **PlatformIO Core**: Latest version
-- **Platforms**: ESP32 (6.11.0), Native (1.2.1)
+- **Platforms**: ESP32, Native
 - **Supported Chips**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6
 - **Framework**: ESP-IDF (toolchains download on first build)
-- **Testing**: Unity 2.6.0 (globally installed)
+- **Testing**: Unity (globally installed)
 - **Tools**: git, cmake, clang-format, curl, wget, jq
 - **Python**: protobuf, jinja2
 
@@ -180,10 +178,10 @@ jethome-dev/
 │       ├── esp-idf.yml      # ESP-IDF and ESP-Matter image workflows
 │       └── platformio.yml   # PlatformIO image workflow
 ├── images/
-│   ├── esp-idf/             # ESP-IDF 5.4.1 development image
+│   ├── esp-idf/             # ESP-IDF development image
 │   │   ├── Dockerfile       # Image definition
 │   │   └── README.md        # Detailed documentation
-│   ├── esp-matter/          # ESP-Matter v1.4.2 development image
+│   ├── esp-matter/          # ESP-Matter development image
 │   │   ├── Dockerfile       # Image definition
 │   │   └── README.md        # Detailed documentation
 │   └── platformio/          # PlatformIO development image

@@ -1,52 +1,33 @@
-# ESP-IDF 5.4.1 Development Image
+# ESP-IDF Development Image
 
-Docker image for ESP32 development with ESP-IDF 5.4.1, QEMU emulation, and comprehensive testing tools. Optimized for CI/CD pipelines and local development.
+Docker image for ESP32 development with ESP-IDF and testing tools. Optimized for CI/CD pipelines and local development.
 
 ## Overview
 
-This image provides a complete ESP-IDF development environment with additional tools for testing, code quality, and documentation. Based on the official Espressif ESP-IDF v5.4.1 image, it adds QEMU support for hardware-less testing, pytest integration, and modern development tools.
+This image extends the official Espressif ESP-IDF image with additional tools for testing and CI/CD integration. It provides pytest frameworks for hardware-in-the-loop and QEMU-based testing, plus utilities for code coverage and build automation.
 
 ## What's Inside
 
-**Base Environment:**
-- Official `espressif/idf:v5.4.1` base image
-- ESP-IDF 5.4.1 with all ESP32 toolchains
-- Python 3.12.3
-- Ubuntu 24.04 LTS (Noble)
+**Base Environment (from espressif/idf):**
+- ESP-IDF with all ESP32 toolchains
+- Python
+- Ubuntu LTS
+- QEMU emulation (qemu-system-xtensa, qemu-system-riscv32)
+- ccache (compiler cache)
+- Standard build tools (git, curl, wget, cmake, ninja)
 
-**QEMU Emulation:**
-- `qemu-system-xtensa` (v9.0.0) - ESP32, ESP32-S2, ESP32-S3
-- `qemu-system-riscv32` (v9.0.0) - ESP32-C3, ESP32-C6
-- Architecture detection (arm64/amd64)
+**Additional Tools (added by this image):**
+- **jq** - JSON processor for CI/CD scripting
+- **gcovr** - Code coverage reporting
 
 **Testing Frameworks:**
-- pytest 8.4.2
-- pytest-embedded 2.2.1
+- pytest
+- pytest-embedded
 - pytest-embedded-serial-esp
 - pytest-embedded-idf
 - pytest-embedded-qemu
 - pytest-timeout
 - pytest-cov
-- gcovr 8.4 (code coverage)
-
-**Code Quality Tools:**
-- pylint 4.0.2
-- flake8 7.3.0
-- black 25.9.0
-
-**Documentation:**
-- Sphinx 8.2.3
-- sphinx-rtd-theme 3.0.2
-
-**Build Acceleration:**
-- ccache (compiler cache for faster rebuilds)
-
-**System Tools:**
-- jq 1.7.1 (JSON processor)
-- lcov (code coverage)
-- vim, nano
-- rsync
-- git, curl, wget
 
 ## Quick Start
 
@@ -163,7 +144,7 @@ services:
 
 ### Using ccache for Faster Builds
 
-ccache is pre-configured and enabled by default. For best results when running as non-root:
+ccache is included in the base image and enabled by default (`IDF_CCACHE_ENABLE=1`). Configure it according to your needs:
 
 **Option 1: Use Host ccache Directory (Recommended)**
 
@@ -171,37 +152,40 @@ ccache is pre-configured and enabled by default. For best results when running a
 # Create host ccache directory
 mkdir -p ~/.cache/ccache-esp-idf
 
-# Run with mounted ccache
-docker run --rm -u $(id -u):$(id -g) \
+# Run with mounted ccache and custom configuration
+docker run --rm \
   -v $(pwd):/workspace \
   -v ~/.cache/ccache-esp-idf:/opt/ccache \
+  -e CCACHE_DIR=/opt/ccache \
+  -e CCACHE_MAXSIZE=5G \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
 
-# First build: ~2-3 minutes (populates cache)
-# Second build: ~30 seconds (uses cache)
+# First build: populates cache
+# Subsequent builds: significantly faster with cache
 ```
 
-**Option 2: Use Docker Volume (Persistent but not in host filesystem)**
+**Option 2: Use Docker Volume**
 
 ```bash
 # Create named volume
 docker volume create esp-idf-ccache
 
 # Run with volume
-docker run --rm -u $(id -u):$(id -g) \
+docker run --rm \
   -v $(pwd):/workspace \
   -v esp-idf-ccache:/opt/ccache \
+  -e CCACHE_DIR=/opt/ccache \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
 ```
 
-**Option 3: Temporary ccache (No persistence)**
+**Option 3: Use Default Location**
 
 ```bash
-# ccache works in /opt/ccache within container
-# Cache is lost when container exits
-docker run --rm -u $(id -u):$(id -g) \
+# ccache uses default location (~/.ccache in container)
+# Cache is lost when container exits unless you mount the home directory
+docker run --rm \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
@@ -210,36 +194,43 @@ docker run --rm -u $(id -u):$(id -g) \
 **Check ccache Statistics:**
 
 ```bash
-docker run --rm -u $(id -u):$(id -g) \
-  -v $(pwd):/workspace \
+docker run --rm \
   -v ~/.cache/ccache-esp-idf:/opt/ccache \
+  -e CCACHE_DIR=/opt/ccache \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   ccache -s
 ```
+
+**ccache Environment Variables:**
+
+You can customize ccache behavior with environment variables:
+- `CCACHE_DIR` - Cache directory location
+- `CCACHE_MAXSIZE` - Maximum cache size (e.g., `5G`)
+- `CCACHE_COMPRESS` - Enable compression (`1` or `0`)
+- `CCACHE_COMPRESSLEVEL` - Compression level (`1`-`9`)
+
+See [ccache documentation](https://ccache.dev/manual/latest.html) for all options.
 
 ## Environment Variables
 
 The image inherits environment variables from the ESP-IDF base image:
 
-```
-IDF_PATH=/opt/esp/idf
-IDF_TOOLS_PATH=/opt/esp
-PATH includes ESP-IDF tools, QEMU binaries
-```
-
-**ccache Configuration:**
-```
-CCACHE_DIR=/opt/ccache
-CCACHE_MAXSIZE=2G
-CCACHE_COMPRESS=1
-CCACHE_COMPRESSLEVEL=6
+```bash
+IDF_PATH=/opt/esp/idf              # ESP-IDF installation path
+IDF_TOOLS_PATH=/opt/esp            # ESP-IDF tools path
+IDF_CCACHE_ENABLE=1                # ccache enabled by default
+IDF_PYTHON_CHECK_CONSTRAINTS=no    # Skip constraint checks
+PATH includes ESP-IDF tools and QEMU binaries
 ```
 
-ESP-IDF Python environment: Automatically activated on container startup via entrypoint
+**ESP-IDF Python environment:** Automatically activated on container startup via entrypoint
 
-QEMU binaries:
-- `/opt/qemu-xtensa/bin/qemu-system-xtensa`
-- `/opt/qemu-riscv32/bin/qemu-system-riscv32`
+**Configure ccache** (optional):
+```bash
+docker run -e CCACHE_DIR=/opt/ccache -e CCACHE_MAXSIZE=5G ...
+```
+
+See ccache section above for detailed configuration options.
 
 ## Building the Image
 
@@ -254,34 +245,16 @@ docker build -t jethome-dev-esp-idf .
 
 ```bash
 docker build \
-  --build-arg ESP_IDF_VERSION=v5.4.1 \
-  --build-arg QEMU_RELEASE_TAG=esp-develop-9.0.0-20240606 \
-  --build-arg QEMU_VERSION=esp_develop_9.0.0_20240606 \
+  --build-arg IDF_BASE_TAG=<version-tag> \
   -t jethome-dev-esp-idf .
 ```
 
 Available build arguments:
-- `ESP_IDF_VERSION` - ESP-IDF version tag (default: `v5.4.1`)
-- `QEMU_RELEASE_TAG` - GitHub release tag (default: `esp-develop-9.0.0-20240606`)
-- `QEMU_VERSION` - QEMU binary version string (default: `esp_develop_9.0.0_20240606`)
+- `IDF_BASE_TAG` - Base image tag from espressif/idf (e.g., `v5.4.1`, `v5.3`, `latest`)
 
 ### Multi-Platform Support
 
 This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
-
-## Version Information
-
-| Component | Version | Notes |
-|-----------|---------|-------|
-| Base Image | espressif/idf:v5.4.1 | Official Espressif image |
-| ESP-IDF | 5.4.1 | Latest stable release |
-| Python | 3.12.3 | Ubuntu 24.04 LTS default |
-| QEMU Xtensa | 9.0.0 (esp_develop_9.0.0_20240606) | For ESP32/S2/S3 |
-| QEMU RISC-V | 9.0.0 (esp_develop_9.0.0_20240606) | For ESP32-C3/C6/H2/P4 |
-| pytest | 8.4.2 | Latest compatible |
-| pytest-embedded | 2.2.1 | ESP-IDF integration |
-| gcovr | 8.4 | Code coverage |
-| Sphinx | 8.2.3 | Documentation |
 
 ## Additional Resources
 
@@ -289,7 +262,6 @@ This image is built for both **linux/amd64** and **linux/arm64** architectures. 
 - [ESP-IDF Docker Images](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-docker-image.html)
 - [QEMU for ESP32](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/qemu.html)
 - [pytest-embedded](https://docs.espressif.com/projects/pytest-embedded/en/latest/)
-- [ESP32 QEMU Releases](https://github.com/espressif/qemu/releases)
 
 ## License
 

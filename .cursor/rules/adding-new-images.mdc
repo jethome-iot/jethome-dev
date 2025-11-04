@@ -30,14 +30,14 @@ Create new directory: `images/<image-name>/` containing:
 
 Image README must include:
 - Overview and description
-- What's Inside (specific versions)
+- What's Inside (capabilities and tools, not specific versions)
 - Quick Start (pull, build, run)
 - Usage Examples
 - CI/CD Integration examples
 - Environment Variables
 - Building the Image
 
-- Version Information table
+**Important:** Do not hardcode specific version numbers in READMEs. Focus on capabilities and tools. See [Documentation Standards](documentation-standards.mdc) for version handling guidelines.
 
 ## Update Root README
 

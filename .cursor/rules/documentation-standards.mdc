@@ -30,12 +30,11 @@ Must be:
 
 Required sections:
 1. Overview
-2. What's Inside (specific versions)
+2. What's Inside (capabilities and tools)
 3. Quick Start
 4. Usage Examples (Docker commands, CI/CD integration)
 5. Environment Variables
 6. Building the Image
-7. Version Information table
 
 Sections to AVOID:
 - Framework tutorials (create project, configure, etc.)
@@ -44,10 +43,42 @@ Sections to AVOID:
 - Feature explanations (framework features, not image features)
 - Troubleshooting (users can refer to upstream documentation)
 - Design Decisions (keep documentation focused on usage)
+- Version Information tables (versions change frequently)
+
+## Version Handling
+
+**DO NOT** hardcode specific version numbers in README files:
+
+❌ **Avoid:**
+- "ESP-IDF 5.4.1 Development Image"
+- "Python 3.12.3"
+- "pytest 8.4.2"
+- "Ubuntu 24.04 LTS (Noble)"
+- Version information tables with specific versions
+
+✅ **Instead use:**
+- "ESP-IDF Development Image" (generic)
+- "Python" (no version)
+- "pytest" (no version)
+- "Ubuntu LTS" (generic)
+- Describe capabilities, not versions
+
+**Why:**
+- Versions update automatically via dependencies
+- Build matrix may build multiple versions
+- Documentation stays accurate longer
+- Reduces maintenance burden
+- Focus on what the image provides, not exact versions
+
+**Exceptions:**
+- Dockerfile ARG default values (needed for builds)
+- Build argument examples (use placeholders like `<version-tag>`)
+- When referencing base image tag in examples
 
 ## Accuracy Rules
 
 - Only document what's actually in the Dockerfile
 - Clearly state what downloads at runtime vs pre-installed
-- Include actual version numbers
+- Focus on capabilities and tools, not specific versions
 - Never claim features that aren't implemented
+- Keep documentation flexible and version-agnostic
