@@ -88,8 +88,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jethome_idf_base_tag: ['v5.4.1']
-        esp_matter_version: ['v1.4.2']
+        include:
+          - jethome_idf_base_tag: 'v5.4.1'
+            esp_matter_version: 'v1.4.2'
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
