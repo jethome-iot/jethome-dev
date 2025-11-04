@@ -17,7 +17,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: jethome-dev-esp-idf
+  ESP_IDF_IMAGE_NAME: jethome-dev-esp-idf
+  ESP_MATTER_IMAGE_NAME: jethome-dev-esp-matter
 
 jobs:
   esp-idf-build:
@@ -59,9 +60,9 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-${{ steps.platform.outputs.tag }}
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
-          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-${{ steps.platform.outputs.tag }}
+          cache-from: type=gha,scope=${{ env.ESP_IDF_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.ESP_IDF_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
           build-args: |
             IDF_BASE_TAG=${{ matrix.idf_base_tag }}
 
@@ -93,13 +94,13 @@ jobs:
           
       - name: 🎯 Create multi-arch manifest
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-linux-arm64
 
   esp-matter-build:
     runs-on: ubuntu-latest
@@ -142,7 +143,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=esp-matter-${{ steps.platform.outputs.tag }}
           cache-to: type=gha,mode=max,scope=esp-matter-${{ steps.platform.outputs.tag }}
           build-args: |
@@ -178,11 +179,11 @@ jobs:
           
       - name: 🎯 Create multi-arch manifest for ESP-Matter
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:stable \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:matter-${{ matrix.esp_matter_version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:${{ steps.tags.outputs.date_tag }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:sha-${{ steps.tags.outputs.sha_short }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/jethome-dev-esp-matter:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:matter-${{ matrix.esp_matter_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-arm64
