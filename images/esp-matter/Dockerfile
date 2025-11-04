@@ -1,88 +1,70 @@
 # ESP-Matter Development Image
-# Build arguments for version pinning
+# Based on https://docs.espressif.com/projects/esp-matter/en/latest/esp32/developing.html
+
 ARG BASE_IMAGE_TAG=idf-v5.4.1
 ARG ESP_MATTER_VERSION=v1.4.2
 
-# Use our esp-idf image as base
-# For local builds: Uses default idf-v5.4.1 tag
-# For CI/CD: Override with --build-arg BASE_IMAGE_TAG=idf-v5.4.1-linux-${ARCH}
 FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:${BASE_IMAGE_TAG}
 
 # Re-declare build arguments after FROM
 ARG ESP_MATTER_VERSION
 
-# Install Matter prerequisites
-# Based on https://docs.espressif.com/projects/esp-matter/en/latest/esp32/developing.html
-RUN apt-get update && apt-get install -y \
-    # Build essentials
+# Use bash for all RUN commands (needed for QEMU emulation compatibility)
+SHELL ["/bin/bash", "-c"]
+
+# Install only Matter-specific development packages not in base image
+# Base image already has: ninja-build, python3-venv, python3-pip, runtime libs
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    # Python development headers (needed for psutil and other C extensions)
+    python3-dev \
+    # Matter SDK build dependencies (development headers)
     pkg-config \
-    ninja-build \
-    # Python development
-    python3-venv \
-    python3-pip \
-    # Matter SDK dependencies
     libssl-dev \
     libdbus-1-dev \
     libglib2.0-dev \
     libavahi-client-dev \
     # Clean up
+    && apt-get autoremove -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone esp-matter repository
-# Using shallow clone to reduce image size
-# ESP-Matter uses release branches (e.g., release/v1.4.2)
+# Clone ESP-Matter repository and submodules
+# Using shallow clones to reduce image size
 WORKDIR /opt
 RUN git clone --depth 1 --branch release/${ESP_MATTER_VERSION} \
     https://github.com/espressif/esp-matter.git && \
     cd esp-matter && \
-    git submodule update --init --depth 1
+    git submodule update --init --depth 1 && \
+    cd connectedhomeip/connectedhomeip && \
+    ./scripts/checkout_submodules.py --platform esp32 linux --shallow
 
-# Checkout connectedhomeip submodules
-# Include both linux and darwin platforms for maximum compatibility
-WORKDIR /opt/esp-matter/connectedhomeip/connectedhomeip
-RUN ./scripts/checkout_submodules.py --platform esp32 linux darwin --shallow
-
-# Install esp-matter (without host tools)
-# Host tools (chip-tool, chip-cert, etc.) are excluded to reduce image size
-# Use --break-system-packages since this is a containerized environment
+# Install ESP-Matter (without host tools to reduce image size)
+# Source ESP-IDF environment first to activate Python venv with pip
+# TODO: Consider enabling host tools (chip-tool, chip-cert) in future if needed
 WORKDIR /opt/esp-matter
-RUN PIP_BREAK_SYSTEM_PACKAGES=1 ./install.sh --no-host-tool
+RUN source ${IDF_PATH}/export.sh && \
+    ./install.sh --no-host-tool
 
 # Set ESP-Matter environment variables
 ENV ESP_MATTER_PATH=/opt/esp-matter
 
-# Create entrypoint script that activates both ESP-IDF and ESP-Matter environments
-RUN printf '#!/bin/bash\n\
-set -e\n\
-\n\
-# Source ESP-IDF environment (from base image)\n\
-if [ -f "${IDF_PATH}/export.sh" ]; then\n\
-    . "${IDF_PATH}/export.sh" > /dev/null 2>&1\n\
-fi\n\
-\n\
-# Source ESP-Matter environment\n\
-if [ -f "${ESP_MATTER_PATH}/export.sh" ]; then\n\
-    . "${ESP_MATTER_PATH}/export.sh" > /dev/null 2>&1\n\
-fi\n\
-\n\
-# Execute the command\n\
-exec "$@"\n\
-' > /opt/esp-matter/entrypoint.sh && \
-    chmod +x /opt/esp-matter/entrypoint.sh
+# Copy and set up custom entrypoint
+COPY entrypoint.sh /opt/esp/esp_matter_entrypoint.sh
+RUN chmod +x /opt/esp/esp_matter_entrypoint.sh
 
-# Set working directory back to workspace
+# Set working directory
 WORKDIR /workspace
 
 # Verify installation
-RUN bash -c '. ${IDF_PATH}/export.sh && \
-    . ${ESP_MATTER_PATH}/export.sh && \
+RUN source ${IDF_PATH}/export.sh && \
+    source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
     idf.py --version && \
-    echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"'
+    echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"
 
-# Use custom entrypoint to activate environments
-ENTRYPOINT ["/opt/esp-matter/entrypoint.sh"]
+# Use custom entrypoint to activate environments (like entrypoint.sh in esp-idf image)
+ENTRYPOINT ["/opt/esp/esp_matter_entrypoint.sh"]
 
 CMD ["/bin/bash"]
 

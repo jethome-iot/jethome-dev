@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: esp-idf-build
-    if: false && (github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch')  # Temporarily disabled
+    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
