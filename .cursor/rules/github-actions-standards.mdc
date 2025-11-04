@@ -73,6 +73,12 @@ Standard pattern for image workflows with matrix builds:
 
 ```yaml
 name: 🐳 <Image Name> Docker Image
+#
+# Build Strategy:
+# - Main repo master: Build + Push to GHCR
+# - Main repo dev/PR: Build only (validation)
+# - workflow_dispatch: Build on any branch/fork, push only on main repo master
+# - Forks: Can test builds, but push is restricted to main repo
 
 on:
   push:
@@ -94,11 +100,13 @@ env:
 jobs:
   <image-name>-build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'jethome-iot'
+    timeout-minutes: 60
+    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
         version: ['1.0.0']  # Can expand to multiple versions
@@ -129,7 +137,7 @@ jobs:
         with:
           context: images/<image-name>
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
+          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}-${{ steps.platform.outputs.tag }}
@@ -139,12 +147,14 @@ jobs:
 
   <image-name>-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: <image-name>-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         version: ['1.0.0']  # Must match build job matrix
     steps:
@@ -179,37 +189,55 @@ jobs:
 - **Benefits of image-first naming**: Jobs for same image group together in GitHub UI when sorted alphabetically
 - **Image name variables**: Use descriptive uppercase names like `ESP_IDF_IMAGE_NAME`, not generic `IMAGE_NAME`
 - **Cache scoping**: Use image name variable for cache scope: `scope=${{ env.<IMAGE_NAME> }}-${{ steps.platform.outputs.tag }}`
+- **Timeouts**: Build jobs use `timeout-minutes: 60`, manifest jobs use `timeout-minutes: 10`
+- **Fail-fast**: Use `fail-fast: false` to see all platform failures
 - Matrix builds both platforms in parallel for faster CI
 - Platform-specific images tagged with arch suffix (e.g., `pio-6.1.18-linux-amd64`)
 - Manifest job combines platform images into multi-arch manifest
 - Only master branch pushes images; dev/PR do build-only validation
 - Version matrix can be expanded to build multiple versions
-- Simple `workflow_dispatch` trigger allows manual runs from GitHub UI (no parameters)
-- **Fork prevention**: `if: github.repository_owner == 'jethome-iot'` prevents builds in forks
+- Simple `workflow_dispatch` trigger allows manual runs from any branch/fork
+- **Fork prevention**: `if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'` allows fork testing
+- **Secure push**: `push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}` prevents fork pushes
 
 ### Fork Prevention
 
-**Always add organization check to prevent unnecessary builds in forks:**
+**Allow forks to test builds via workflow_dispatch, but prevent automatic builds:**
 
 ```yaml
 jobs:
   <image-name>-build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'jethome-iot'  # Prevents builds in forks
+    timeout-minutes: 60
+    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false  # Show all platform failures
+      matrix:
+        platform: [linux/amd64, linux/arm64]
 ```
 
-**Why this is important:**
-- ✅ **Saves Actions minutes** - Forks won't waste time building Docker images they don't need
-- ✅ **Clearer intent** - Only the main repository publishes images
-- ✅ **Still testable** - Forks can remove this line if they want to test
+**Strengthen push conditions to prevent fork pushes:**
+
+```yaml
+- name: 🐳 Build and push Docker image
+  uses: docker/build-push-action@v5
+  with:
+    push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
+```
+
+**Why this pattern:**
+- ✅ **Saves Actions minutes** - Forks don't trigger automatic builds on push/PR
+- ✅ **Allows testing** - Forks can manually run workflow_dispatch to test
+- ✅ **Secure pushes** - Only main repo on master can push to GHCR
 - ✅ **Common practice** - Standard pattern for OSS projects with Docker registries
 
 **Apply to all jobs:**
-- Build jobs (`<image-name>-build`): `if: github.repository_owner == 'jethome-iot'`
-- Manifest jobs (`<image-name>-manifest`): `if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'`
+- Build jobs: `if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'`
+- Manifest jobs: `if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'`
+- Push conditions: `push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}`
 
 ### Version Handling
 
@@ -222,15 +250,19 @@ jobs:
 
 | Branch/Event | Build | Push to GHCR | Tags Generated |
 |--------------|-------|--------------|----------------|
-| Master | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA` |
-| Dev | Yes | No | None |
-| Pull Request | Yes | No | None |
+| Main repo master push | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA`, `date` |
+| Main repo dev push | Yes | No | None |
+| Main repo PR | Yes | No | None |
+| Main repo workflow_dispatch | Yes | Only on master | Same as master if on master |
+| Fork push/PR | No | No | None (automatic builds disabled) |
+| Fork workflow_dispatch | Yes | No | None (push blocked by condition) |
 
 **Rationale:**
-- Keeps GHCR clean with only released images
+- Keeps GHCR clean with only released images from main repo
 - Faster CI on dev branches (build-only validation)
 - Clear release strategy: master = production/stable
-- Dev branch for testing before release
+- Forks can test builds manually, but automatic builds are disabled
+- Secure: Only main repo on master can push to GHCR
 
 ## Workflow Testing
 

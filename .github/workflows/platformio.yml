@@ -1,4 +1,10 @@
 # PlatformIO Docker Build Workflow
+#
+# Build Strategy:
+# - Main repo master: Build + Push to GHCR
+# - Main repo dev/PR: Build only (validation)
+# - workflow_dispatch: Build on any branch/fork, push only on main repo master
+# - Forks: Can test builds, but push is restricted to main repo
 name: 🐳 PlatformIO Docker Image
 
 on:
@@ -16,16 +22,18 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: jethome-dev-platformio
+  PLATFORMIO_IMAGE_NAME: jethome-dev-platformio
 
 jobs:
   platformio-build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'jethome-iot'
+    timeout-minutes: 60
+    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
         pio_version: ['6.1.18']
@@ -56,22 +64,24 @@ jobs:
         with:
           context: images/platformio
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
+          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-${{ steps.platform.outputs.tag }}
-          cache-from: type=gha,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
-          cache-to: type=gha,mode=max,scope=${{ env.IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-${{ steps.platform.outputs.tag }}
+          cache-from: type=gha,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
           build-args: |
             PIO_VERSION=${{ matrix.pio_version }}
 
   platformio-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: platformio-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         pio_version: ['6.1.18']
     steps:
@@ -92,10 +102,10 @@ jobs:
           
       - name: 🎯 Create multi-arch manifest
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:stable \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:stable \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64

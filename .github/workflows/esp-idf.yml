@@ -1,5 +1,11 @@
 # ESP-IDF Docker Build Workflow
 # Builds ESP-IDF development image with pytest, QEMU, and testing tools
+#
+# Build Strategy:
+# - Main repo master: Build + Push to GHCR
+# - Main repo dev/PR: Build only (validation)
+# - workflow_dispatch: Build on any branch/fork, push only on main repo master
+# - Forks: Can test builds, but push is restricted to main repo
 name: 🐳 ESP-IDF Docker Image
 
 on:
@@ -8,11 +14,13 @@ on:
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
+      - 'images/esp-matter/**'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
+      - 'images/esp-matter/**'
   workflow_dispatch:
 
 env:
@@ -23,11 +31,13 @@ env:
 jobs:
   esp-idf-build:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'jethome-iot'
+    timeout-minutes: 60
+    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
         idf_base_tag: ['v5.4.1']
@@ -58,7 +68,7 @@ jobs:
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
+          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.idf_base_tag }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=${{ env.ESP_IDF_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
@@ -68,12 +78,14 @@ jobs:
 
   esp-idf-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: esp-idf-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         idf_base_tag: ['v5.4.1']
     steps:
@@ -104,12 +116,14 @@ jobs:
 
   esp-matter-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: esp-idf-build
-    if: false && github.repository_owner == 'jethome-iot'  # Temporarily disabled
+    if: false && (github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch')  # Temporarily disabled
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
         jethome_idf_base_tag: ['v5.4.1']
@@ -141,7 +155,7 @@ jobs:
         with:
           context: images/esp-matter
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
+          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
           cache-from: type=gha,scope=${{ env.ESP_MATTER_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
@@ -152,12 +166,14 @@ jobs:
 
   esp-matter-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: esp-matter-build
     if: false && github.repository_owner == 'jethome-iot' && github.ref_name == 'master'  # Temporarily disabled
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         jethome_idf_base_tag: ['v5.4.1']
         esp_matter_version: ['v1.4.2']
