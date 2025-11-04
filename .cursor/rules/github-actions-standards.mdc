@@ -34,33 +34,43 @@ Add emoji to step names for readability:
 Each image should have its own workflow file:
 - Naming: `.github/workflows/<image-name>.yml`
 - Trigger on relevant file changes only
-- Use single-job multi-platform builds with `docker/build-push-action@v5`
-- Build for both linux/amd64 and linux/arm64 in one step
+- Use **platform matrix** for parallel builds of linux/amd64 and linux/arm64
+- Build job creates platform-specific images (2 parallel jobs per version)
+- Manifest job combines them into multi-arch manifest
 - Images are **only pushed to GHCR from master branch**
 - Dev and PR branches build only (no push)
 
+**Why platform matrix:**
+- ⚡ **Faster**: Both platforms build in parallel (~5-10 min vs 40-60 min sequential)
+- 🎯 **Better debugging**: Platform-specific failures don't block others
+- 🔍 **Clear visibility**: See exactly which platform succeeded/failed
+- 💾 **Platform-specific caching**: Each platform has its own cache scope
+
 ### Job Naming Convention
 
-**Use image-first naming pattern:**
-- Format: `<image-name>-build`
-- Examples: `esp-idf-build`, `platformio-build`, `esp-matter-build`
+**Use image-first naming pattern with two jobs:**
+- Format: `<image-name>-build` and `<image-name>-manifest`
+- Examples: `esp-idf-build`/`esp-idf-manifest`, `platformio-build`/`platformio-manifest`
 
 **Benefits:**
-- Clear and simple naming
-- Each image has one job that handles multi-platform builds
+- True parallel builds (both platforms simultaneously)
+- Better failure isolation (one platform can fail without blocking other)
+- Platform-specific caching
 - Jobs group together alphabetically in GitHub UI by image name
 - Scalable - easy to add more images without conflicts
 
 **Example workflow structure:**
 ```yaml
 jobs:
-  esp-idf-build:      # Builds multi-platform ESP-IDF image
-  platformio-build:   # Builds multi-platform PlatformIO image
+  esp-idf-build:       # Builds platform-specific ESP-IDF images (amd64, arm64)
+  esp-idf-manifest:    # Creates multi-arch manifest from platform images
+  platformio-build:    # Builds platform-specific PlatformIO images (amd64, arm64)
+  platformio-manifest: # Creates multi-arch manifest from platform images
 ```
 
 ### Workflow Structure
 
-Standard pattern for image workflows with multi-platform builds:
+Standard pattern for image workflows with platform matrix builds:
 
 ```yaml
 name: 🐳 <Image Name> Docker Image
@@ -70,7 +80,7 @@ name: 🐳 <Image Name> Docker Image
 # - Main repo dev/PR: Build only (validation)
 # - workflow_dispatch: Build on any branch/fork, push only on main repo master
 # - Forks: Can test builds, but push is restricted to main repo
-# - Multi-platform: Builds for linux/amd64 and linux/arm64 in single job
+# - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel
 
 on:
   push:
@@ -91,7 +101,7 @@ env:
 
 jobs:
   <image-name>-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # or [self-hosted, ubuntu-latest] for large builds
     timeout-minutes: 60
     if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
@@ -101,6 +111,7 @@ jobs:
       fail-fast: false
       matrix:
         version: ['1.0.0']  # Can expand to multiple versions
+        platform: ['linux/amd64', 'linux/arm64']
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -121,33 +132,70 @@ jobs:
         run: |
           SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          echo "platform_tag=${PLATFORM_TAG}" >> $GITHUB_OUTPUT
           
-      - name: 🐳 Build and push multi-platform image
+      - name: 🐳 Build and push platform-specific image
         uses: docker/build-push-action@v5
         with:
           context: images/<image-name>
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}
-          cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}
-          cache-to: type=gha,mode=max,scope=${{ env.<IMAGE_NAME> }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
+          cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}-${{ steps.tags.outputs.platform_tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.<IMAGE_NAME> }}-${{ steps.tags.outputs.platform_tag }}
           build-args: |
             VERSION=${{ matrix.version }}
+
+  <image-name>-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: <image-name>-build
+    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1.0.0']
+    steps:
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🏷️ Generate tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+      
+      - name: 🐳 Create and push multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-arm64
 ```
 
 **Critical Details:**
-- **Single-job approach**: One job builds multi-arch image using `docker/build-push-action@v5`
-- **Multi-platform builds**: `platforms: linux/amd64,linux/arm64` builds both architectures simultaneously
-- **All tags created together**: All tags (latest, stable, version, SHA) created in single build step
-- **Job naming**: Use `<image-name>-build` pattern (e.g., `esp-idf-build`, `platformio-build`)
+- **Platform matrix approach**: Build job uses `platform: ['linux/amd64', 'linux/arm64']` in matrix
+- **Parallel builds**: Both platforms build simultaneously (faster, better failure isolation)
+- **Platform-specific tags**: Build job creates tags with platform suffix (e.g., `-linux-amd64`)
+- **Manifest job**: Separate job combines platform images into multi-arch manifest
+- **Final tags**: Manifest job creates `latest`, `sha-XXX`, and version tags
+- **Job naming**: Use `<image-name>-build` and `<image-name>-manifest` pattern
 - **Image name variables**: Use descriptive uppercase names like `ESP_IDF_IMAGE_NAME`, not generic `IMAGE_NAME`
-- **Simplified cache scoping**: Single cache scope `scope=${{ env.<IMAGE_NAME> }}` for all platforms
-- **Timeout**: Build jobs use `timeout-minutes: 60`
+- **Platform-specific caching**: Cache scope includes platform tag: `scope=${{ env.<IMAGE_NAME> }}-${{ steps.tags.outputs.platform_tag }}`
+- **Platform tag generation**: `PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')` converts `linux/amd64` to `linux-amd64`
+- **Timeout**: Build jobs use `timeout-minutes: 60`, manifest jobs use `timeout-minutes: 10`
 - **Fail-fast**: Use `fail-fast: false` to prevent matrix cancellation on first failure
-- **No separate manifest job needed**: `docker/build-push-action` creates multi-arch manifest automatically
 - Only master branch pushes images; dev/PR do build-only validation
 - Version matrix can be expanded to build multiple versions
 - Simple `workflow_dispatch` trigger allows manual runs from any branch/fork

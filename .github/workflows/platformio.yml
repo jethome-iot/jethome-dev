@@ -5,7 +5,7 @@
 # - Main repo dev/PR: Build only (validation)
 # - workflow_dispatch: Build on any branch/fork, push only on main repo master
 # - Forks: Can test builds, but push is restricted to main repo
-# - Multi-platform: Builds for linux/amd64 and linux/arm64 in single job
+# - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel
 name: 🐳 PlatformIO Docker Image
 
 on:
@@ -37,6 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         pio_version: ['v6.1.18']
+        platform: ['linux/amd64', 'linux/arm64']
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -57,18 +58,53 @@ jobs:
         run: |
           SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          echo "platform_tag=${PLATFORM_TAG}" >> $GITHUB_OUTPUT
           
-      - name: 🐳 Build and push multi-platform image
+      - name: 🐳 Build and push platform-specific image
         uses: docker/build-push-action@v5
         with:
           context: images/platformio
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}
-          cache-from: type=gha,scope=${{ env.PLATFORMIO_IMAGE_NAME }}
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORMIO_IMAGE_NAME }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-${{ steps.tags.outputs.platform_tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
+          cache-from: type=gha,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
           build-args: |
             PIO_VERSION=${{ matrix.pio_version }}
+
+  platformio-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: platformio-build
+    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        pio_version: ['v6.1.18']
+    steps:
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 🏷️ Generate tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+      
+      - name: 🐳 Create and push multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64
