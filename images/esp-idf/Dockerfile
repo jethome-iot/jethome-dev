@@ -6,6 +6,9 @@ ARG IDF_BASE_TAG=v5.4.1
 
 FROM espressif/idf:${IDF_BASE_TAG}
 
+# Use bash for all RUN commands (needed for QEMU emulation compatibility)
+SHELL ["/bin/bash", "-c"]
+
 # Install only additional tools not in base image
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -27,7 +30,7 @@ RUN mkdir -p /opt/ccache && \
 # Install Python testing packages into ESP-IDF virtual environment
 # Source export.sh to activate the correct Python environment
 RUN export IDF_PATH_FORCE=1 && \
-    . ${IDF_PATH}/export.sh && \
+    source ${IDF_PATH}/export.sh && \
     pip install --no-cache-dir \
     # Testing frameworks
     pytest \
@@ -43,7 +46,7 @@ WORKDIR /workspace
 
 # Verify installation
 RUN export IDF_PATH_FORCE=1 && \
-    . ${IDF_PATH}/export.sh && \
+    source ${IDF_PATH}/export.sh && \
     python --version && \
     pytest --version && \
     jq --version && \
