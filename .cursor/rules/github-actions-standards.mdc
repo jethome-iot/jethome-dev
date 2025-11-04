@@ -165,20 +165,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: 🏷️ Generate version and date tags
+      - name: 🏷️ Generate SHA tag
         id: tags
         run: |
           SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          DATE_TAG=$(date +%Y.%m.%d)
           echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
-          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
           
       - name: 🎯 Create multi-arch manifest
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:stable \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:${{ steps.tags.outputs.date_tag }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }} \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-amd64 \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}-linux-arm64
@@ -250,7 +247,7 @@ jobs:
 
 | Branch/Event | Build | Push to GHCR | Tags Generated |
 |--------------|-------|--------------|----------------|
-| Main repo master push | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA`, `date` |
+| Main repo master push | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA` |
 | Main repo dev push | Yes | No | None |
 | Main repo PR | Yes | No | None |
 | Main repo workflow_dispatch | Yes | Only on master | Same as master if on master |
@@ -263,6 +260,12 @@ jobs:
 - Clear release strategy: master = production/stable
 - Forks can test builds manually, but automatic builds are disabled
 - Secure: Only main repo on master can push to GHCR
+
+**Tag Strategy:**
+- `latest` / `stable` - Floating tags for convenience
+- `<prefix>-v<version>` - Main version tag (e.g., `idf-v5.4.1`, `pio-v6.1.18`)
+- `sha-<commit>` - Git commit tracking for debugging/rollback
+- **No date tags** - Version tags are semantic and clear; SHA tags provide precise tracking
 
 ## Workflow Testing
 

@@ -36,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         platform: [linux/amd64, linux/arm64]
-        pio_version: ['6.1.18']
+        pio_version: ['v6.1.18']
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pio_version: ['6.1.18']
+        pio_version: ['v6.1.18']
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -92,20 +92,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: 🏷️ Generate version and date tags
+      - name: 🏷️ Generate SHA tag
         id: tags
         run: |
           SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          DATE_TAG=$(date +%Y.%m.%d)
           echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
-          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
           
       - name: 🎯 Create multi-arch manifest
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:stable \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:${{ steps.tags.outputs.date_tag }} \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64
