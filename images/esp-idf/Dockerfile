@@ -21,12 +21,6 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create optional ccache directory for multi-user environment
-# ccache is already installed and IDF_CCACHE_ENABLE=1 is set in base image
-# Users can configure ccache via environment variables or mount their own cache
-RUN mkdir -p /opt/ccache && \
-    chmod 1777 /opt/ccache
-
 # Install Python testing packages into ESP-IDF virtual environment
 # Source export.sh to activate the correct Python environment
 RUN export IDF_PATH_FORCE=1 && \

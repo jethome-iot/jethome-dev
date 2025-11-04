@@ -144,7 +144,7 @@ services:
 
 ### Using ccache for Faster Builds
 
-ccache is included in the base image and enabled by default (`IDF_CCACHE_ENABLE=1`). Configure it according to your needs:
+ccache is included in the base image and enabled by default (`IDF_CCACHE_ENABLE=1`). To persist the cache between container runs, mount a host directory or Docker volume:
 
 **Option 1: Use Host ccache Directory (Recommended)**
 
@@ -155,8 +155,8 @@ mkdir -p ~/.cache/ccache-esp-idf
 # Run with mounted ccache and custom configuration
 docker run --rm \
   -v $(pwd):/workspace \
-  -v ~/.cache/ccache-esp-idf:/opt/ccache \
-  -e CCACHE_DIR=/opt/ccache \
+  -v ~/.cache/ccache-esp-idf:/ccache \
+  -e CCACHE_DIR=/ccache \
   -e CCACHE_MAXSIZE=5G \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
@@ -174,8 +174,8 @@ docker volume create esp-idf-ccache
 # Run with volume
 docker run --rm \
   -v $(pwd):/workspace \
-  -v esp-idf-ccache:/opt/ccache \
-  -e CCACHE_DIR=/opt/ccache \
+  -v esp-idf-ccache:/ccache \
+  -e CCACHE_DIR=/ccache \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
 ```
@@ -184,7 +184,7 @@ docker run --rm \
 
 ```bash
 # ccache uses default location (~/.ccache in container)
-# Cache is lost when container exits unless you mount the home directory
+# Cache is lost when container exits
 docker run --rm \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
@@ -195,8 +195,8 @@ docker run --rm \
 
 ```bash
 docker run --rm \
-  -v ~/.cache/ccache-esp-idf:/opt/ccache \
-  -e CCACHE_DIR=/opt/ccache \
+  -v ~/.cache/ccache-esp-idf:/ccache \
+  -e CCACHE_DIR=/ccache \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   ccache -s
 ```
@@ -227,7 +227,7 @@ PATH includes ESP-IDF tools and QEMU binaries
 
 **Configure ccache** (optional):
 ```bash
-docker run -e CCACHE_DIR=/opt/ccache -e CCACHE_MAXSIZE=5G ...
+docker run -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=5G ...
 ```
 
 See ccache section above for detailed configuration options.
