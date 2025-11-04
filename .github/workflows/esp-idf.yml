@@ -78,7 +78,7 @@ jobs:
             IDF_BASE_TAG=${{ matrix.idf_base_tag }}
 
   esp-matter-build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-latest]
     timeout-minutes: 60
     needs: esp-idf-build
     if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'

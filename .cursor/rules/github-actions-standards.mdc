@@ -198,6 +198,27 @@ jobs:
 - Login condition: `if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'`
 - Push condition: `push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}`
 
+### Self-Hosted Runners
+
+For large builds that may exceed GitHub-hosted runner disk space (e.g., ESP-Matter with large submodule trees), use self-hosted runners:
+
+```yaml
+jobs:
+  <image-name>-build:
+    runs-on: [self-hosted, ubuntu-latest]  # Use self-hosted runner
+    timeout-minutes: 60
+```
+
+**When to use self-hosted runners:**
+- Builds with large git submodules (ESP-Matter, etc.)
+- Builds that consistently fail with "No space left on device"
+- Builds requiring more than ~14GB disk space
+
+**Runner requirements:**
+- Docker and Docker Buildx installed
+- Sufficient disk space (50GB+ free recommended for large builds)
+- Runner labels: `self-hosted`, `ubuntu-latest` (or appropriate OS label)
+
 ### Version Handling
 
 - Define versions directly in matrix strategy
