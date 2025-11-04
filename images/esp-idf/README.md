@@ -36,7 +36,6 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Stable** | `stable` | Same as latest (semantic preference) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
 

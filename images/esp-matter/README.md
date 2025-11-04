@@ -43,7 +43,6 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Stable** | `stable` | Same as latest (semantic preference) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
 
