@@ -10,8 +10,10 @@ Image READMEs should focus on **how to use the Docker image**, not **how to deve
 
 **Required Sections:**
 1. **Overview** - What this image provides and its purpose
-2. **What's Inside** - Installed tools, versions, and components
+2. **What's Inside** - Installed tools and components (no specific versions)
 3. **Quick Start** - Pull, build, run commands using the image
+   - **Available Tags** - Tag types, examples, and usage recommendations
+   - Pull commands with examples for different tag types
 4. **Supported Chips/Platforms** - What the image supports
 5. **Usage Examples** - Docker commands showing image usage
    - CI/CD Integration (GitHub Actions, GitLab CI)
@@ -20,10 +22,9 @@ Image READMEs should focus on **how to use the Docker image**, not **how to deve
    - Image-specific configurations (e.g., ccache setup)
 6. **Environment Variables** - Variables set by the image
 7. **Building the Image** - How to build locally, build args
-8. **Version Information** - Component versions in the image
-9. **Additional Resources** - Links to framework documentation
-10. **License** - License information
-11. **Related Images** - Links to other project images
+8. **Additional Resources** - Links to framework documentation
+9. **License** - License information
+10. **Related Images** - Links to other project images
 
 **Optional Sections:**
 - **Notes** - Image-specific notes (e.g., excluded tools, limitations)
@@ -62,7 +63,7 @@ Image READMEs should focus on **how to use the Docker image**, not **how to deve
 ## Structure Template
 
 ```markdown
-# [Image Name] [Version]
+# [Image Name] Development Image
 
 Brief one-line description optimized for CI/CD and development.
 
@@ -73,12 +74,34 @@ What this image provides and its purpose.
 ## What's Inside
 
 **Component Category:**
-- Component 1 (version)
-- Component 2 (version)
+- Component 1 (no specific version)
+- Component 2 (no specific version)
 
 ## Quick Start
 
+### Available Tags
+
+| Tag Type | Example | Usage |
+|----------|---------|-------|
+| **Latest** | `latest` | Always points to newest build (floating) |
+| **Stable** | `stable` | Same as latest (semantic preference) |
+| **Version** | `<prefix>-v<version>` | Pin to specific version (recommended for CI/CD) |
+| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+
+**Tag Recommendations:**
+- **Development**: Use `latest` for convenience
+- **CI/CD**: Use version tags (`<prefix>-v<version>`) for reproducibility
+- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+
 ### Pull Image
+```bash
+# Latest build
+docker pull ghcr.io/jethome-iot/jethome-dev-<image>:latest
+
+# Specific version (recommended for CI/CD)
+docker pull ghcr.io/jethome-iot/jethome-dev-<image>:<prefix>-v<version>
+```
+
 ### Build Your Project
 ### Interactive Development
 
@@ -105,11 +128,8 @@ Variables set by the image.
 
 ### Standard Build
 ### Custom Build Arguments
+Use `<version>` placeholders, not specific versions.
 ### Multi-Platform Support
-
-## Version Information
-
-Table of component versions.
 
 ## Notes
 
@@ -185,7 +205,9 @@ void app_main(void) {
 2. **Link to Official Docs** - Provide links for framework-specific help
 3. **Keep It Concise** - Target ~250-350 lines for most images
 4. **Show Real Examples** - Use actual Docker commands, not pseudocode
-5. **Update Version Info** - Keep version table accurate
+5. **Use Version Placeholders** - Use `<version>`, `<commit>` instead of specific versions
+6. **Document Available Tags** - Every image README must have an "Available Tags" section in Quick Start
+7. **Version-Agnostic** - Describe capabilities, not specific version numbers (see documentation-standards.mdc)
 
 ## When Framework Content is Acceptable
 

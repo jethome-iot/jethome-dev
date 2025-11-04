@@ -31,13 +31,15 @@ Create new directory: `images/<image-name>/` containing:
 Image README must include:
 - Overview and description
 - What's Inside (capabilities and tools, not specific versions)
-- Quick Start (pull, build, run)
+- Quick Start
+  - **Available Tags** section with tag types, examples, and recommendations
+  - Pull commands with tag examples (use `<version>`, `<commit>` placeholders)
 - Usage Examples
 - CI/CD Integration examples
 - Environment Variables
-- Building the Image
+- Building the Image (use `<version>` placeholders in build arg examples)
 
-**Important:** Do not hardcode specific version numbers in READMEs. Focus on capabilities and tools. See [Documentation Standards](documentation-standards.mdc) for version handling guidelines.
+**Important:** Do not hardcode specific version numbers in READMEs. Focus on capabilities and tools. Use placeholders like `<version>`, `<commit>` in all examples. See [Documentation Standards](documentation-standards.mdc) for version handling guidelines and [Image README Standards](image-readme-standards.mdc) for complete template.
 
 ## Update Root README
 

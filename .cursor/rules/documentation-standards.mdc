@@ -15,8 +15,10 @@ Structure:
 2. Table of current images with links
 3. Generic quick start
 4. Project structure diagram
-5. Registry information
+5. Registry information (minimal, no detailed tag documentation)
 6. License
+
+**Note:** Detailed tag information belongs in individual image READMEs, not the root README.
 
 ## Image READMEs
 
@@ -30,8 +32,10 @@ Must be:
 
 Required sections:
 1. Overview
-2. What's Inside (capabilities and tools)
+2. What's Inside (capabilities and tools, no specific versions)
 3. Quick Start
+   - **Available Tags** - Tag types, examples, and recommendations
+   - Pull commands with tag examples
 4. Usage Examples (Docker commands, CI/CD integration)
 5. Environment Variables
 6. Building the Image
@@ -43,7 +47,7 @@ Sections to AVOID:
 - Feature explanations (framework features, not image features)
 - Troubleshooting (users can refer to upstream documentation)
 - Design Decisions (keep documentation focused on usage)
-- Version Information tables (versions change frequently)
+- Version Information tables (hardcoded versions change frequently)
 
 ## Version Handling
 
