@@ -178,6 +178,7 @@ jobs:
 - **Job naming**: Use `<image-name>-build` and `<image-name>-manifest` pattern (e.g., `esp-idf-build`, `esp-idf-manifest`)
 - **Benefits of image-first naming**: Jobs for same image group together in GitHub UI when sorted alphabetically
 - **Image name variables**: Use descriptive uppercase names like `ESP_IDF_IMAGE_NAME`, not generic `IMAGE_NAME`
+- **Cache scoping**: Use image name variable for cache scope: `scope=${{ env.<IMAGE_NAME> }}-${{ steps.platform.outputs.tag }}`
 - Matrix builds both platforms in parallel for faster CI
 - Platform-specific images tagged with arch suffix (e.g., `pio-6.1.18-linux-amd64`)
 - Manifest job combines platform images into multi-arch manifest

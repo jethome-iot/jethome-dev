@@ -144,8 +144,8 @@ jobs:
           push: ${{ github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.platform.outputs.tag }}
-          cache-from: type=gha,scope=esp-matter-${{ steps.platform.outputs.tag }}
-          cache-to: type=gha,mode=max,scope=esp-matter-${{ steps.platform.outputs.tag }}
+          cache-from: type=gha,scope=${{ env.ESP_MATTER_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
+          cache-to: type=gha,mode=max,scope=${{ env.ESP_MATTER_IMAGE_NAME }}-${{ steps.platform.outputs.tag }}
           build-args: |
             BASE_IMAGE_TAG=idf-${{ matrix.jethome_idf_base_tag }}-${{ steps.platform.outputs.tag }}
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
