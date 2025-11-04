@@ -115,7 +115,7 @@ jobs:
 
   esp-matter-build:
     runs-on: [self-hosted, ubuntu-latest]
-    timeout-minutes: 120
+    timeout-minutes: 360
     needs: esp-idf-manifest
     if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
