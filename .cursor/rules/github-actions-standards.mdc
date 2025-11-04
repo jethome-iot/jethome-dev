@@ -110,8 +110,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['1.0.0']  # Can expand to multiple versions
+        version: ['v1.0.0']  # Version without prefix (prefix added in tags)
         platform: ['linux/amd64', 'linux/arm64']
+        include:
+          - version: 'v1.0.0'
+            component_version: 'v1.0.0'  # Component version for build-args
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -147,7 +150,7 @@ jobs:
           cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}-${{ steps.tags.outputs.platform_tag }}
           cache-to: type=gha,mode=max,scope=${{ env.<IMAGE_NAME> }}-${{ steps.tags.outputs.platform_tag }}
           build-args: |
-            VERSION=${{ matrix.version }}
+            COMPONENT_VERSION=${{ matrix.component_version }}
 
   <image-name>-manifest:
     runs-on: ubuntu-latest
@@ -160,7 +163,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['1.0.0']
+        version: ['v1.0.0']
+        include:
+          - version: 'v1.0.0'
+            component_version: 'v1.0.0'
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -203,6 +209,61 @@ jobs:
 - **Secure push**: `push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}` prevents fork pushes
 - **Login condition**: Must include both org and branch checks: `if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'`
 
+### Matrix Version Pattern
+
+**Use consistent version matrix with `include` for component versions:**
+
+All workflows follow this pattern:
+- `matrix.version` - Primary version identifier used in tags (without product prefix)
+- `matrix.include` - Maps version to component version(s) needed for build-args
+
+**Examples:**
+
+ESP-IDF:
+```yaml
+matrix:
+  version: ['v5.4.1']
+  platform: ['linux/amd64', 'linux/arm64']
+  include:
+    - version: 'v5.4.1'
+      idf_base_tag: 'v5.4.1'
+# Tags: idf-v5.4.1
+# Build-args: IDF_BASE_TAG=${{ matrix.idf_base_tag }}
+```
+
+PlatformIO:
+```yaml
+matrix:
+  version: ['v6.1.18']
+  platform: ['linux/amd64', 'linux/arm64']
+  include:
+    - version: 'v6.1.18'
+      pio_version: 'v6.1.18'
+# Tags: pio-v6.1.18
+# Build-args: PIO_VERSION=${{ matrix.pio_version }}
+```
+
+ESP-Matter:
+```yaml
+matrix:
+  version: ['idf-v5.4.1-matter-v1.4.2']
+  platform: ['linux/amd64', 'linux/arm64']
+  include:
+    - version: 'idf-v5.4.1-matter-v1.4.2'
+      jethome_idf_base_tag: 'v5.4.1'
+      esp_matter_version: 'v1.4.2'
+# Tags: idf-v5.4.1-matter-v1.4.2
+# Build-args: BASE_IMAGE_TAG=idf-${{ matrix.jethome_idf_base_tag }}
+#             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
+```
+
+**Benefits:**
+- Single source of truth for version strings
+- Component versions preserved for build-args (Dockerfile requirements)
+- Easy to add multiple versions to matrix
+- Consistent pattern across all workflows
+- Product prefix added dynamically in tags (except ESP-Matter where it's part of composite version)
+
 ### Fork Prevention
 
 **Allow forks to test builds via workflow_dispatch, but prevent automatic builds:**
@@ -219,7 +280,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['1.0.0']
+        version: ['v1.0.0']
+        platform: ['linux/amd64', 'linux/arm64']
+        include:
+          - version: 'v1.0.0'
+            component_version: 'v1.0.0'
 ```
 
 **Strengthen push and login conditions:**

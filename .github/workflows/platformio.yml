@@ -36,8 +36,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pio_version: ['v6.1.18']
+        version: ['v6.1.18']
         platform: ['linux/amd64', 'linux/arm64']
+        include:
+          - version: 'v6.1.18'
+            pio_version: 'v6.1.18'
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -68,7 +71,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-${{ steps.tags.outputs.platform_tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
           cache-from: type=gha,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
@@ -86,7 +89,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pio_version: ['v6.1.18']
+        version: ['v6.1.18']
+        include:
+          - version: 'v6.1.18'
+            pio_version: 'v6.1.18'
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -105,6 +111,6 @@ jobs:
         run: |
           docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
             -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.pio_version }}-linux-arm64
+            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-linux-arm64
