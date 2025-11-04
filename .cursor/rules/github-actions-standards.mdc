@@ -130,7 +130,6 @@ jobs:
           push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:stable
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:sha-${{ steps.tags.outputs.sha_short }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.<IMAGE_NAME> }}:<prefix>-${{ matrix.version }}
           cache-from: type=gha,scope=${{ env.<IMAGE_NAME> }}
@@ -210,7 +209,7 @@ jobs:
 
 | Branch/Event | Build | Push to GHCR | Tags Generated |
 |--------------|-------|--------------|----------------|
-| Main repo master push | Yes | Yes | `latest`, `stable`, `VERSION`, `sha-SHA` |
+| Main repo master push | Yes | Yes | `latest`, `VERSION`, `sha-SHA` |
 | Main repo dev push | Yes | No | None |
 | Main repo PR | Yes | No | None |
 | Main repo workflow_dispatch | Yes | Only on master | Same as master if on master |
@@ -225,16 +224,17 @@ jobs:
 - Secure: Only main repo on master can push to GHCR
 
 **Tag Strategy:**
-- `latest` / `stable` - Floating tags for convenience
+- `latest` - Floating tag for convenience (always points to newest build)
 - `<prefix>-v<version>` - Main version tag (e.g., `idf-v5.4.1`, `pio-v6.1.18`)
 - `sha-<commit>` - Git commit tracking for debugging/rollback
 - **No date tags** - Version tags are semantic and clear; SHA tags provide precise tracking
+- **No stable tag** - Removed as redundant duplicate of `latest`
 - All tags created simultaneously in single build step via `docker/build-push-action`
 
 **Tag Order (Critical for GHCR Display):**
 - List tags in the `tags:` field of `docker/build-push-action`
 - **Version tag MUST be last** - GHCR displays the last tag as the primary tag
-- Order: `latest`, `stable`, `sha-<commit>`, `<prefix>-v<version>` (last = primary display)
+- Order: `latest`, `sha-<commit>`, `<prefix>-v<version>` (last = primary display)
 - All tags point to the same multi-arch manifest automatically
 
 ## Workflow Testing
