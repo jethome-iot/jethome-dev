@@ -38,6 +38,7 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `pio-v<version>` | Pin to specific PlatformIO version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Platform-specific** | `pio-v<version>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -179,14 +180,27 @@ docker run -it --rm \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-platformio:latest \
   bash -c "while true; do pio run; sleep 5; done"
+```
 
-# Run with specific user permissions
+### Running as a non-root user
+
+The image runs as `root`, and the PlatformIO directories under `/opt/platformio`
+are root-owned — so plain `-u $(id -u):$(id -g)` fails with a permission error
+before the build starts. Point `PLATFORMIO_CORE_DIR` at a writable path instead:
+
+```bash
 docker run --rm \
   -u $(id -u):$(id -g) \
+  -e PLATFORMIO_CORE_DIR=/tmp/platformio \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-platformio:latest \
   pio run
 ```
+
+This re-downloads platforms and toolchains on every run unless you also mount a
+volume at that path. On Linux the flag is also what keeps build output in
+`/workspace` owned by your user rather than root; Docker Desktop on macOS and
+Windows maps ownership for you either way.
 
 ## Project Configuration
 

@@ -3,6 +3,7 @@ FROM python:3.11-slim-bookworm
 
 # Build arguments
 ARG PIO_VERSION=6.1.18
+# espressif32 6.12 does not work with this image - keep this pin
 ARG ESP32_PLATFORM_VERSION=6.11.0
 ARG NATIVE_PLATFORM_VERSION=1.2.1
 ARG UNITY_VERSION=2.6.0
@@ -40,9 +41,9 @@ RUN pip install --no-cache-dir \
     protobuf \
     jinja2
 
-# Install platforms: \
-#   - espressif32@6.8.0 (6.12 don't work with this image)
-#   - native@1.2.1 (for unit testing)
+# Install platforms (versions are the ARG defaults above):
+#   - espressif32 for ESP32 targets
+#   - native for unit testing
 RUN pio platform install  \
     espressif32@${ESP32_PLATFORM_VERSION} \
     native@${NATIVE_PLATFORM_VERSION}

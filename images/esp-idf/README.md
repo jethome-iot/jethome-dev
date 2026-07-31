@@ -38,6 +38,7 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Platform-specific** | `idf-v<version>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -98,6 +99,10 @@ All ESP32 series chips are supported:
 
 ### CI/CD Integration
 
+Running the image as a job container replaces its entrypoint, so the ESP-IDF
+environment is **not** activated automatically — source `export.sh` in each step
+that calls `idf.py` or `pytest`.
+
 **GitHub Actions:**
 
 ```yaml
@@ -117,10 +122,10 @@ jobs:
           submodules: 'recursive'
       
       - name: Build firmware
-        run: idf.py build
+        run: . $IDF_PATH/export.sh && idf.py build
       
       - name: Run tests
-        run: pytest --target=esp32 --embedded-services=qemu
+        run: . $IDF_PATH/export.sh && pytest --target=esp32 --embedded-services=qemu
       
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -134,6 +139,9 @@ jobs:
 ```yaml
 build:
   image: ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+  
+  before_script:
+    - . $IDF_PATH/export.sh
   
   script:
     - idf.py build
