@@ -8,10 +8,15 @@
 # - Forks: Can test builds, but push is restricted to main repo
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel
 #
-# ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs on
-# master only, so the ESP-Matter jobs are skipped (not build-validated) on dev,
-# on pull requests and on workflow_dispatch outside master. The image is built
-# FROM the published multi-arch esp-idf tag, which only that manifest job creates.
+# ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs for
+# jethome-iot on master only, so the ESP-Matter jobs are skipped (not
+# build-validated) on dev, on pull requests, on workflow_dispatch outside master,
+# and in forks entirely. The image is built FROM the published multi-arch esp-idf
+# tag, which only that manifest job creates.
+# Consequence: a change touching only images/esp-matter/** still matches the paths
+# filter below, so esp-idf-build runs on its unchanged context and this workflow
+# reports success - a green check here does not mean ESP-Matter compiles.
+# Validate it with ./scripts/test-workflow.sh esp-matter.
 name: 🐳 ESP-IDF Docker Image
 
 on:

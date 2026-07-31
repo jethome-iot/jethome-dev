@@ -99,6 +99,10 @@ All ESP32 series chips are supported:
 
 ### CI/CD Integration
 
+Running the image as a job container replaces its entrypoint, so the ESP-IDF
+environment is **not** activated automatically — source `export.sh` in each step
+that calls `idf.py` or `pytest`.
+
 **GitHub Actions:**
 
 ```yaml
@@ -118,10 +122,10 @@ jobs:
           submodules: 'recursive'
       
       - name: Build firmware
-        run: idf.py build
+        run: . $IDF_PATH/export.sh && idf.py build
       
       - name: Run tests
-        run: pytest --target=esp32 --embedded-services=qemu
+        run: . $IDF_PATH/export.sh && pytest --target=esp32 --embedded-services=qemu
       
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -135,6 +139,9 @@ jobs:
 ```yaml
 build:
   image: ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
+  
+  before_script:
+    - . $IDF_PATH/export.sh
   
   script:
     - idf.py build

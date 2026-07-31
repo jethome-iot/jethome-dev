@@ -143,6 +143,10 @@ docker run --rm -it \
 
 ## CI/CD Integration
 
+Running the image as a job container replaces the entrypoint described below, so
+the environments are **not** activated automatically — source both `export.sh`
+scripts in each step that calls `idf.py`.
+
 ### GitHub Actions
 
 ```yaml
@@ -163,6 +167,8 @@ jobs:
       
       - name: Build Matter firmware
         run: |
+          . $IDF_PATH/export.sh
+          . $ESP_MATTER_PATH/export.sh
           idf.py set-target esp32c6
           idf.py build
       
@@ -180,6 +186,10 @@ jobs:
 ```yaml
 build-matter:
   image: ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
+  
+  before_script:
+    - . $IDF_PATH/export.sh
+    - . $ESP_MATTER_PATH/export.sh
   
   script:
     - idf.py set-target esp32c6
@@ -230,6 +240,11 @@ The image uses a custom entrypoint (`/opt/esp/esp_matter_entrypoint.sh`, built f
 - No need to run `source $ESP_MATTER_PATH/export.sh`
 - All tools (`idf.py`, Matter CLI, etc.) are immediately available
 - Works for both interactive shells and non-interactive commands
+
+This holds for `docker run` and Docker Compose. It does **not** hold where a CI
+system runs the image as a job container (GitHub Actions `container:`, GitLab
+`image:`): those replace the entrypoint, so you must source both `export.sh`
+scripts yourself — see the CI/CD examples above.
 
 ## Building the Image
 

@@ -35,29 +35,40 @@ read them before changing anything here.
   the last tag as the package's primary tag.
 - The versions CI passes in (`IDF_BASE_TAG`, `BASE_IMAGE_TAG`, `ESP_MATTER_VERSION`,
   `PIO_VERSION`) live in the matrix `version:` + `include:` blocks and reach the
-  image as `build-args`; for those the Dockerfile `ARG` default is only a
-  local-build fallback. A bump means editing **two** matrix blocks per image — the
+  image as `build-args`. A bump means editing **two** matrix blocks per image — the
   build job's and the manifest job's; updating one alone produces a manifest
   referencing tags that were never built. Bumping ESP-IDF touches **four** blocks,
   because both `esp-matter-*` blocks embed it as `jethome_idf_base_tag` (→
-  `BASE_IMAGE_TAG`), plus the `ARG BASE_IMAGE_TAG` default in
-  `images/esp-matter/Dockerfile`.
-- The other pins — `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION`,
-  `UNITY_VERSION` in `images/platformio/Dockerfile` — are never passed from CI, so
-  their `ARG` defaults are the sole source of truth and are bumped there.
-- No README may repeat a version number.
+  `BASE_IMAGE_TAG`).
+- **Bump the matching `ARG` default in the Dockerfile too**, in the same change.
+  `scripts/build.sh` passes no `--build-arg`, so those defaults are what every
+  local build uses: leave one behind and local builds silently stay on the old
+  version while CI moves on. The four are `IDF_BASE_TAG` (esp-idf),
+  `BASE_IMAGE_TAG` + `ESP_MATTER_VERSION` (esp-matter) and `PIO_VERSION`
+  (platformio).
+- The pins CI never passes — `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION`,
+  `UNITY_VERSION` in `images/platformio/Dockerfile` — have no matrix entry at all;
+  their `ARG` defaults are the sole source of truth.
+- Every matrix carries `fail-fast: false`, so one platform leg failing does not
+  cancel the other and truncate its log.
 - Publishing is gated in three places per build job, all of which must stay in
   sync: job `if: github.repository_owner == 'jethome-iot' || github.event_name ==
   'workflow_dispatch'`, the login step's `if: … owner == 'jethome-iot' &&
   github.ref_name == 'master'`, and `push:` with that same master-only expression.
   Manifest jobs use the master-only form as their job `if`. The org literal is
   hardcoded.
-- `esp-matter-build` has `needs: esp-idf-manifest`, which is master-only, so both
-  ESP-Matter jobs are skipped entirely on `dev`, on PRs and on non-master dispatch —
-  ESP-Matter gets no build validation there. The dependency is real:
-  `images/esp-matter/Dockerfile` is `FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-<version>`,
-  a multi-arch tag only that manifest job publishes (owner hardcoded, so forks pull
-  from `jethome-iot` too).
+- `esp-matter-build` has `needs: esp-idf-manifest`, which requires both
+  `jethome-iot` **and** `master`, so both ESP-Matter jobs are skipped entirely on
+  `dev`, on PRs, on non-master dispatch and in every fork. The dependency is real:
+  `images/esp-matter/Dockerfile` is
+  `FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-<version>`, a multi-arch tag
+  only that manifest job publishes (owner hardcoded, so forks pull from
+  `jethome-iot` too).
+- Worse than "no validation": a PR touching only `images/esp-matter/**` still
+  matches the workflow's `paths:` filter, so `esp-idf-build` runs on its unchanged
+  context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
+  PR says nothing about ESP-Matter. Validate it with
+  `./scripts/test-workflow.sh esp-matter`.
 - `esp-matter-build` is the only self-hosted job (`[self-hosted, ubuntu-latest]`,
   `timeout-minutes: 360`): the connectedhomeip submodule tree needs ~50 GB and
   fails on a GitHub-hosted runner with "No space left on device". Everything else
@@ -114,11 +125,16 @@ read them before changing anything here.
   the image afterwards and only applies to a single named image. Building
   `esp-matter` this way pulls its base from GHCR, so it does not exercise a locally
   built esp-idf.
-- `./scripts/test-workflow.sh [<workflow>|all] [--no-dryrun]` runs `act` on the
-  workflow's `<name>-build` job only — the manifest jobs push to GHCR, and
-  `esp-idf.yml` also carries the long self-hosted `esp-matter-build`. The workflow
-  map inside the script is hardcoded. `.actrc` pins the runner image and forces
-  `--platform linux/amd64`.
+- `./scripts/test-workflow.sh [<image>|all] [--no-dryrun]` runs `act` on that
+  image's `<image>-build` job only — the manifest jobs exist to push. It dispatches
+  the job as `workflow_dispatch` with `GITHUB_REF_NAME` overridden, which is what
+  keeps the job from being skipped on a fork and keeps `--no-dryrun` from
+  publishing to GHCR; do not drop either flag. The image map inside the script is
+  hardcoded. `.actrc` pins the runner image and forces `--platform linux/amd64`.
+- **Verify before finishing.** After changing an image or its README, build it
+  (`./scripts/build.sh <image>`) and run the README's own examples against the
+  built image. Documented paths, env vars and `docker run` lines are exactly what
+  drifts, and nothing else in this repo checks them — there are no tests.
 
 ## Git
 

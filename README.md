@@ -25,17 +25,12 @@ docker pull ghcr.io/jethome-iot/jethome-dev-<image>:latest
 # Interactive development
 docker run -it --rm -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-<image>:latest
-
-# One-off build — esp-idf and esp-matter use idf.py, platformio uses pio
-docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest idf.py build
-
-docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-platformio:latest pio run
 ```
 
-What each image contains, its supported chips, available tags and build arguments
-are documented in the image README linked in the table above.
+The build command differs per image (`idf.py` for esp-idf and esp-matter, `pio`
+for platformio). What each image contains, its supported chips, available tags,
+build arguments and ready-to-run examples are documented in the image README
+linked in the table above.
 
 ## Local Development
 
@@ -69,21 +64,23 @@ The script builds images with the `local` tag by default to distinguish them fro
 **Test Workflows with act:**
 
 ```bash
-# Interactive mode - select workflow to test
+# Interactive mode - select image to test
 ./scripts/test-workflow.sh
 
-# Test specific workflow (dry-run)
+# Test a specific image's build job (dry-run)
 ./scripts/test-workflow.sh esp-idf
 
-# Test all workflows
+# Test all of them
 ./scripts/test-workflow.sh all
 
-# Actually run workflow (not dry-run)
+# Actually run the build job (not dry-run)
 ./scripts/test-workflow.sh esp-idf --no-dryrun
 ```
 
-The script runs the workflow's build job (`<workflow-name>-build`) — the manifest
-jobs are left out because they push to GHCR. Requires
+The script runs that image's `<image>-build` job — the manifest jobs are left out
+because they only push to GHCR. It dispatches the job as a `workflow_dispatch`
+event with the ref overridden, so the job runs on a fork too and `--no-dryrun`
+cannot publish a locally built image. Requires
 [act](https://github.com/nektos/act) to be installed.
 
 **Test Workflows on GitHub Actions:**
@@ -109,9 +106,17 @@ gh run view <run-id> --log
 Requires [GitHub CLI](https://cli.github.com/) to be installed.
 
 **Note:** only the ESP-IDF and PlatformIO images are build-validated on `dev`. The
-ESP-Matter jobs depend on the master-only `esp-idf-manifest` job — ESP-Matter is
-built `FROM` the published multi-arch ESP-IDF tag that job creates — so they are
-skipped on `dev`, on pull requests and on `workflow_dispatch` outside `master`.
+ESP-Matter jobs depend on `esp-idf-manifest`, which runs only for `jethome-iot` on
+`master` — ESP-Matter is built `FROM` the published multi-arch ESP-IDF tag that job
+creates — so they are skipped on `dev`, on pull requests, on `workflow_dispatch`
+outside `master`, and in forks entirely.
+
+A change touching only `images/esp-matter/**` still matches the workflow's path
+filter, so `esp-idf-build` runs on its unchanged context and the check reports
+success: a green "🐳 ESP-IDF Docker Image" on such a PR does **not** mean the
+ESP-Matter image compiles. Validate it locally with
+`./scripts/test-workflow.sh esp-matter` (~50GB of disk, several hours) or on
+`master`.
 
 ### Manual Building
 
@@ -146,7 +151,7 @@ jethome-dev/
 │   ├── build.sh             # Local image build helper
 │   └── test-workflow.sh     # Workflow testing with act
 ├── .actrc                   # act configuration for local workflow testing
-├── CLAUDE.md                # Repository conventions for AI coding assistants
+├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md
 ```

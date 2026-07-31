@@ -13,9 +13,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Available workflows
+# Available images and the workflow file holding their <image>-build job.
+# ESP-Matter has no workflow of its own - its jobs live in esp-idf.yml.
 declare -A WORKFLOWS=(
     ["esp-idf"]=".github/workflows/esp-idf.yml"
+    ["esp-matter"]=".github/workflows/esp-idf.yml"
     ["platformio"]=".github/workflows/platformio.yml"
 )
 
@@ -33,22 +35,26 @@ Usage: $0 [WORKFLOW_NAME|all] [--no-dryrun]
 
 Test GitHub Actions workflows locally using act.
 
-Runs the workflow's build job (<workflow-name>-build); the manifest jobs are
-skipped because they push to GHCR.
+Runs the image's <image>-build job as a workflow_dispatch event with the ref
+overridden, so the job always runs (also on a fork) and never pushes to GHCR.
+The manifest jobs are not run: they only push.
 
 Arguments:
-    WORKFLOW_NAME    Name of the workflow to test (esp-idf, platformio)
-    all              Test all workflows
+    IMAGE_NAME       Image whose build job to test (esp-idf, esp-matter, platformio)
+    all              Test all images
     --no-dryrun      Run actual workflow (default is dry-run)
 
 Without arguments, runs in interactive mode.
 
 Examples:
-    $0 esp-idf           # Dry-run ESP-IDF workflow
-    $0 platformio        # Dry-run PlatformIO workflow
-    $0 all               # Dry-run all workflows
-    $0 esp-idf --no-dryrun    # Actually run the workflow
+    $0 esp-idf           # Dry-run ESP-IDF build job
+    $0 platformio        # Dry-run PlatformIO build job
+    $0 all               # Dry-run every build job
+    $0 esp-idf --no-dryrun    # Actually run the build job
     $0                   # Interactive mode
+
+Note: esp-matter builds the connectedhomeip submodule tree and needs ~50GB of
+disk plus several hours - it is why that job runs on a self-hosted runner in CI.
 
 Requirements:
     act - https://github.com/nektos/act
@@ -79,8 +85,8 @@ test_workflow() {
     local workflow=${WORKFLOWS[$name]}
     
     if [ -z "$workflow" ]; then
-        print_color "$RED" "Error: Unknown workflow '$name'"
-        echo "Available workflows: ${!WORKFLOWS[@]}"
+        print_color "$RED" "Error: Unknown image '$name'"
+        echo "Available images: ${!WORKFLOWS[@]}"
         exit 1
     fi
     
@@ -96,9 +102,25 @@ test_workflow() {
     print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
-    # Only the build job: the manifest jobs push to GHCR, and esp-idf.yml also
-    # holds the long self-hosted esp-matter-build job.
-    if act -j "${name}-build" -W "$workflow" $dryrun_flag; then
+    # Only the build job: the manifest jobs push to GHCR.
+    #
+    # workflow_dispatch  - the build jobs are guarded by
+    #                      `if: owner == 'jethome-iot' || event_name == 'workflow_dispatch'`.
+    #                      act derives the owner from the git remote, so on a fork
+    #                      a push event would skip the job and still exit 0 - a
+    #                      green result for a workflow that never ran.
+    # GITHUB_REF_NAME    - the login step and `push:` are gated on
+    #                      `ref_name == 'master'`. Overriding the ref keeps both
+    #                      false, so --no-dryrun can never publish a locally built
+    #                      image to GHCR. act takes ref_name from this variable but
+    #                      always reads the owner from the remote, so this is the
+    #                      half that can be forced.
+    # --matrix           - one platform is enough locally; .actrc pins the runner
+    #                      container to linux/amd64 anyway.
+    if act workflow_dispatch -j "${name}-build" -W "$workflow" \
+        --env GITHUB_REF_NAME=act-local \
+        --matrix platform:linux/amd64 \
+        $dryrun_flag; then
         echo
         print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         print_color "$GREEN" "✓ Workflow test passed: ${name}"
@@ -125,7 +147,7 @@ interactive_mode() {
     echo
     print_color "$YELLOW" "Mode: $([ "$dryrun" == "true" ] && echo "dry-run (syntax check)" || echo "actual run")"
     echo
-    echo "Select workflow to test:"
+    echo "Select image to test:"
     echo
     
     local idx=1

@@ -1,6 +1,9 @@
 # act configuration for local workflow testing
-# Usage: act -W .github/workflows/esp-idf.yml --dryrun
-#        act -j esp-idf-build -W .github/workflows/esp-idf.yml
+# Prefer ./scripts/test-workflow.sh - it runs the build job as a
+# workflow_dispatch event with the ref overridden, so nothing can reach GHCR.
+# Direct use, if you need it:
+#   act workflow_dispatch -j esp-idf-build -W .github/workflows/esp-idf.yml \
+#       --env GITHUB_REF_NAME=act-local --dryrun
 
 # Use medium Ubuntu runner image for better compatibility
 -P ubuntu-latest=catthehacker/ubuntu:act-latest
