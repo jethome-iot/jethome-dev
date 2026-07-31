@@ -9,5 +9,10 @@
 .secrets
 .env
 
+# Claude Code (per-developer files and worktrees; CLAUDE.md itself is committed)
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+
 # macOS
 .DS_Store
