@@ -68,6 +68,10 @@ The script builds images with the `local` tag by default to distinguish them fro
 #   platformio.yml  -> .github/workflows/platformio.yml, images/platformio/**
 # Both workflows also support workflow_dispatch (Actions tab), which ignores the
 # path filters. Images are pushed to GHCR from master only.
+#
+# In a fork the build jobs are skipped on push and pull_request - they require
+# the jethome-iot owner - so run them from the Actions tab (workflow_dispatch),
+# which satisfies that condition. Pushing to GHCR stays disabled either way.
 git checkout dev
 git push origin dev
 
