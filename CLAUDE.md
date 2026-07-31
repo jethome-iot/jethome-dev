@@ -17,8 +17,8 @@ Actions workflows and READMEs.
 
 ## CI
 
-The authoritative files are `.github/workflows/esp-idf.yml` and `platformio.yml` —
-read them before changing anything here.
+The authoritative files are `.github/workflows/esp-idf.yml` and
+`.github/workflows/platformio.yml` — read them before changing anything here.
 
 - Only two workflow files exist: `esp-idf.yml` builds **both** esp-idf and
   esp-matter; `platformio.yml` builds platformio. One workflow per image *family*:
