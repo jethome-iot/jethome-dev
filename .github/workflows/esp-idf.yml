@@ -7,6 +7,11 @@
 # - workflow_dispatch: Build on any branch/fork, push only on main repo master
 # - Forks: Can test builds, but push is restricted to main repo
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel
+#
+# ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs on
+# master only, so the ESP-Matter jobs are skipped (not build-validated) on dev,
+# on pull requests and on workflow_dispatch outside master. The image is built
+# FROM the published multi-arch esp-idf tag, which only that manifest job creates.
 name: 🐳 ESP-IDF Docker Image
 
 on:

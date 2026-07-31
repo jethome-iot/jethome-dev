@@ -1,5 +1,6 @@
 # act configuration for local workflow testing
-# Usage: act -j build-and-push
+# Usage: act -W .github/workflows/esp-idf.yml --dryrun
+#        act -j esp-idf-build -W .github/workflows/esp-idf.yml
 
 # Use medium Ubuntu runner image for better compatibility
 -P ubuntu-latest=catthehacker/ubuntu:act-latest

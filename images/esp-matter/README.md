@@ -23,6 +23,7 @@ This image extends the `jethome-dev-esp-idf` image with Espressif's ESP-Matter S
 - Example applications (light, switch, bridge, etc.)
 
 **Matter Prerequisites:**
+- python3-dev
 - pkg-config
 - ninja-build
 - libssl-dev
@@ -45,6 +46,7 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Platform-specific** | `idf-v<idf-ver>-matter-v<matter-ver>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -110,26 +112,6 @@ docker run --rm -v $(pwd):/workspace \
   sh -c 'cd $ESP_MATTER_PATH/examples/light && idf.py set-target esp32c6 && idf.py build'
 ```
 
-### Creating a New Matter Device
-
-```bash
-# Start interactive session
-docker run -it --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
-
-# Inside container (environment already active)
-# Copy example as starting point
-cp -r $ESP_MATTER_PATH/examples/light my_matter_device
-cd my_matter_device
-
-# Configure for your chip
-idf.py set-target esp32c6
-
-# Customize and build
-idf.py menuconfig
-idf.py build
-```
-
 ### Using Matter Examples
 
 ESP-Matter includes several ready-to-use examples:
@@ -146,15 +128,6 @@ ls $ESP_MATTER_PATH/examples/
 # - door_lock          - Smart lock
 # - fan                - Smart fan
 # - thermostat         - Temperature controller
-```
-
-### Building with Custom Data Model
-
-```bash
-# Your custom Matter device
-docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest \
-  sh -c 'idf.py set-target esp32c6 && idf.py build'
 ```
 
 ### Flash and Monitor (Requires Hardware Access)
@@ -245,14 +218,14 @@ ESP_MATTER_PATH=/opt/esp-matter
 ```bash
 IDF_PATH=/opt/esp/idf
 IDF_TOOLS_PATH=/opt/esp
-CCACHE_DIR=/opt/ccache
-CCACHE_MAXSIZE=2G
+IDF_CCACHE_ENABLE=1                # ccache enabled by default
+IDF_PYTHON_CHECK_CONSTRAINTS=no    # Skip constraint checks
 PATH includes ESP-IDF tools, QEMU binaries, Matter tools
 ```
 
 **Automatic Environment Activation:**
 
-The image uses a custom entrypoint (`/opt/esp-matter/entrypoint.sh`) that automatically sources both ESP-IDF and ESP-Matter environments when the container starts. This means:
+The image uses a custom entrypoint (`/opt/esp/esp_matter_entrypoint.sh`, built from `entrypoint.sh` in this directory) that automatically sources both ESP-IDF and ESP-Matter environments when the container starts. This means:
 - No need to run `source $IDF_PATH/export.sh`
 - No need to run `source $ESP_MATTER_PATH/export.sh`
 - All tools (`idf.py`, Matter CLI, etc.) are immediately available

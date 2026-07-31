@@ -15,85 +15,27 @@ Docker-based development environment for embedded systems, providing containeriz
 
 ## Quick Start
 
-### ESP-IDF
+Every image mounts your project at `/workspace` and starts an interactive shell by
+default:
 
 ```bash
-# Pull image
-docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
-
-# Build project
-docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
-  idf.py build
+# Pull image (esp-idf, esp-matter or platformio)
+docker pull ghcr.io/jethome-iot/jethome-dev-<image>:latest
 
 # Interactive development
 docker run -it --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
-```
+  ghcr.io/jethome-iot/jethome-dev-<image>:latest
 
-### ESP-Matter
-
-```bash
-# Pull image
-docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
-
-# Build Matter project
+# One-off build — esp-idf and esp-matter use idf.py, platformio uses pio
 docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest \
-  idf.py build
+  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest idf.py build
 
-# Interactive development
-docker run -it --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
-```
-
-### PlatformIO
-
-```bash
-# Pull image
-docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
-
-# Build project
 docker run --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-platformio:latest \
-  pio run
-
-# Interactive development
-docker run -it --rm -v $(pwd):/workspace \
-  ghcr.io/jethome-iot/jethome-dev-platformio:latest
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest pio run
 ```
 
-## What's Included
-
-### ESP-IDF Image
-
-- **Base**: Official espressif/idf (Ubuntu LTS)
-- **ESP-IDF**: All ESP32 toolchains included in base image
-- **QEMU**: Xtensa and RISC-V emulation support (from base image)
-- **Supported Chips**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6, ESP32-H2, ESP32-P4
-- **Additional Tools**: jq (JSON processor), gcovr (code coverage)
-- **Testing**: pytest, pytest-embedded frameworks for ESP-IDF and QEMU
-
-### ESP-Matter Image
-
-- **Base**: jethome-dev-esp-idf (inherits all ESP-IDF tools)
-- **ESP-Matter**: ConnectedHomeIP SDK included
-- **Matter Protocol**: Support for Matter 1.0 and 1.1 (partial)
-- **Supported Chips**: ESP32-C3, ESP32-C6, ESP32-S3, ESP32-H2 (full Matter support)
-- **Features**: Matter device clusters, commissioning, OTA updates
-- **Examples**: Light, switch, bridge, temperature sensor, door lock, fan, thermostat
-- **Note**: Host tools (chip-tool, chip-cert) not included for minimal image size
-
-### PlatformIO Image
-
-- **Base**: Python slim (Debian)
-- **PlatformIO Core**: Latest version
-- **Platforms**: ESP32, Native
-- **Supported Chips**: ESP32, ESP32-S2, ESP32-S3, ESP32-C3, ESP32-C6
-- **Framework**: ESP-IDF (toolchains download on first build)
-- **Testing**: Unity (globally installed)
-- **Tools**: git, cmake, clang-format, curl, wget, jq
-- **Python**: protobuf, jinja2
+What each image contains, its supported chips, available tags and build arguments
+are documented in the image README linked in the table above.
 
 ## Local Development
 
@@ -140,13 +82,19 @@ The script builds images with the `local` tag by default to distinguish them fro
 ./scripts/test-workflow.sh esp-idf --no-dryrun
 ```
 
-Requires [act](https://github.com/nektos/act) to be installed.
+The script runs the workflow's build job (`<workflow-name>-build`) — the manifest
+jobs are left out because they push to GHCR. Requires
+[act](https://github.com/nektos/act) to be installed.
 
 **Test Workflows on GitHub Actions:**
 
 ```bash
-# Workflows are triggered automatically by pushing to dev or master branches
-# Push to dev for testing (build-only, no push to GHCR)
+# Workflows run on pushes and pull requests to dev or master, but only when the
+# change touches that workflow's paths:
+#   esp-idf.yml     -> .github/workflows/esp-idf.yml, images/esp-idf/**, images/esp-matter/**
+#   platformio.yml  -> .github/workflows/platformio.yml, images/platformio/**
+# Both workflows also support workflow_dispatch (Actions tab), which ignores the
+# path filters. Images are pushed to GHCR from master only.
 git checkout dev
 git push origin dev
 
@@ -159,6 +107,11 @@ gh run view <run-id> --log
 ```
 
 Requires [GitHub CLI](https://cli.github.com/) to be installed.
+
+**Note:** only the ESP-IDF and PlatformIO images are build-validated on `dev`. The
+ESP-Matter jobs depend on the master-only `esp-idf-manifest` job — ESP-Matter is
+built `FROM` the published multi-arch ESP-IDF tag that job creates — so they are
+skipped on `dev`, on pull requests and on `workflow_dispatch` outside `master`.
 
 ### Manual Building
 
@@ -183,6 +136,7 @@ jethome-dev/
 │   │   └── README.md        # Detailed documentation
 │   ├── esp-matter/          # ESP-Matter development image
 │   │   ├── Dockerfile       # Image definition
+│   │   ├── entrypoint.sh    # Activates ESP-IDF + ESP-Matter env on start
 │   │   └── README.md        # Detailed documentation
 │   └── platformio/          # PlatformIO development image
 │       ├── Dockerfile       # Image definition
@@ -191,9 +145,15 @@ jethome-dev/
 ├── scripts/
 │   ├── build.sh             # Local image build helper
 │   └── test-workflow.sh     # Workflow testing with act
+├── .actrc                   # act configuration for local workflow testing
+├── CLAUDE.md                # Repository conventions for AI coding assistants
 ├── LICENSE
 └── README.md
 ```
+
+Each image directory is self-contained: the workflows build it with
+`context: images/<name>`, so a Dockerfile can only `COPY` files from inside its own
+directory.
 
 ## Registry
 
@@ -213,12 +173,12 @@ See individual image documentation for available tags and usage examples.
 
 ## Features
 
-- ✅ Reproducible builds across all machines
-- ✅ ESP32 and Native platforms pre-installed
-- ✅ Toolchains download automatically on first build
-- ✅ Minimal image size (Python slim base)
+- ✅ Reproducible builds across all machines — images are pinned by version tags
+- ✅ Multi-architecture: every image is published for `linux/amd64` and `linux/arm64`
+- ✅ Multiple ESP32 chip variants supported by a single image
+- ✅ Images kept minimal — toolchains that are not needed at build time download on
+  first use
 - ✅ CI/CD optimized (no USB/serial dependencies)
-- ✅ Multiple ESP32 chip support in one image
 
 ## License
 

@@ -41,8 +41,8 @@ RUN pip install --no-cache-dir \
     jinja2
 
 # Install platforms: \
-#   - espressif32@6.8.0 (6.12 don't work with this image)
-#   - native@1.2.1 (for unit testing)
+#   - espressif32@${ESP32_PLATFORM_VERSION} (6.12 don't work with this image)
+#   - native@${NATIVE_PLATFORM_VERSION} (for unit testing)
 RUN pio platform install  \
     espressif32@${ESP32_PLATFORM_VERSION} \
     native@${NATIVE_PLATFORM_VERSION}

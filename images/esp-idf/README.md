@@ -38,6 +38,7 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Platform-specific** | `idf-v<version>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience

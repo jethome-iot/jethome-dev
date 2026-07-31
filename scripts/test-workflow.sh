@@ -33,6 +33,9 @@ Usage: $0 [WORKFLOW_NAME|all] [--no-dryrun]
 
 Test GitHub Actions workflows locally using act.
 
+Runs the workflow's build job (<workflow-name>-build); the manifest jobs are
+skipped because they push to GHCR.
+
 Arguments:
     WORKFLOW_NAME    Name of the workflow to test (esp-idf, platformio)
     all              Test all workflows
@@ -93,7 +96,9 @@ test_workflow() {
     print_color "$BLUE" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
     
-    if act -j build -W "$workflow" $dryrun_flag; then
+    # Only the build job: the manifest jobs push to GHCR, and esp-idf.yml also
+    # holds the long self-hosted esp-matter-build job.
+    if act -j "${name}-build" -W "$workflow" $dryrun_flag; then
         echo
         print_color "$GREEN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         print_color "$GREEN" "✓ Workflow test passed: ${name}"
