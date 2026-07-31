@@ -81,6 +81,10 @@ gh run view <run-id> --log
 
 Requires [GitHub CLI](https://cli.github.com/) to be installed.
 
+There is no local workflow runner: workflow changes are validated by pushing the
+branch and reading the PR's checks. To iterate on a Dockerfile itself, use
+`./scripts/build.sh` — it builds the same image the workflow does.
+
 **Note:** only the ESP-IDF and PlatformIO images are build-validated on `dev`. The
 ESP-Matter jobs depend on `esp-idf-manifest`, which runs only for `jethome-iot` on
 `master` — ESP-Matter is built `FROM` the published multi-arch ESP-IDF tag that job
