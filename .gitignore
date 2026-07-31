@@ -5,7 +5,7 @@
 # Build artifacts
 .pio/
 
-# act (local workflow testing)
+# Local secrets
 .secrets
 .env
 

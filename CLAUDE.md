@@ -13,8 +13,7 @@ Actions workflows and READMEs.
   same directory, so a Dockerfile can only `COPY` from inside its own directory —
   a shared file at the repo root breaks both CI and local builds.
 - `scripts/build.sh` auto-discovers images by scanning `images/*/Dockerfile`; an
-  image placed anywhere else is invisible to the tooling. `scripts/test-workflow.sh`
-  instead hardcodes a workflow map that must be edited by hand.
+  image placed anywhere else is invisible to the tooling.
 
 ## CI
 
@@ -67,8 +66,8 @@ read them before changing anything here.
 - Worse than "no validation": a PR touching only `images/esp-matter/**` still
   matches the workflow's `paths:` filter, so `esp-idf-build` runs on its unchanged
   context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
-  PR says nothing about ESP-Matter. Validate it with
-  `./scripts/test-workflow.sh esp-matter`.
+  PR says nothing about ESP-Matter. Validate it with `./scripts/build.sh esp-matter`
+  or on `master`.
 - `esp-matter-build` is the only self-hosted job (`[self-hosted, ubuntu-latest]`,
   `timeout-minutes: 360`): the connectedhomeip submodule tree needs ~50 GB and
   fails on a GitHub-hosted runner with "No space left on device". Everything else
@@ -125,12 +124,9 @@ read them before changing anything here.
   the image afterwards and only applies to a single named image. Building
   `esp-matter` this way pulls its base from GHCR, so it does not exercise a locally
   built esp-idf.
-- `./scripts/test-workflow.sh [<image>|all] [--no-dryrun]` runs `act` on that
-  image's `<image>-build` job only — the manifest jobs exist to push. It dispatches
-  the job as `workflow_dispatch` with `GITHUB_REF_NAME` overridden, which is what
-  keeps the job from being skipped on a fork and keeps `--no-dryrun` from
-  publishing to GHCR; do not drop either flag. The image map inside the script is
-  hardcoded. `.actrc` pins the runner image and forces `--platform linux/amd64`.
+- There is no local workflow runner. Workflow changes are validated by pushing the
+  branch and reading the PR's checks; `act` and its wrapper were removed because
+  they only duplicated `build.sh` behind a container.
 - **Verify before finishing.** After changing an image or its README, build it
   (`./scripts/build.sh <image>`) and run the README's own examples against the
   built image. Documented paths, env vars and `docker run` lines are exactly what

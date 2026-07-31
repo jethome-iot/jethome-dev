@@ -34,9 +34,7 @@ linked in the table above.
 
 ## Local Development
 
-### Helper Scripts
-
-The repository includes helper scripts in the `scripts/` directory for local development:
+### Helper Script
 
 **Build Images Locally:**
 
@@ -60,28 +58,6 @@ IMAGE_TAG=dev ./scripts/build.sh esp-idf
 ```
 
 The script builds images with the `local` tag by default to distinguish them from registry images. Use the `-r` or `--run` flag to automatically run the image in interactive mode after a successful build. You can customize the tag using the `IMAGE_TAG` environment variable.
-
-**Test Workflows with act:**
-
-```bash
-# Interactive mode - select image to test
-./scripts/test-workflow.sh
-
-# Test a specific image's build job (dry-run)
-./scripts/test-workflow.sh esp-idf
-
-# Test all of them
-./scripts/test-workflow.sh all
-
-# Actually run the build job (not dry-run)
-./scripts/test-workflow.sh esp-idf --no-dryrun
-```
-
-The script runs that image's `<image>-build` job — the manifest jobs are left out
-because they only push to GHCR. It dispatches the job as a `workflow_dispatch`
-event with the ref overridden, so the job runs on a fork too and `--no-dryrun`
-cannot publish a locally built image. Requires
-[act](https://github.com/nektos/act) to be installed.
 
 **Test Workflows on GitHub Actions:**
 
@@ -115,8 +91,7 @@ A change touching only `images/esp-matter/**` still matches the workflow's path
 filter, so `esp-idf-build` runs on its unchanged context and the check reports
 success: a green "🐳 ESP-IDF Docker Image" on such a PR does **not** mean the
 ESP-Matter image compiles. Validate it locally with
-`./scripts/test-workflow.sh esp-matter` (~50GB of disk, several hours) or on
-`master`.
+`./scripts/build.sh esp-matter` (~50GB of disk, several hours) or on `master`.
 
 ### Manual Building
 
@@ -148,9 +123,7 @@ jethome-dev/
 │       ├── README.md        # Detailed documentation
 │       └── pio_project/     # Reference configuration
 ├── scripts/
-│   ├── build.sh             # Local image build helper
-│   └── test-workflow.sh     # Workflow testing with act
-├── .actrc                   # act configuration for local workflow testing
+│   └── build.sh             # Local image build helper
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md

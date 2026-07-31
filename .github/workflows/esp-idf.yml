@@ -16,7 +16,7 @@
 # Consequence: a change touching only images/esp-matter/** still matches the paths
 # filter below, so esp-idf-build runs on its unchanged context and this workflow
 # reports success - a green check here does not mean ESP-Matter compiles.
-# Validate it with ./scripts/test-workflow.sh esp-matter.
+# Validate it with ./scripts/build.sh esp-matter, or on master.
 name: 🐳 ESP-IDF Docker Image
 
 on:
