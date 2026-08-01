@@ -70,7 +70,7 @@ docker run --rm \
 docker run --rm \
   -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
-  pytest --target=esp32
+  pytest --target=esp32 --embedded-services=idf,qemu
 ```
 
 ### Interactive Development
@@ -83,17 +83,23 @@ docker run -it --rm \
 
 ## Supported Chips
 
-All ESP32 series chips are supported:
+Every ESP32 series chip the pinned ESP-IDF release supports can be built for —
+run `idf.py --list-targets` inside the image for the authoritative list:
 
-| Chip | Architecture | QEMU Support |
-|------|-------------|--------------|
-| ESP32 | Xtensa | ✅ Yes |
-| ESP32-S2 | Xtensa | ✅ Yes |
-| ESP32-S3 | Xtensa | ✅ Yes |
-| ESP32-C3 | RISC-V | ✅ Yes |
-| ESP32-C6 | RISC-V | ✅ Yes |
-| ESP32-H2 | RISC-V | ✅ Yes |
-| ESP32-P4 | RISC-V | ✅ Yes |
+| Chip | Architecture |
+|------|-------------|
+| ESP32 | Xtensa |
+| ESP32-S2 | Xtensa |
+| ESP32-S3 | Xtensa |
+| ESP32-C3 | RISC-V |
+| ESP32-C6 | RISC-V |
+| ESP32-H2 | RISC-V |
+| ESP32-P4 | RISC-V |
+
+QEMU emulation covers only part of that list — the ESP-IDF QEMU fork implements a
+subset of the targets, and which ones changes as the base image is bumped. See
+[QEMU for ESP32](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/qemu.html)
+for the current coverage.
 
 ## Usage Examples
 
@@ -125,7 +131,7 @@ jobs:
         run: . $IDF_PATH/export.sh && idf.py build
       
       - name: Run tests
-        run: . $IDF_PATH/export.sh && pytest --target=esp32 --embedded-services=qemu
+        run: . $IDF_PATH/export.sh && pytest --target=esp32 --embedded-services=idf,qemu
       
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -145,7 +151,7 @@ build:
   
   script:
     - idf.py build
-    - pytest --target=esp32 --embedded-services=qemu
+    - pytest --target=esp32 --embedded-services=idf,qemu
   
   artifacts:
     paths:
@@ -238,15 +244,19 @@ See [ccache documentation](https://ccache.dev/manual/latest.html) for all option
 
 ## Environment Variables
 
-The image inherits environment variables from the ESP-IDF base image:
+The image inherits these variables from the ESP-IDF base image:
 
 ```bash
 IDF_PATH=/opt/esp/idf              # ESP-IDF installation path
 IDF_TOOLS_PATH=/opt/esp            # ESP-IDF tools path
 IDF_CCACHE_ENABLE=1                # ccache enabled by default
 IDF_PYTHON_CHECK_CONSTRAINTS=no    # Skip constraint checks
-PATH includes ESP-IDF tools and QEMU binaries
 ```
+
+`PATH` is not among them. The ESP-IDF tools, the QEMU binaries and the ESP-IDF
+Python environment are added at container start, when the base image's entrypoint
+sources `export.sh` — so they are in place for `docker run` and Docker Compose,
+but not where a CI system replaces the entrypoint (see the CI/CD examples above).
 
 **ESP-IDF Python environment:** Automatically activated on container startup via entrypoint
 
@@ -263,7 +273,7 @@ See ccache section above for detailed configuration options.
 
 ```bash
 cd images/esp-idf
-docker build -t jethome-dev-esp-idf .
+docker build -t jethome-dev-esp-idf:local .
 ```
 
 ### Custom Build Arguments
@@ -271,7 +281,7 @@ docker build -t jethome-dev-esp-idf .
 ```bash
 docker build \
   --build-arg IDF_BASE_TAG=<version-tag> \
-  -t jethome-dev-esp-idf .
+  -t jethome-dev-esp-idf:local .
 ```
 
 Available build arguments:
@@ -294,5 +304,6 @@ MIT License - see [LICENSE](../../LICENSE) file.
 
 ## Related Images
 
-- [jethome-dev-platformio](../platformio/) - PlatformIO with ESP32 support
+- [jethome-dev-esp-matter](../esp-matter/) - ESP-Matter SDK, built `FROM` this image's `idf-v<version>` tag
+- [All images in this repository](../../README.md#current-images)
 

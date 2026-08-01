@@ -1,9 +1,12 @@
 # CLAUDE.md
 
-This repo ships no application code. It builds three Docker developer images —
-`esp-idf`, `esp-matter`, `platformio` — and publishes them to
+This repo ships no application code. It is a home for Docker developer images:
+each image lives in `images/<name>/` and is published as
 `ghcr.io/<owner>/jethome-dev-<image>`. The deliverables are Dockerfiles, GitHub
-Actions workflows and READMEs.
+Actions workflows and READMEs. `images/` is the roster — today `esp-idf`,
+`esp-matter` and `platformio`, and adding to it is the normal case, not an
+exception. Rules below are written per image; where they name one, it is an
+example.
 
 ## Layout
 
@@ -20,8 +23,8 @@ Actions workflows and READMEs.
 The authoritative files are `.github/workflows/esp-idf.yml` and
 `.github/workflows/platformio.yml` — read them before changing anything here.
 
-- Only two workflow files exist: `esp-idf.yml` builds **both** esp-idf and
-  esp-matter; `platformio.yml` builds platformio. One workflow per image *family*:
+- One workflow file per image *family*; today there are two — `esp-idf.yml` builds
+  **both** esp-idf and esp-matter, `platformio.yml` builds platformio. A family is:
   an image whose Dockerfile is `FROM` another image of this repo joins the base
   image's workflow, adds `images/<name>/**` to its push **and** pull_request
   `paths:` filters, and chains via `needs: <base>-manifest`.
@@ -42,12 +45,13 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 - **Bump the matching `ARG` default in the Dockerfile too**, in the same change.
   `scripts/build.sh` passes no `--build-arg`, so those defaults are what every
   local build uses: leave one behind and local builds silently stay on the old
-  version while CI moves on. The four are `IDF_BASE_TAG` (esp-idf),
-  `BASE_IMAGE_TAG` + `ESP_MATTER_VERSION` (esp-matter) and `PIO_VERSION`
-  (platformio).
-- The pins CI never passes — `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION`,
-  `UNITY_VERSION` in `images/platformio/Dockerfile` — have no matrix entry at all;
-  their `ARG` defaults are the sole source of truth.
+  version while CI moves on. The set to check is the `build-args:` block of that
+  image's build step — currently `IDF_BASE_TAG` (esp-idf), `BASE_IMAGE_TAG` +
+  `ESP_MATTER_VERSION` (esp-matter), `PIO_VERSION` (platformio).
+- An `ARG` with no matrix entry is a pin CI never passes, so its Dockerfile
+  default is the sole source of truth and is bumped there — today
+  `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION` and `UNITY_VERSION` in
+  `images/platformio/Dockerfile`.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
 - Publishing is gated in three places per build job, all of which must stay in
@@ -82,19 +86,22 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 
 ## Dockerfiles
 
-- Common to all three: `WORKDIR /workspace` and a version-printing verification
-  `RUN` as the last build layer — that layer is what catches installs which
-  silently no-op under emulation. Both platforms must build.
-- `SHELL ["/bin/bash", "-c"]` is set only in esp-idf and esp-matter, whose `RUN`
+- Every image sets `WORKDIR /workspace` and ends with a version-printing
+  verification `RUN` as its last build layer — that layer is what catches installs
+  which silently no-op under emulation. Both platforms must build.
+- Docker's default `SHELL` is `/bin/sh`, so an image that sets none must keep its
+  `RUN` layers POSIX — check the image's own Dockerfile before reaching for a
+  bash-ism. esp-idf and esp-matter set `SHELL ["/bin/bash", "-c"]` because their
   layers need the bash builtin `source` (their comment: "needed for QEMU emulation
-  compatibility"). platformio has no `SHELL` directive, so its `RUN` layers run
-  under `/bin/sh` — keep them POSIX. Its trailing `CMD ["/bin/bash"]` sets the
+  compatibility"); platformio does not. A trailing `CMD ["/bin/bash"]` sets the
   interactive shell, not the build shell.
-- Activate toolchains by sourcing `${IDF_PATH}/export.sh` (esp-idf additionally
-  needs `export IDF_PATH_FORCE=1` in the same `RUN`; esp-matter also sources
-  `${ESP_MATTER_PATH}/export.sh`), then call tools by name. Python packages live
-  inside the ESP-IDF venv — hardcoded interpreter paths like
-  `/opt/esp/python_env/idf5.4_py3.12_env/bin/python3` were tried and reverted.
+- Toolchain activation is per-image, not repo-wide. The ESP images source
+  `${IDF_PATH}/export.sh` in every `RUN` that needs the toolchain (esp-idf
+  additionally needs `export IDF_PATH_FORCE=1` in the same `RUN`; esp-matter also
+  sources `${ESP_MATTER_PATH}/export.sh`), while platformio puts `pio` on `PATH`
+  at install time and activates nothing. Either way call tools by name, never by
+  absolute path: `/opt/esp/python_env/idf5.4_py3.12_env/bin/python3` was tried and
+  reverted — it pins a version-stamped directory that a version bump invalidates.
 - esp-matter activates both environments at runtime through
   `ENTRYPOINT ["/opt/esp/esp_matter_entrypoint.sh"]`; overriding that entrypoint in
   a derived image silently breaks the "no sourcing needed" promise in its README.
@@ -115,6 +122,24 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   new image needs a row in the root table, not a section of its own.
 - Image READMEs document *the image* — tags, invocation, build args, environment —
   not how to develop with the framework inside it.
+- An image README links the root index plus its own `FROM` edges — its base image
+  and any image built on it. It never enumerates the roster, so adding an image
+  touches its own README, the root table, and the README of its base image only.
+- An image built `FROM` another image of this repo links to the base image's
+  README for what it inherits and lists only its own additions. A copied inventory
+  is a second source of truth that goes stale silently — the esp-matter copy had
+  already lost `gcovr` before it was replaced by a link.
+
+## Adding an image
+
+Four places, none of them checked automatically:
+
+1. `images/<name>/` with a `Dockerfile` and a `README.md`.
+2. A row in the root README's image table.
+3. Either a new workflow file, or — if the image is `FROM` another image of this
+   repo — two jobs added to that family's workflow, plus `images/<name>/**` in its
+   push **and** pull_request `paths:` filters.
+4. A `FROM`-edge link in the base image's README, where there is a base image.
 
 ## Local workflow
 

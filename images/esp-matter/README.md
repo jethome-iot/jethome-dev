@@ -9,12 +9,10 @@ This image extends the `jethome-dev-esp-idf` image with Espressif's ESP-Matter S
 ## What's Inside
 
 **Base Image:**
-- `jethome-dev-esp-idf` - Inherits all ESP-IDF tools
-  - ESP-IDF with all ESP32 toolchains
-  - QEMU emulation (Xtensa and RISC-V)
-  - pytest, pytest-embedded, testing tools
-  - Python, Ubuntu LTS
-  - Build tools: ccache, jq
+- [`jethome-dev-esp-idf`](../esp-idf/README.md) - inherited in full: ESP-IDF with
+  all ESP32 toolchains, QEMU emulation, the pytest-embedded testing stack and the
+  CI utilities it adds on top of `espressif/idf`. Its README is the authoritative
+  inventory; the sections below cover only what ESP-Matter adds.
 
 **ESP-Matter SDK:**
 - ESP-Matter
@@ -117,17 +115,9 @@ docker run --rm -v $(pwd):/workspace \
 ESP-Matter includes several ready-to-use examples:
 
 ```bash
-# List available examples
+# List available examples - the set changes between ESP-Matter releases, so this
+# is the authoritative answer for the version your image was built from
 ls $ESP_MATTER_PATH/examples/
-
-# Common examples:
-# - light              - Dimmable/color temperature light
-# - light_switch       - On/off light switch
-# - bridge             - Bridge for non-Matter devices
-# - temperature_sensor - Temperature sensor
-# - door_lock          - Smart lock
-# - fan                - Smart fan
-# - thermostat         - Temperature controller
 ```
 
 ### Flash and Monitor (Requires Hardware Access)
@@ -230,8 +220,10 @@ IDF_PATH=/opt/esp/idf
 IDF_TOOLS_PATH=/opt/esp
 IDF_CCACHE_ENABLE=1                # ccache enabled by default
 IDF_PYTHON_CHECK_CONSTRAINTS=no    # Skip constraint checks
-PATH includes ESP-IDF tools, QEMU binaries, Matter tools
 ```
+
+`PATH` is not one of them: the ESP-IDF and ESP-Matter tools are added at container
+start by the entrypoint described below.
 
 **Automatic Environment Activation:**
 
@@ -252,7 +244,7 @@ scripts yourself — see the CI/CD examples above.
 
 ```bash
 cd images/esp-matter
-docker build -t jethome-dev-esp-matter .
+docker build -t jethome-dev-esp-matter:local .
 ```
 
 ### Custom Build Arguments
@@ -261,7 +253,7 @@ docker build -t jethome-dev-esp-matter .
 docker build \
   --build-arg BASE_IMAGE_TAG=idf-v<version> \
   --build-arg ESP_MATTER_VERSION=v<version> \
-  -t jethome-dev-esp-matter .
+  -t jethome-dev-esp-matter:local .
 ```
 
 Available build arguments:
@@ -271,10 +263,6 @@ Available build arguments:
 ### Multi-Platform Support
 
 This image is built for both **linux/amd64** and **linux/arm64** architectures. Docker automatically pulls the correct image for your platform.
-
-## Notes
-
-**Host Tools Not Included**: chip-tool, chip-cert, and ZAP are not included in this image to keep size minimal. For testing and commissioning, use separate controller installations or Matter-compatible platforms (Apple Home, Google Home, etc.).
 
 ## Additional Resources
 
@@ -291,6 +279,6 @@ MIT License - see [LICENSE](../../LICENSE) file.
 
 ## Related Images
 
-- [jethome-dev-esp-idf](../esp-idf/) - ESP-IDF development environment (base image)
-- [jethome-dev-platformio](../platformio/) - PlatformIO with ESP32 support
+- [jethome-dev-esp-idf](../esp-idf/) - base image; this image is built `FROM` its `idf-v<version>` tag
+- [All images in this repository](../../README.md#current-images)
 

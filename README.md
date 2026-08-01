@@ -9,14 +9,15 @@ Docker-based development environment for embedded systems, providing containeriz
 
 | Image | Description | Documentation |
 |-------|-------------|---------------|
-| [esp-idf](./images/esp-idf/) | ESP-IDF with QEMU, pytest, and testing tools for all ESP32 chips | [README](./images/esp-idf/README.md) |
+| [esp-idf](./images/esp-idf/) | ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation | [README](./images/esp-idf/README.md) |
 | [esp-matter](./images/esp-matter/) | ESP-Matter SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
-| [platformio](./images/platformio/) | PlatformIO with ESP32 (all variants) + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
+| [platformio](./images/platformio/) | PlatformIO with ESP32 platform support + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
 
-Every image mounts your project at `/workspace` and starts an interactive shell by
-default:
+Every image sets `/workspace` as its working directory and `/bin/bash` as its
+default command — mount your project there and pass `-it` for an interactive
+shell:
 
 ```bash
 # Pull image (esp-idf, esp-matter or platformio)
@@ -71,7 +72,10 @@ The script builds images with the `local` tag by default to distinguish them fro
 #
 # In a fork the build jobs are skipped on push and pull_request - they require
 # the jethome-iot owner - so run them from the Actions tab (workflow_dispatch),
-# which satisfies that condition. Pushing to GHCR stays disabled either way.
+# which satisfies that condition. An image built FROM another image of this repo
+# (today esp-matter) stays skipped even then: it chains off the base image's
+# manifest job, which runs for jethome-iot on master only - see the note below.
+# Pushing to GHCR stays disabled either way.
 git checkout dev
 git push origin dev
 
@@ -87,13 +91,18 @@ Requires [GitHub CLI](https://cli.github.com/) to be installed.
 
 There is no local workflow runner: workflow changes are validated by pushing the
 branch and reading the PR's checks. To iterate on a Dockerfile itself, use
-`./scripts/build.sh` — it builds the same image the workflow does.
+`./scripts/build.sh` — it builds the same context, but as a plain `docker build`
+for your host architecture only and with the Dockerfile's own `ARG` defaults
+instead of the versions CI passes in, so a green local build is not a green CI
+run.
 
-**Note:** only the ESP-IDF and PlatformIO images are build-validated on `dev`. The
-ESP-Matter jobs depend on `esp-idf-manifest`, which runs only for `jethome-iot` on
-`master` — ESP-Matter is built `FROM` the published multi-arch ESP-IDF tag that job
-creates — so they are skipped on `dev`, on pull requests, on `workflow_dispatch`
-outside `master`, and in forks entirely.
+**Note:** an image built `FROM` another image of this repo is not build-validated on
+`dev`. Its build job needs the base image's manifest job, which runs only for
+`jethome-iot` on `master` — that job publishes the multi-arch tag the derived
+Dockerfile pulls. Today that is ESP-Matter: `esp-matter-build` needs
+`esp-idf-manifest`, so both ESP-Matter jobs are skipped on `dev`, on pull requests,
+on `workflow_dispatch` outside `master`, and in forks entirely. Every other image
+builds from its own context and is validated on `dev`.
 
 A change touching only `images/esp-matter/**` still matches the workflow's path
 filter, so `esp-idf-build` runs on its unchanged context and the check reports
@@ -129,7 +138,7 @@ jethome-dev/
 │   └── platformio/          # PlatformIO development image
 │       ├── Dockerfile       # Image definition
 │       ├── README.md        # Detailed documentation
-│       └── pio_project/     # Reference configuration
+│       └── pio_project/     # Stub project for the disabled pre-build step
 ├── scripts/
 │   └── build.sh             # Local image build helper
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
@@ -143,18 +152,18 @@ directory.
 
 ## Registry
 
-Images are published to GitHub Container Registry (GHCR):
-- **ESP-IDF**: `ghcr.io/jethome-iot/jethome-dev-esp-idf`
-- **ESP-Matter**: `ghcr.io/jethome-iot/jethome-dev-esp-matter`
-- **PlatformIO**: `ghcr.io/jethome-iot/jethome-dev-platformio`
+Every image is published to GitHub Container Registry (GHCR) as its own package,
+named after its directory under `images/`:
+`ghcr.io/jethome-iot/jethome-dev-<image>`.
 
-See individual image documentation for available tags and usage examples.
+See the image's own README, linked in [Current Images](#current-images), for its
+available tags and usage examples.
 
 ## Use Cases
 
 - **CI/CD**: Automated firmware builds in GitHub Actions, GitLab CI
 - **Team Development**: Consistent build environment across team
-- **Multi-platform**: Build for all ESP32 variants from single container
+- **Multi-platform**: Build for multiple ESP32 variants from a single container
 - **Testing**: Native platform for unit tests with Unity framework
 
 ## Features
