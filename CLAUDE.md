@@ -131,10 +131,3 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   (`./scripts/build.sh <image>`) and run the README's own examples against the
   built image. Documented paths, env vars and `docker run` lines are exactly what
   drifts, and nothing else in this repo checks them — there are no tests.
-
-## Git
-
-- Commit messages: English, short imperative subject, optional bullet body. The
-  history does **not** use Conventional Commits — no `feat:` / `fix:` prefixes.
-- `dev` is for validation, `master` is the only branch that publishes to GHCR.
-- Never run `git commit` unless the user explicitly asks for it.
