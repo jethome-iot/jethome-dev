@@ -18,11 +18,21 @@
 # a pool added for the linter but never probed would be exactly the second source
 # of truth this repository's own rules warn about.
 #
-# Run it from the Actions tab (workflow_dispatch); nothing triggers it otherwise.
+# Run it from the Actions tab (workflow_dispatch), or by pushing a branch named
+# `runner-probe/<anything>`. The second trigger exists because `workflow_dispatch`
+# is only offered for workflows already on the default branch: without it this
+# file could not be exercised until after it was merged, which is backwards for a
+# probe whose whole job is to answer a question before a decision is made. It also
+# gives a fork a way to run it. Nothing else triggers this workflow - in
+# particular it never runs on a pull request, where it would spend money on every
+# push.
 name: 🔎 Runner Smoke Test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'runner-probe/**'
 
 permissions: {}
 
