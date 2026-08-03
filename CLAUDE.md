@@ -126,9 +126,15 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   the ESP-IDF this very run produced — so a branch bumping both versions at once is
   checked as the pair it will become, not against whatever is published today.
 - That works because `esp-idf-build` pushes by digest on **every** run, not only on
-  master. Nothing published that way is reachable by name: only the manifest jobs
-  create tags, and they stay master-only. A pull request therefore leaves untagged
-  blobs in GHCR and moves no tag. They accumulate; clean them up periodically.
+  master — so its GHCR login is unconditional too, unlike the other build jobs'.
+  Nothing published that way is reachable by name: only the manifest jobs create
+  tags, and they stay master-only. A pull request therefore leaves untagged blobs in
+  GHCR and moves no tag. They accumulate; clean them up periodically.
+- **Dependabot is the exception.** GitHub gives its runs a read-only
+  `GITHUB_TOKEN` regardless of the job's `permissions:`, so the digest push would
+  be rejected. Its pull requests skip the push and the digest upload, and
+  `esp-matter-build` sits them out — the action bump they carry is still exercised
+  by esp-idf-build compiling the image.
 - Publishing is still master-only in the sense that matters — no tag, `latest`
   included, is ever written outside master.
 - **Every build job also checks the PR's head repository**, not just the owner. On

@@ -141,8 +141,9 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Unconditional: the build below pushes by digest on every run, so every run
+      # needs credentials - not just master.
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.ref_name == 'master'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -160,13 +161,19 @@ jobs:
       # it buys is that esp-matter-build can build on the ESP-IDF this very run
       # produced, including on a branch that bumps both versions at once, where the
       # new base does not exist under any tag yet.
+      #
+      # Except for Dependabot: GitHub hands its runs a read-only GITHUB_TOKEN
+      # whatever the permissions block asks for, so the push would be rejected. Its
+      # pull requests bump action versions, which this job still exercises by
+      # building; only the upload is skipped, and esp-matter-build sits that run out
+      # (see its `if`).
       - name: 🐳 Build and push by digest
         id: build
         uses: docker/build-push-action@v7
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.actor != 'dependabot[bot]' }}
           build-args: ${{ matrix.build_args }}
 
       # Matrix legs cannot each set a job output - they would overwrite one
@@ -174,12 +181,14 @@ jobs:
       # digest itself. Uploaded on every run: esp-matter-build consumes this on
       # pull requests as well.
       - name: 📤 Export digest
+        if: github.actor != 'dependabot[bot]'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: ⬆️ Upload digest
+        if: github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v7
         with:
           name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
@@ -280,8 +289,13 @@ jobs:
     # for its own platform, which the build leg pushes by digest on every run - so
     # the dependency is plain, both branches behave identically, and no status
     # expression is needed to work around a skipped job.
+    #
+    # Dependabot is excluded: its token cannot push, so esp-idf-build produces no
+    # digest to hand over. Its pull requests change action versions, which
+    # esp-idf-build still exercises.
     if: >-
       ${{ github.repository_owner == 'jethome-iot'
+      && github.actor != 'dependabot[bot]'
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       contents: read
