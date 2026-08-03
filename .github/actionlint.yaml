@@ -1,0 +1,20 @@
+# actionlint configuration
+#
+# Larger-runner labels are not predefined by GitHub - each one is the name of a
+# pool an org admin created - so actionlint cannot know them and rejects every
+# `runs-on` that uses one. Listing them here is what makes the linter useful: an
+# unlisted label is now a lint error rather than a job that silently sits queued
+# for 24 hours.
+#
+# Keep this list in sync with the pools in the jethome-iot organisation. This file
+# is the only place in the repository where they are written down.
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-4core
+    - ubuntu-latest-8core
+    - ubuntu-latest-16core
+    - ubuntu-latest-32core
+    - ubuntu-latest-4core-arm
+    - ubuntu-latest-8core-arm
+    - ubuntu-latest-16core-arm
+    - ubuntu-latest-32core-arm

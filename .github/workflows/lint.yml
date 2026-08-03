@@ -1,0 +1,59 @@
+# Lint
+#
+# Static checks for the only two kinds of source this repository has: workflow
+# files and Dockerfiles. It builds nothing and needs no registry access.
+#
+# actionlint is a gate. It catches the failure modes this repository has actually
+# hit - a `runs-on` label that matches no runner pool (see .github/actionlint.yaml),
+# a `needs:` pointing at a renamed job, an expression that never evaluates - plus
+# shellcheck over every `run:` block.
+#
+# hadolint is advisory (`--no-fail`). The Dockerfiles here deliberately break some
+# of its rules: pinned apt versions would fight the version bumps CI drives through
+# build args, and the ESP images need `source` from bash. Read its output, do not
+# obey it blindly.
+name: 🧹 Lint
+
+on:
+  push:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actionlint.yaml'
+      - 'images/*/Dockerfile'
+  pull_request:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/**'
+      - '.github/actionlint.yaml'
+      - 'images/*/Dockerfile'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  lint:
+    name: 🧹 Workflows and Dockerfiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔎 Lint workflow files
+        run: |
+          docker run --rm -v "${PWD}:/repo" -w /repo \
+            rhysd/actionlint:1.7.12 -color
+
+      - name: 🐳 Lint Dockerfiles
+        run: |
+          status=0
+          for dockerfile in images/*/Dockerfile; do
+            echo "::group::${dockerfile}"
+            docker run --rm -i hadolint/hadolint:v2.15.1-alpine \
+              hadolint --no-fail - < "${dockerfile}" || status=$?
+            echo "::endgroup::"
+          done
+          exit ${status}

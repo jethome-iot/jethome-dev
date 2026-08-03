@@ -27,7 +27,17 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   **both** esp-idf and esp-matter, `platformio.yml` builds platformio. A family is:
   an image whose Dockerfile is `FROM` another image of this repo joins the base
   image's workflow, adds `images/<name>/**` to its push **and** pull_request
-  `paths:` filters, and chains via `needs: <base>-manifest`.
+  `paths:` filters, and chains via `needs: <base>-manifest`. The rule covers
+  image-building workflows only; `lint.yml` and `runner-smoke.yml` build nothing
+  and belong to no family.
+- Runner labels other than `ubuntu-latest` name pools created in the org, not
+  anything GitHub predefines, so a typo cannot be told apart from a pool that does
+  not exist: the job just sits queued for up to 24 hours, and `timeout-minutes`
+  does not fire because it starts at assignment, not at queueing. Every valid
+  label is listed in `.github/actionlint.yaml` — that file is both the linter's
+  config and the only written record of which pools exist. Add the label there
+  first, or `lint.yml` fails the change. `runner-smoke.yml` (`workflow_dispatch`
+  only) probes every label and reports arch, vCPU, RAM and free disk.
 - Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
   `linux/amd64` / `linux/arm64`, pushes platform-suffixed tags) then
   `<image>-manifest` (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
