@@ -13,8 +13,8 @@
 # ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs for
 # jethome-iot on master only, so the ESP-Matter jobs are skipped (not
 # build-validated) on dev, on pull requests, on workflow_dispatch outside master,
-# and in forks entirely. The image is built FROM the published multi-arch esp-idf
-# tag, which only that manifest job creates.
+# and in forks entirely. The image is built FROM the esp-idf digest that manifest
+# job publishes and hands over in the same run.
 # Consequence: a change touching only images/esp-matter/** still matches the paths
 # filter below, so esp-idf-build runs on its unchanged context and this workflow
 # reports success - a green check here does not mean ESP-Matter compiles.
@@ -46,6 +46,19 @@ env:
   # summary itself is kept: it reports what was built without opening the log, and
   # costs no storage.
   DOCKER_BUILD_RECORD_UPLOAD: false
+
+# Superseded pull-request runs are cancelled - nothing has been published yet and
+# they cost money. Pushes are deliberately NOT grouped together: the group key
+# includes the commit, so each one gets its own group and none can cancel another.
+#
+# `cancel-in-progress: false` would not have given a queue. GitHub cancels a
+# *pending* run in a group whenever a newer one arrives, regardless of that flag -
+# so grouping master pushes by ref would silently drop the middle commit of any
+# three that land inside one build window, and its sha-<commit> image, which the
+# READMEs document as the way to pin an exact commit, would never exist.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   esp-idf-build:
@@ -98,17 +111,38 @@ jobs:
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: 🐳 Build and push platform-specific image
+      # Pushed by digest, with no tag of its own: a tag here would be a mutable
+      # name that the manifest job below has to look up again later, and between
+      # those two moments another run can overwrite it. The digest is the only
+      # thing handed forward.
+      - name: 🐳 Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
             IDF_BASE_TAG=${{ matrix.idf_base_tag }}
+
+      # Matrix legs cannot each set a job output - they would overwrite one
+      # another - so the digests travel as one empty file per leg, named after the
+      # digest itself.
+      - name: 📤 Export digest
+        if: github.ref_name == 'master'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: ⬆️ Upload digest
+        if: github.ref_name == 'master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
   esp-idf-manifest:
     runs-on: ubuntu-latest
@@ -132,20 +166,73 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: 🏷️ Generate tags
-        id: tags
-        run: |
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-      
+
+      - name: ⬇️ Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
       - name: 🐳 Create and push multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
+          VERSION: ${{ matrix.version }}
+          EXPECTED_PLATFORMS: 2
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-linux-arm64
+          # pipefail matters below: jq exits 0 on empty input, so without it a
+          # failed `imagetools inspect` would yield an empty digest and a green step.
+          set -euo pipefail
+          cd /tmp/digests
+
+          # One file per platform leg. Fewer means a leg failed while fail-fast
+          # let the others through, and publishing a single-platform image under
+          # the multi-arch tags is worse than failing here.
+          found=$(find . -type f | wc -l | tr -d ' ')
+          if [ "${found}" -ne "${EXPECTED_PLATFORMS}" ]; then
+            echo "::error::expected ${EXPECTED_PLATFORMS} platform digests, found ${found}"
+            exit 1
+          fi
+
+          # Every source is a digest this run produced, so nothing here can be
+          # resolved to another run's image. Built as an array rather than an
+          # unquoted expansion, so the refs survive as separate arguments without
+          # relying on word splitting. The version tag goes last on purpose: GHCR
+          # shows the last one as the package's primary tag.
+          refs=()
+          for digest in *; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:sha-${SHA_SHORT}" \
+            -t "${IMAGE}:idf-${VERSION}" \
+            "${refs[@]}"
+
+          # Hand the manifest's own digest to esp-matter-build, so it builds FROM
+          # the exact image this run published rather than whatever the tag points
+          # at by the time it starts. It travels as an artifact rather than a job
+          # output because this job has a matrix: a scalar output would be
+          # overwritten by whichever leg finished last, silently pinning
+          # esp-matter to an arbitrary ESP-IDF version once there is more than one.
+          digest=$(docker buildx imagetools inspect "${IMAGE}:idf-${VERSION}" \
+            --format '{{json .Manifest}}' | jq -er '.digest')
+          case "${digest}" in
+            sha256:*) ;;
+            *) echo "::error::manifest digest not resolved: '${digest}'"; exit 1 ;;
+          esac
+          mkdir -p /tmp/manifest
+          printf '%s' "${digest}" > /tmp/manifest/digest
+          echo "published ${IMAGE}:idf-${VERSION} as ${digest}"
+
+      - name: ⬆️ Upload base image digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}
+          path: /tmp/manifest/digest
+          if-no-files-found: error
+          retention-days: 1
 
   esp-matter-build:
     runs-on: ${{ matrix.runner }}
@@ -157,9 +244,9 @@ jobs:
     # figure that exists is 24 min on amd64; arm64 has never run outside QEMU, so
     # its per-core performance on connectedhomeip is unknown. Getting this wrong
     # downward is expensive in an unobvious way: the arm64 leg is killed, the
-    # manifest job is skipped with it, and the amd64 platform tag has already been
-    # overwritten - leaving GHCR with a platform tag newer than the manifest that
-    # points at it. Lower this once two runs have reported real numbers.
+    # manifest job is skipped with it, and the published tags stay on the previous
+    # build while the amd64 image sits in GHCR as an unreferenced blob. Lower this
+    # once two runs have reported real numbers.
     timeout-minutes: 180
     needs: esp-idf-manifest
     # Owner-only, as esp-idf-build; see the note there.
@@ -206,18 +293,53 @@ jobs:
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: 🐳 Build and push platform-specific ESP-Matter image
+      # Named after the ESP-IDF version this image declares in its own tag, so the
+      # base it builds on and the version it advertises cannot drift apart: bump
+      # esp-idf without bumping the blocks below and this download fails outright
+      # instead of publishing an idf-v<old> tag built on v<new>.
+      - name: ⬇️ Resolve base image digest
+        uses: actions/download-artifact@v8
+        with:
+          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.jethome_idf_base_tag }}
+          path: /tmp/base
+
+      - name: 🏷️ Read base image digest
+        id: base
+        run: |
+          set -euo pipefail
+          digest=$(cat /tmp/base/digest)
+          case "${digest}" in
+            sha256:*) ;;
+            *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
+          esac
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - name: 🐳 Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: images/esp-matter
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.tags.outputs.platform_tag }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
-            BASE_IMAGE_TAG=idf-${{ matrix.jethome_idf_base_tag }}
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}@${{ steps.base.outputs.digest }}
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
+
+      - name: 📤 Export digest
+        if: github.ref_name == 'master'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: ⬆️ Upload digest
+        if: github.ref_name == 'master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
   esp-matter-manifest:
     runs-on: ubuntu-latest
@@ -242,17 +364,33 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: 🏷️ Generate tags
-        id: tags
-        run: |
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-      
+
+      - name: ⬇️ Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.version }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
       - name: 🐳 Create and push multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}
+          VERSION: idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-linux-arm64
+          set -euo pipefail
+          cd /tmp/digests
+          found=$(find . -type f | wc -l | tr -d ' ')
+          if [ "${found}" -ne 2 ]; then
+            echo "::error::expected 2 platform digests, found ${found}"
+            exit 1
+          fi
+          refs=()
+          for digest in *; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:sha-${SHA_SHORT}" \
+            -t "${IMAGE}:${VERSION}" \
+            "${refs[@]}"

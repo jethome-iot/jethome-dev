@@ -1,10 +1,15 @@
 # ESP-Matter Development Image
 # Based on https://docs.espressif.com/projects/esp-matter/en/latest/esp32/developing.html
 
-ARG BASE_IMAGE_TAG=idf-v5.4.1
+# One argument carries the whole reference so CI can pass a digest
+# (…/jethome-dev-esp-idf@sha256:…), which a tag-shaped ARG cannot express - the
+# separator differs. CI pins the exact esp-idf image its own run produced; the
+# default below is what a local ./scripts/build.sh uses, and it also makes the
+# owner overridable instead of hardcoded, so a fork can build against its own base.
+ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.4.1
 ARG ESP_MATTER_VERSION=v1.4.2
 
-FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:${BASE_IMAGE_TAG}
+FROM ${BASE_IMAGE}
 
 # Re-declare build arguments after FROM
 ARG ESP_MATTER_VERSION
