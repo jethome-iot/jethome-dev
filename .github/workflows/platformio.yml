@@ -13,12 +13,17 @@ name: 🐳 PlatformIO Docker Image
 on:
   push:
     branches: [master, dev]
+    # Negations come last and are order-sensitive; `paths:` and `paths-ignore:`
+    # cannot both be used for one event. Documentation-only commits used to
+    # trigger a full rebuild and republish every tag - the docs-only merge that
+    # started this series set off a 5.5-hour ESP-Matter leg.
     paths:
       - '.github/workflows/platformio.yml'
       - 'images/platformio/**'
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   pull_request:
     branches: [master, dev]
     paths:
@@ -27,6 +32,7 @@ on:
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   workflow_dispatch:
 
 env:

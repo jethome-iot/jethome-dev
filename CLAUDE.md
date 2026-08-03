@@ -123,16 +123,23 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   built and thrown away, never uploaded. Manifest jobs
   ask both in their own job `if`, since they have no build step to gate. The org
   literal is hardcoded.
-- `esp-matter-build` has `needs: esp-idf-manifest`, which requires both
-  `jethome-iot` **and** `master`, so both ESP-Matter jobs are skipped entirely on
-  `dev`, on PRs and on non-master dispatch. The dependency is real:
-  `images/esp-matter/Dockerfile` is `FROM ${BASE_IMAGE}`, and the digest CI passes
-  there is published by that manifest job in the same run.
-- Worse than "no validation": a PR touching only `images/esp-matter/**` still
-  matches the workflow's `paths:` filter, so `esp-idf-build` runs on its unchanged
-  context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
-  PR says nothing about ESP-Matter. Validate it with `./scripts/build.sh esp-matter`
-  or on `master`.
+- **`esp-matter-build` runs on pull requests too**, and the base it uses differs by
+  context. On `master` it downloads the digest artifact `esp-idf-manifest` just
+  published and builds on that exact image. Elsewhere no such artifact exists — the
+  manifest job is master-only — so it falls back to the last published
+  `idf-<version>` tag. That validates this image's own layers, which is what a
+  change to it touches; the *combination* of an edited esp-idf and an edited
+  esp-matter is only exercised once both land on master.
+- That fallback is why the job's `if` is written as
+  `${{ !cancelled() && … && needs.esp-idf-manifest.result != 'failure' }}` rather
+  than a plain `needs:`. A `needs` on a skipped job skips this one as well, which
+  is exactly how ESP-Matter went unvalidated on every pull request while a green
+  "🐳 ESP-IDF Docker Image" check implied otherwise. Note the `${{ }}` wrapper —
+  YAML reserves `!` at the start of a scalar.
+- Both workflows exclude `!images/**/*.md` from their `paths:`. Negations come last
+  and are order-sensitive, and `paths:` cannot be mixed with `paths-ignore:` for one
+  event. Without this a documentation-only commit rebuilds and republishes every
+  image.
 - Every build job runs on a larger-runner pool, chosen by platform through a
   `runner` key in the matrix `include:` and read as `runs-on: ${{ matrix.runner }}`
   — `ubuntu-latest-8core` for `linux/amd64`, `ubuntu-latest-8core-arm` for

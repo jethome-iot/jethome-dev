@@ -10,20 +10,22 @@
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
 #   each on a runner of its own architecture (matrix.runner) - no QEMU
 #
-# ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs for
-# jethome-iot on master only, so the ESP-Matter jobs are skipped (not
-# build-validated) on dev, on pull requests, on workflow_dispatch outside master,
-# and in forks entirely. The image is built FROM the esp-idf digest that manifest
-# job publishes and hands over in the same run.
-# Consequence: a change touching only images/esp-matter/** still matches the paths
-# filter below, so esp-idf-build runs on its unchanged context and this workflow
-# reports success - a green check here does not mean ESP-Matter compiles.
-# Validate it with ./scripts/build.sh esp-matter, or on master.
+# ESP-Matter base: on master it is the exact esp-idf digest esp-idf-manifest just
+# published, handed over as an artifact within this run. On a pull request that job
+# does not run, so esp-matter builds on the last published idf-<version> tag
+# instead - which validates its own layers, and is why a green check here does now
+# mean ESP-Matter compiles. A PR editing both images checks each against the
+# other's released version; the new combination is exercised on master.
+# esp-matter-manifest stays master-only: publishing is.
 name: 🐳 ESP-IDF Docker Image
 
 on:
   push:
     branches: [master, dev]
+    # Negations come last and are order-sensitive; `paths:` and `paths-ignore:`
+    # cannot both be used for one event. Documentation-only commits used to
+    # trigger a full rebuild and republish every tag - the docs-only merge that
+    # started this series set off a 5.5-hour ESP-Matter leg.
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
@@ -31,6 +33,7 @@ on:
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   pull_request:
     branches: [master, dev]
     paths:
@@ -40,6 +43,7 @@ on:
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   workflow_dispatch:
 
 env:
@@ -276,8 +280,12 @@ jobs:
     # leg skips the manifest job with it and leaves the published tags on the
     # previous build while the other platform's image sits in GHCR unreferenced.
     timeout-minutes: ${{ matrix.timeout_minutes }}
-    # Owner-only, as esp-idf-build; see the note there.
-    if: github.repository_owner == 'jethome-iot'
+    # esp-idf-manifest only runs on master, and `needs` on a skipped job would skip
+    # this one too - which is why ESP-Matter went unvalidated on every pull request
+    # while a green "🐳 ESP-IDF Docker Image" check implied otherwise. `!cancelled()`
+    # lets it proceed when that job was skipped, and the explicit failure test keeps
+    # it from building on a base whose publication actually failed.
+    if: ${{ !cancelled() && github.repository_owner == 'jethome-iot' && needs.esp-idf-manifest.result != 'failure' }}
     permissions:
       contents: read
       packages: write
@@ -304,26 +312,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Named after the ESP-IDF version this image declares in its own tag, so the
-      # base it builds on and the version it advertises cannot drift apart: bump
-      # esp-idf without bumping the blocks below and this download fails outright
-      # instead of publishing an idf-v<old> tag built on v<new>.
+      # On master the base is the digest this very run published, downloaded from an
+      # artifact named after the ESP-IDF version this image declares in its own tag
+      # - so the base it builds on and the version it advertises cannot drift
+      # apart, and a half-done bump fails here instead of publishing an idf-v<old>
+      # tag built on v<new>.
       - name: ⬇️ Resolve base image digest
+        if: github.ref_name == 'master'
         uses: actions/download-artifact@v8
         with:
           name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}
           path: /tmp/base
 
-      - name: 🏷️ Read base image digest
+      - name: 🏷️ Resolve base image reference
         id: base
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
+          BASE_TAG: ${{ matrix.base_tag }}
         run: |
           set -euo pipefail
-          digest=$(cat /tmp/base/digest)
-          case "${digest}" in
-            sha256:*) ;;
-            *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
-          esac
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          if [ -f /tmp/base/digest ]; then
+            digest=$(cat /tmp/base/digest)
+            case "${digest}" in
+              sha256:*) ;;
+              *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
+            esac
+            ref="${IMAGE}@${digest}"
+          else
+            # No artifact: this is a pull request, where esp-idf-manifest does not
+            # run and nothing has been published. Validating against the last
+            # published base is the point - it checks this image's own layers,
+            # which is what the change under review touches. A PR that also edits
+            # esp-idf is checked against that image's *previous* release; the
+            # combination is only exercised once both land on master.
+            ref="${IMAGE}:${BASE_TAG}"
+            echo "::notice::no digest artifact (not a master run) - validating against the published ${BASE_TAG}"
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "base image: ${ref}"
 
       - name: 🐳 Build and push by digest
         id: build
@@ -333,7 +359,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
-            ${{ matrix.base_arg }}=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}@${{ steps.base.outputs.digest }}
+            ${{ matrix.base_arg }}=${{ steps.base.outputs.ref }}
             ${{ matrix.build_args }}
 
       - name: 📤 Export digest

@@ -134,19 +134,16 @@ for your host architecture only and with the Dockerfile's own `ARG` defaults
 instead of the versions CI passes in, so a green local build is not a green CI
 run.
 
-**Note:** an image built `FROM` another image of this repo is not build-validated on
-`dev`. Its build job needs the base image's manifest job, which runs only for
-`jethome-iot` on `master` — that job publishes the multi-arch tag the derived
-Dockerfile pulls. Today that is ESP-Matter: `esp-matter-build` needs
-`esp-idf-manifest`, so both ESP-Matter jobs are skipped on `dev`, on pull requests,
-on `workflow_dispatch` outside `master`, and in forks entirely. Every other image
-builds from its own context and is validated on `dev`.
+**Note:** every image is build-validated on pull requests and on `dev`, including
+one built `FROM` another image of this repo. What differs is the base it is built
+on. On `master`, ESP-Matter builds on the exact ESP-IDF digest the same run just
+published; anywhere else that digest does not exist yet, so it builds on the last
+published `idf-<version>` tag. A pull request therefore proves that the image
+compiles, but a PR editing *both* images only proves each against the other's
+released version — the new combination is exercised when they land on `master`.
 
-A change touching only `images/esp-matter/**` still matches the workflow's path
-filter, so `esp-idf-build` runs on its unchanged context and the check reports
-success: a green "🐳 ESP-IDF Docker Image" on such a PR does **not** mean the
-ESP-Matter image compiles. Validate it locally with
-`./scripts/build.sh esp-matter` (~50GB of disk, several hours) or on `master`.
+Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from both
+workflows' path filters.
 
 ### Manual Building
 
