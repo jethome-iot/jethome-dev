@@ -10,13 +10,13 @@
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
 #   each on a runner of its own architecture (matrix.runner) - no QEMU
 #
-# ESP-Matter base: on master it is the exact esp-idf digest esp-idf-manifest just
-# published, handed over as an artifact within this run. On a pull request that job
-# does not run, so esp-matter builds on the last published idf-<version> tag
-# instead - which validates its own layers, and is why a green check here does now
-# mean ESP-Matter compiles. A PR editing both images checks each against the
-# other's released version; the new combination is exercised on master.
-# esp-matter-manifest stays master-only: publishing is.
+# ESP-Matter builds on the esp-idf image this same run produced, on every branch:
+# esp-idf-build pushes by digest always, and esp-matter-build takes the digest for
+# its own platform from that job's artifact. So a green check here does mean
+# ESP-Matter compiles - including on a branch that bumps both versions at once,
+# where the new base exists under no tag yet.
+# Only the manifest jobs write tags, and they stay master-only. A pull request
+# leaves untagged blobs in GHCR; they need an occasional cleanup.
 name: 🐳 ESP-IDF Docker Image
 
 on:
@@ -153,27 +153,33 @@ jobs:
       # name that the manifest job below has to look up again later, and between
       # those two moments another run can overwrite it. The digest is the only
       # thing handed forward.
+      #
+      # This pushes on pull requests too, not just master. Nothing published this
+      # way is reachable by name - only the manifest job creates tags, and it stays
+      # master-only - so a PR leaves untagged blobs behind and no moving tag. What
+      # it buys is that esp-matter-build can build on the ESP-IDF this very run
+      # produced, including on a branch that bumps both versions at once, where the
+      # new base does not exist under any tag yet.
       - name: 🐳 Build and push by digest
         id: build
         uses: docker/build-push-action@v7
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: ${{ matrix.build_args }}
 
       # Matrix legs cannot each set a job output - they would overwrite one
       # another - so the digests travel as one empty file per leg, named after the
-      # digest itself.
+      # digest itself. Uploaded on every run: esp-matter-build consumes this on
+      # pull requests as well.
       - name: 📤 Export digest
-        if: github.ref_name == 'master'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: ⬆️ Upload digest
-        if: github.ref_name == 'master'
         uses: actions/upload-artifact@v7
         with:
           name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
@@ -252,57 +258,31 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}")
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
 
-          # Hand the manifest's own digest to esp-matter-build, so it builds FROM
-          # the exact image this run published rather than whatever the tag points
-          # at by the time it starts. It travels as an artifact rather than a job
-          # output because this job has a matrix: a scalar output would be
-          # overwritten by whichever leg finished last, silently pinning
-          # esp-matter to an arbitrary ESP-IDF version once there is more than one.
+          # Reported, not handed on: esp-matter-build takes the per-platform
+          # digests from esp-idf-build directly, so nothing downstream waits on
+          # this job any more.
           digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" \
             --format '{{json .Manifest}}' | jq -er '.digest')
-          case "${digest}" in
-            sha256:*) ;;
-            *) echo "::error::manifest digest not resolved: '${digest}'"; exit 1 ;;
-          esac
-          mkdir -p /tmp/manifest
-          printf '%s' "${digest}" > /tmp/manifest/digest
           echo "published ${IMAGE}:${TAG} as ${digest}"
-
-      - name: ⬆️ Upload base image digest
-        uses: actions/upload-artifact@v7
-        with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}
-          path: /tmp/manifest/digest
-          if-no-files-found: error
-          retention-days: 1
 
   esp-matter-build:
     name: esp-matter-build (${{ matrix.tag }}, ${{ matrix.platform }})
-    needs: [prepare, esp-idf-manifest]
+    needs: [prepare, esp-idf-build]
     runs-on: ${{ matrix.runner }}
     # From images/versions.json. A cap on a wedged job, not a target: killing this
     # leg skips the manifest job with it and leaves the published tags on the
     # previous build while the other platform's image sits in GHCR unreferenced.
     timeout-minutes: ${{ matrix.timeout_minutes }}
-    # esp-idf-manifest only runs on master, and `needs` on a skipped job would skip
-    # this one too - which is why ESP-Matter went unvalidated on every pull request
-    # while a green "🐳 ESP-IDF Docker Image" check implied otherwise. `!cancelled()`
-    # lets it proceed when that job was skipped.
-    #
-    # The two branches differ on purpose. On master the manifest must have
-    # *succeeded*: a failed esp-idf-build leaves the manifest job `skipped`, not
-    # `failed`, so accepting anything but success would start two 180-minute builds
-    # that then die looking for digest artifacts nobody created - burying the real
-    # failure. Elsewhere the manifest is skipped by design, and only an outright
-    # failure should stop this.
+    # Depends on esp-idf-build, not esp-idf-manifest. The manifest job publishes
+    # tags and is master-only, so hanging off it is what kept ESP-Matter
+    # unvalidated on every pull request while a green "🐳 ESP-IDF Docker Image"
+    # check implied otherwise. What this job actually needs is the ESP-IDF image
+    # for its own platform, which the build leg pushes by digest on every run - so
+    # the dependency is plain, both branches behave identically, and no status
+    # expression is needed to work around a skipped job.
     if: >-
-      ${{ !cancelled()
-      && github.repository_owner == 'jethome-iot'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && (github.ref_name == 'master'
-          && needs.esp-idf-manifest.result == 'success'
-          || github.ref_name != 'master'
-          && needs.esp-idf-manifest.result != 'failure') }}
+      ${{ github.repository_owner == 'jethome-iot'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       contents: read
       packages: write
@@ -321,60 +301,42 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Unconditional, unlike the other build jobs: this one pulls its base from
+      # GHCR on every run, including pull requests, and an anonymous pull is
+      # subject to rate limits the authenticated one is not.
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.ref_name == 'master'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # On master the base is the digest this very run published, downloaded from an
-      # artifact named after the ESP-IDF version this image declares in its own tag
-      # - so the base it builds on and the version it advertises cannot drift
-      # apart, and a half-done bump fails here instead of publishing an idf-v<old>
-      # tag built on v<new>.
-      - name: ⬇️ Resolve base image digest
-        if: github.ref_name == 'master'
+      # The ESP-IDF image for this platform, pushed by digest by esp-idf-build in
+      # this same run. Not the multi-arch manifest: that is published only on
+      # master, and this leg builds one platform anyway. Naming the artifact after
+      # the ESP-IDF version this image declares in its own tag keeps the base it
+      # stands on and the version it advertises from drifting apart - a half-done
+      # bump fails here rather than publishing an idf-v<old> tag built on v<new>.
+      - name: ⬇️ Download base image digest
         uses: actions/download-artifact@v8
         with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}
+          name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}-${{ matrix.platform_tag }}
           path: /tmp/base
 
       - name: 🏷️ Resolve base image reference
         id: base
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
-          BASE_TAG: ${{ matrix.base_tag }}
         run: |
           set -euo pipefail
-          if [ -f /tmp/base/digest ]; then
-            digest=$(cat /tmp/base/digest)
-            case "${digest}" in
-              sha256:*) ;;
-              *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
-            esac
-            ref="${IMAGE}@${digest}"
-          elif docker manifest inspect "${IMAGE}:${BASE_TAG}" >/dev/null 2>&1; then
-            # No artifact: this is a pull request, where esp-idf-manifest does not
-            # run and nothing has been published. Validating against the last
-            # published base is the point - it checks this image's own layers,
-            # which is what the change under review touches.
-            ref="${IMAGE}:${BASE_TAG}"
-            echo "::notice::not a master run - validating against the published ${BASE_TAG}"
-          else
-            # The base tag does not exist yet, which is exactly what a coordinated
-            # bump looks like on a pull request: this branch raises the ESP-IDF
-            # version and Matter's base_tag together, but the new esp-idf image is
-            # only published once it lands on master. Falling back to :latest still
-            # validates this image's own layers - the point of the PR check - where
-            # insisting on the unpublished tag would fail every version bump at
-            # `FROM`.
-            ref="${IMAGE}:latest"
-            echo "::warning::${BASE_TAG} is not published yet - validating against :latest instead. The real pairing is exercised when this lands on master."
-          fi
-          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
-          echo "base image: ${ref}"
+          # One file, named after the digest it stands for.
+          digest=$(find /tmp/base -type f -printf '%f\n' | head -1)
+          case "${digest}" in
+            [0-9a-f]*) ;;
+            *) echo "::error::no usable base digest in the artifact"; exit 1 ;;
+          esac
+          echo "ref=${IMAGE}@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          echo "base image: ${IMAGE}@sha256:${digest}"
 
       - name: 🐳 Build and push by digest
         id: build

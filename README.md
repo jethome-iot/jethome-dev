@@ -135,12 +135,11 @@ instead of the versions CI passes in, so a green local build is not a green CI
 run.
 
 **Note:** every image is build-validated on pull requests and on `dev`, including
-one built `FROM` another image of this repo. What differs is the base it is built
-on. On `master`, ESP-Matter builds on the exact ESP-IDF digest the same run just
-published; anywhere else that digest does not exist yet, so it builds on the last
-published `idf-<version>` tag. A pull request therefore proves that the image
-compiles, but a PR editing *both* images only proves each against the other's
-released version — the new combination is exercised when they land on `master`.
+one built `FROM` another image of this repo, and on the base that same run
+produced — so a change touching both images is checked as the pair it will become.
+This works because build jobs push by digest on every run; those pushes carry no
+tag, and only `master` ever writes `latest` or a version tag. The untagged blobs a
+pull request leaves in GHCR accumulate and want an occasional cleanup.
 
 Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from both
 workflows' path filters.

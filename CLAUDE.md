@@ -59,14 +59,13 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
-- `esp-idf-manifest` publishes the manifest's own digest as an artifact named
-  `manifest-digest-<image>-<version>`, and `esp-matter-build` downloads the one
-  matching the ESP-IDF version in its own tag, then builds `FROM` it via a single
-  `BASE_IMAGE` build-arg. An artifact rather than a job output because that job has
-  a matrix: a scalar output would be overwritten by whichever leg finished last.
-  One argument rather than repo + tag because a digest needs `@`, not `:` — and it
-  makes the base repository overridable, so a fork or a local build can point at
-  its own esp-idf instead of this one.
+- `esp-matter-build` depends on `esp-idf-build`, **not** on the manifest job, and
+  takes the per-platform digest for its own architecture from that build's
+  artifact. The artifact is named after the ESP-IDF version this image declares in
+  its own tag, so base and advertised version cannot drift apart. It reaches the
+  Dockerfile through a single `BASE_IMAGE` build-arg — one argument rather than
+  repo + tag, because a digest needs `@` where a tag needs `:`, and because it makes
+  the base repository overridable for a fork or a local build.
 - **`images/versions.json` is the single source of truth for what CI builds.** A
   `prepare` job runs `scripts/check-versions.sh`, then `scripts/versions-matrix.sh
   <image> build|manifest`, and every other job takes its matrix from
@@ -123,25 +122,15 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   built and thrown away, never uploaded. Manifest jobs
   ask both in their own job `if`, since they have no build step to gate. The org
   literal is hardcoded.
-- **`esp-matter-build` runs on pull requests too**, and the base it uses differs by
-  context. On `master` it downloads the digest artifact `esp-idf-manifest` just
-  published and builds on that exact image. Elsewhere no such artifact exists — the
-  manifest job is master-only — so it falls back to the last published
-  `idf-<version>` tag. That validates this image's own layers, which is what a
-  change to it touches; the *combination* of an edited esp-idf and an edited
-  esp-matter is only exercised once both land on master.
-- If that tag is not published either — a coordinated bump raises the ESP-IDF
-  version and Matter's `base_tag` together, and the new esp-idf image only exists
-  once it lands — the build falls back to `:latest` with a warning. Insisting on
-  the unpublished tag would fail every version-bump PR at `FROM`.
-- That is why the job's `if` is an expression rather than a plain `needs:`. A
-  `needs` on a skipped job skips this one as well, which is exactly how ESP-Matter
-  went unvalidated while a green "🐳 ESP-IDF Docker Image" check implied otherwise.
-  On `master` it requires the manifest to have **succeeded**, not merely
-  "not failed": a failed `esp-idf-build` leaves the manifest job `skipped`, and
-  accepting that would start two 180-minute builds that die looking for digest
-  artifacts nobody created, burying the original failure. Note the `${{ }}`
-  wrapper — YAML reserves `!` at the start of a scalar.
+- **Every image is build-validated on pull requests**, ESP-Matter included, and on
+  the ESP-IDF this very run produced — so a branch bumping both versions at once is
+  checked as the pair it will become, not against whatever is published today.
+- That works because `esp-idf-build` pushes by digest on **every** run, not only on
+  master. Nothing published that way is reachable by name: only the manifest jobs
+  create tags, and they stay master-only. A pull request therefore leaves untagged
+  blobs in GHCR and moves no tag. They accumulate; clean them up periodically.
+- Publishing is still master-only in the sense that matters — no tag, `latest`
+  included, is ever written outside master.
 - **Every build job also checks the PR's head repository**, not just the owner. On
   a pull request *from* a fork `github.repository_owner` is still `jethome-iot`, so
   the owner check alone would let a fork-controlled Dockerfile run on this org's
