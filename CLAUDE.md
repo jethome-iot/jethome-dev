@@ -129,6 +129,13 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 - `workflow_dispatch` is declared with no inputs anywhere, so
   `gh workflow run … -f version=… -f force_rebuild=…` is rejected. Builds are cold
   by construction now that there is no layer cache.
+- Actions are pinned to a floating major (`@v7`, not a SHA), and Dependabot
+  (`.github/dependabot.yml`, `github-actions` only) raises the major when one
+  ships. Resolve a version from the registry rather than from memory —
+  `gh release view -R <owner>/<repo> --json tagName` — and read what the major
+  breaks before taking it: these actions sit on the publishing path, and the last
+  bump crossed changes to fork-PR checkout, removed deprecated inputs and a Node
+  runtime requirement.
 - Workflow and step names carry emoji by convention (`🐳 ESP-IDF Docker Image`,
   `📥 Checkout repository`, `🏷️ Generate tags`), and tooling matches the display
   name verbatim: `gh run list --workflow="🐳 ESP-IDF Docker Image"`.

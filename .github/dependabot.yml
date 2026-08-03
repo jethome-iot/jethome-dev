@@ -1,0 +1,25 @@
+# Dependabot version updates
+#
+# Only github-actions is tracked. The `uses:` pins in .github/workflows/ are
+# floating majors (@vN), so patches and minors arrive without a commit and this
+# raises a PR only when a new major ships - a few times a year, which is exactly
+# the cadence that went unnoticed until every action here was two or three majors
+# behind.
+#
+# Not tracked: the pip packages in images/*/Dockerfile. They carry no version
+# constraints at all, so there is nothing for Dependabot to bump; pinning them
+# comes first. The framework versions (IDF_BASE_TAG, ESP_MATTER_VERSION,
+# PIO_VERSION) are deliberately manual - they are chosen against Espressif's own
+# compatibility matrix, not against "newest".
+#
+# cooldown skips brand-new releases, which is the window in which a compromised
+# version is usually caught and yanked. For github-actions it accepts only
+# default-days.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
