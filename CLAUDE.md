@@ -187,9 +187,12 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   only jobs that publish a multi-arch tag: pointing them at a pool would make tag
   publication hostage to that pool still existing and still being granted to this
   repository, and an unreachable pool queues for 24 hours rather than failing.
-- Timeouts live in `images/versions.json` (`timeout_minutes` per image) and are a
-  ceiling on a wedged job, not a target: 60 for a build, 180 for `esp-matter-build`,
-  10 for a manifest. The esp-matter figure predates any native measurement — it was
+- **Build** timeouts live in `images/versions.json` (`timeout_minutes` per image):
+  60 for a build, 180 for `esp-matter-build`. The other jobs hardcode theirs in the
+  workflow — 10 for a manifest, 5 for `prepare` — because the manifest matrix
+  carries no such field; changing `timeout_minutes` will not move them. All of them
+  are a ceiling on a wedged job, not a target. The esp-matter figure predates any
+  native measurement — it was
   set against a QEMU leg that took 337 minutes. Native runs land at **7–11 minutes
   on both architectures**, so 180 is now roughly fifteen times the real number and
   could reasonably drop to 60. It costs nothing while nothing hits it, which is why
@@ -262,9 +265,12 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   commented out as a "VERY LONG step". Toolchains are meant to download on first
   build. Do not "optimize" these back on.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)
-  but no compilers — those arrive on the user's first build. `ARG PIO_ENVS` exists
-  only for the commented-out pre-warm block and is otherwise dead; the ESP images
-  need no such step because `espressif/idf` already carries every toolchain.
+  without the ESP32 cross-toolchains — those arrive on the user's first build. The
+  host compiler is present (`build-essential`, and the verification layer runs
+  `gcc --version`), so `native` unit tests work straight away; it is the xtensa and
+  RISC-V toolchains that are deferred. `ARG PIO_ENVS` exists only for the
+  commented-out pre-warm block and is otherwise dead. The ESP images need no such
+  step at all — `espressif/idf` already carries every toolchain.
 
 ## Documentation
 
