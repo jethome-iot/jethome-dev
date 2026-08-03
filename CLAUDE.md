@@ -27,7 +27,9 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   **both** esp-idf and esp-matter, `platformio.yml` builds platformio. A family is:
   an image whose Dockerfile is `FROM` another image of this repo joins the base
   image's workflow, adds `images/<name>/**` to its push **and** pull_request
-  `paths:` filters, and chains via `needs: <base>-manifest`. The rule covers
+  `paths:` filters, and chains via `needs: <base>-build` — the *build* job, not the
+  manifest one, because what it needs is the base image itself and that is pushed
+  by digest on every run, while tags are master-only. The rule covers
   image-building workflows only; `lint.yml` and `runner-smoke.yml` build nothing
   and belong to no family.
 - A larger-runner label names a pool created in the org, not anything GitHub
@@ -44,9 +46,9 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (one leg per variant × platform) then
   `<image>-manifest`. Tags per variant: `<prefix>-<version>` (moves on every
-  rebuild) and `<prefix>-<version>-sha-<7 chars>` (immutable, the only thing to
+  rebuild) and `<prefix>-<version>-sha-<short-commit>` (immutable, the only thing to
   roll back to). The **primary** variant additionally gets `latest` and the bare
-  `sha-<7 chars>`.
+  `sha-<short-commit>`.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
@@ -133,14 +135,21 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   The digest capture runs under `set -o pipefail`, because `jq` exits 0 on empty
   input: without it a failed `imagetools inspect` yields an empty digest and a
   green step.
-- Publishing is gated on two questions, asked at different levels. **Who**: the
-  build job's `if: github.repository_owner == 'jethome-iot'` — nothing runs
-  anywhere else, so no step below needs to re-ask. **Where**: the login step's
-  `if: github.ref_name == 'master'` and the `push=` field inside the build step's
-  `outputs:` CSV, carrying the same expression — on a PR or on `dev` the image is
-  built and thrown away, never uploaded. Manifest jobs
-  ask both in their own job `if`, since they have no build step to gate. The org
-  literal is hardcoded.
+- **Publishing a *tag* is master-only; pushing an *image* is not.** Keep the two
+  apart when reading these workflows:
+  - **Who** runs at all: the build job's `if: github.repository_owner ==
+    'jethome-iot'`, so no step below re-asks.
+  - **Which tags** get written: only the manifest jobs write tags, and their job
+    `if` requires `master`. Nothing outside master ever moves `latest` or a version
+    tag.
+  - **Whether the image is uploaded** differs per image. `esp-idf-build` pushes by
+    digest on *every* run — its GHCR login is unconditional to match — because
+    `esp-matter-build` consumes that digest and that is what makes ESP-Matter
+    validatable on a pull request. `platformio-build` and `esp-matter-build` keep
+    `push=${{ github.ref_name == 'master' }}`: nothing consumes them, so a PR
+    builds and throws away.
+
+  The org literal is hardcoded throughout.
 - **Every image is build-validated on pull requests**, ESP-Matter included, and on
   the ESP-IDF this very run produced — so a branch bumping both versions at once is
   checked as the pair it will become, not against whatever is published today.
@@ -170,24 +179,27 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   — `ubuntu-latest-8core` for `linux/amd64`, `ubuntu-latest-8core-arm` for
   `linux/arm64`. **Each platform builds on its own architecture**: there is no
   QEMU anywhere, and adding a platform means adding the pool for it, not emulating
-  it. That coupling is unchecked and fails quietly: a `platform:` value with no
-  matching `include:` entry leaves `matrix.runner` empty, `runs-on` evaluates to
-  the empty string, and the leg never starts — actionlint passes it (verified
-  against the image `lint.yml` runs, which catches a *wrong* label but not a
-  missing key). The mapping is also copied into each build job, so a platform
-  change touches every one of them. **Manifest jobs stay on `ubuntu-latest`** —
+  it. The mapping lives once in `images/versions.json` and is generated into every
+  matrix, so a platform is added in one place; `check-versions.sh` rejects a
+  platform with no pool, which would otherwise leave `runs-on` empty and the leg
+  silently never starting. **Manifest jobs stay on `ubuntu-latest`** —
   they are seconds of GHCR calls, so a pool would buy nothing, and they are the
   only jobs that publish a multi-arch tag: pointing them at a pool would make tag
   publication hostage to that pool still existing and still being granted to this
   repository, and an unreachable pool queues for 24 hours rather than failing.
-- Timeouts are 60 min for a build, 180 for `esp-matter-build`, 10 for a manifest.
-  The esp-matter figure is a ceiling on a wedged job, not a target, and it stays
-  generous until the native arm64 leg has been measured: the only native number
-  that exists is 24 min on amd64 (the QEMU leg it replaced took 337). Lowering it
-  too early fails in an unobvious way — the arm64 leg is killed, the manifest job
-  is skipped with it, and the amd64 image is already in GHCR as an untagged blob
-  that nothing references — so the published tags stay on the previous build while
-  a run reports failure.
+- **Build** timeouts live in `images/versions.json` (`timeout_minutes` per image):
+  60 for a build, 180 for `esp-matter-build`. The other jobs hardcode theirs in the
+  workflow — 10 for a manifest, 5 for `prepare` — because the manifest matrix
+  carries no such field; changing `timeout_minutes` will not move them. All of them
+  are a ceiling on a wedged job, not a target. The esp-matter figure predates any
+  native measurement — it was
+  set against a QEMU leg that took 337 minutes. Native runs land at **7–11 minutes
+  on both architectures**, so 180 is now roughly fifteen times the real number and
+  could reasonably drop to 60. It costs nothing while nothing hits it, which is why
+  this is written down rather than changed: lowering it wrongly fails in an
+  unobvious way — the leg is killed, its manifest is skipped, and the other
+  platform's image sits in GHCR unreferenced while the published tags stay on the
+  previous build.
 - **Nothing runs in a fork.** Those pools belong to `jethome-iot`, a fork cannot
   resolve their labels, and an unresolvable `runs-on` queues for 24 hours rather
   than failing — so the build jobs are gated on `github.repository_owner ==
@@ -252,6 +264,13 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   chip-tool/chip-cert) and platformio's `pio run`/`pio test` pre-warm block is
   commented out as a "VERY LONG step". Toolchains are meant to download on first
   build. Do not "optimize" these back on.
+- Consequently platformio ships *platform definitions* (`espressif32`, `native`)
+  without the ESP32 cross-toolchains — those arrive on the user's first build. The
+  host compiler is present (`build-essential`, and the verification layer runs
+  `gcc --version`), so `native` unit tests work straight away; it is the xtensa and
+  RISC-V toolchains that are deferred. `ARG PIO_ENVS` exists only for the
+  commented-out pre-warm block and is otherwise dead. The ESP images need no such
+  step at all — `espressif/idf` already carries every toolchain.
 
 ## Documentation
 
@@ -290,8 +309,11 @@ Four places, none of them checked automatically:
   architecture with the Dockerfile's own ARG defaults (no `--build-arg`, no
   buildx), tagging `jethome-dev-<image>:local` (`IMAGE_TAG` overrides). `-r` runs
   the image afterwards and only applies to a single named image. Building
-  `esp-matter` this way pulls its base from GHCR, so it does not exercise a locally
-  built esp-idf.
+  `esp-matter` this way pulls its base from GHCR — to build it on an esp-idf you
+  just built, pass the base explicitly:
+  `docker build --build-arg BASE_IMAGE=jethome-dev-esp-idf:local images/esp-matter`.
+  Note that a version-bump branch cannot use the Dockerfile default at all: it
+  names a tag that only exists once the branch lands.
 - There is no local workflow runner. Workflow changes are validated by pushing the
   branch and reading the PR's checks; `act` and its wrapper were removed because
   they only duplicated `build.sh` behind a container.
