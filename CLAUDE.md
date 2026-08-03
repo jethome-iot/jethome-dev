@@ -27,12 +27,27 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   **both** esp-idf and esp-matter, `platformio.yml` builds platformio. A family is:
   an image whose Dockerfile is `FROM` another image of this repo joins the base
   image's workflow, adds `images/<name>/**` to its push **and** pull_request
-  `paths:` filters, and chains via `needs: <base>-manifest`.
+  `paths:` filters, and chains via `needs: <base>-manifest`. The rule covers
+  image-building workflows only; `lint.yml` and `runner-smoke.yml` build nothing
+  and belong to no family.
+- A larger-runner label names a pool created in the org, not anything GitHub
+  predefines, so a typo cannot be told apart from a pool that does not exist: the
+  job just sits queued for up to 24 hours, and `timeout-minutes` does not fire
+  because it starts at assignment, not at queueing. Those pools are listed in
+  `.github/actionlint.yaml` (GitHub's own labels are known to actionlint and are
+  not repeated there); add one there before referencing it, or `lint.yml` fails
+  the change. The check compares names against that list and cannot ask GitHub
+  whether the pool is reachable — `runner-smoke.yml` is what answers that, and it
+  reads the same list, so a pool is probed and linted from one source. It runs on
+  `workflow_dispatch` **or** a push to `runner-probe/**`, never on a pull request;
+  the branch trigger is the only way to exercise a change to the probe itself,
+  since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
   `linux/amd64` / `linux/arm64`, pushes platform-suffixed tags) then
   `<image>-manifest` (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
-  `<prefix>-<version>`). No job is named `build`. Every job needs its own
-  `permissions: contents: read` + `packages: write`.
+  `<prefix>-<version>`). No job is named `build`. Every job that touches GHCR
+  needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
+  `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
 - The versions CI passes in (`IDF_BASE_TAG`, `BASE_IMAGE_TAG`, `ESP_MATTER_VERSION`,
