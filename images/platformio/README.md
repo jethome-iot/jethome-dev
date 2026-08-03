@@ -38,7 +38,6 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `pio-v<version>` | Pin to specific PlatformIO version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
-| **Platform-specific** | `pio-v<version>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience

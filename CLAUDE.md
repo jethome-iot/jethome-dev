@@ -43,25 +43,38 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   the branch trigger is the only way to exercise a change to the probe itself,
   since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
-  `linux/amd64` / `linux/arm64`, pushes platform-suffixed tags) then
-  `<image>-manifest` (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
+  `linux/amd64` / `linux/arm64`) then `<image>-manifest`
+  (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
   `<prefix>-<version>`). No job is named `build`. Every job that touches GHCR
   needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
+- **Nothing is handed between those jobs by tag.** A build leg pushes by digest and
+  carries no tag of its own (`outputs: type=image,…,push-by-digest=true`); the
+  digests travel to the manifest job as one empty file per leg, named after the
+  digest, through an artifact — matrix legs cannot each set a job output, they
+  overwrite one another. The manifest is then assembled from
+  `<image>@sha256:<digest>` references. A tag in between would be a mutable name
+  resolved at a later moment, and between those moments another run can overwrite
+  it: that is how a `sha-<commit>` tag ends up holding a different commit's image.
+  There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
-- The versions CI passes in (`IDF_BASE_TAG`, `BASE_IMAGE_TAG`, `ESP_MATTER_VERSION`,
-  `PIO_VERSION`) live in the matrix `version:` + `include:` blocks and reach the
-  image as `build-args`. A bump means editing **two** matrix blocks per image — the
-  build job's and the manifest job's; updating one alone produces a manifest
-  referencing tags that were never built. Bumping ESP-IDF touches **four** blocks,
-  because both `esp-matter-*` blocks embed it as `jethome_idf_base_tag` (→
-  `BASE_IMAGE_TAG`).
+- `esp-idf-manifest` exports the manifest's own digest as a job output, and
+  `esp-matter-build` builds `FROM` that digest via a single `BASE_IMAGE` build-arg.
+  One argument rather than repo + tag because a digest needs `@`, not `:` — and it
+  makes the base repository overridable, so a fork or a local build can point at
+  its own esp-idf instead of this one.
+- The versions CI passes in (`IDF_BASE_TAG`, `ESP_MATTER_VERSION`, `PIO_VERSION`)
+  live in the matrix `version:` + `include:` blocks and reach the image as
+  `build-args`. A bump means editing **two** matrix blocks per image — the build
+  job's and the manifest job's. Updating one alone does not fail loudly: old tags
+  live on in GHCR, so the manifest job happily republishes the previous version's
+  images under the new `latest`.
 - **Bump the matching `ARG` default in the Dockerfile too**, in the same change.
   `scripts/build.sh` passes no `--build-arg`, so those defaults are what every
   local build uses: leave one behind and local builds silently stay on the old
   version while CI moves on. The set to check is the `build-args:` block of that
-  image's build step — currently `IDF_BASE_TAG` (esp-idf), `BASE_IMAGE_TAG` +
+  image's build step — currently `IDF_BASE_TAG` (esp-idf), `BASE_IMAGE` +
   `ESP_MATTER_VERSION` (esp-matter), `PIO_VERSION` (platformio).
 - An `ARG` with no matrix entry is a pin CI never passes, so its Dockerfile
   default is the sole source of truth and is bumped there — today
@@ -69,6 +82,11 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `images/platformio/Dockerfile`.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
+- Both image workflows carry a `concurrency` group keyed on workflow + ref, with
+  `cancel-in-progress` **only** on pull requests. On `master` runs queue instead:
+  cancelling one mid-flight leaves images pushed by digest with no manifest
+  pointing at them, and leaves `esp-matter-build` building on a base whose
+  manifest job was killed.
 - Publishing is gated on two questions, asked at different levels. **Who**: the
   build job's `if: github.repository_owner == 'jethome-iot'` — nothing runs
   anywhere else, so no step below needs to re-ask. **Where**: the login step's

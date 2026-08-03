@@ -33,6 +33,16 @@ env:
   # costs no storage.
   DOCKER_BUILD_RECORD_UPLOAD: false
 
+# A run must not overtake the one before it: the manifest jobs publish moving tags
+# (latest, sha-<commit>), and esp-matter-build runs for minutes on a base the
+# previous run published. On master this queues rather than cancels - a cancelled
+# run leaves images pushed by digest with no manifest pointing at them. On a pull
+# request there is nothing to leave behind, so superseded runs are cancelled and
+# not paid for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   platformio-build:
     runs-on: ${{ matrix.runner }}
@@ -83,17 +93,38 @@ jobs:
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
           
-      - name: 🐳 Build and push platform-specific image
+      # Pushed by digest, with no tag of its own: a tag here would be a mutable
+      # name that the manifest job below has to look up again later, and between
+      # those two moments another run can overwrite it. The digest is the only
+      # thing handed forward.
+      - name: 🐳 Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: images/platformio
           platforms: ${{ matrix.platform }}
-          push: ${{ github.ref_name == 'master' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
             PIO_VERSION=${{ matrix.pio_version }}
+
+      # Matrix legs cannot each set a job output - they would overwrite one
+      # another - so the digests travel as one empty file per leg, named after the
+      # digest itself.
+      - name: 📤 Export digest
+        if: github.ref_name == 'master'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: ⬆️ Upload digest
+        if: github.ref_name == 'master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
   platformio-manifest:
     runs-on: ubuntu-latest
@@ -117,17 +148,33 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: 🏷️ Generate tags
-        id: tags
-        run: |
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-      
+
+      - name: ⬇️ Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
       - name: 🐳 Create and push multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}
+          VERSION: ${{ matrix.version }}
         run: |
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:latest \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }} \
-            -t ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }} \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}:pio-${{ matrix.version }}-linux-arm64
+          cd /tmp/digests
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          # Every source is a digest this run produced, so nothing here can be
+          # resolved to another run's image. The version tag goes last on purpose:
+          # GHCR shows the last one as the package's primary tag.
+          # One reference per digest file. Built as an array rather than an
+          # unquoted expansion so the refs survive as separate arguments without
+          # relying on word splitting.
+          refs=()
+          for digest in *; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:sha-${SHA_SHORT}" \
+            -t "${IMAGE}:pio-${VERSION}" \
+            "${refs[@]}"

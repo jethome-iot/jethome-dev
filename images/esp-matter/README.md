@@ -44,7 +44,6 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
-| **Platform-specific** | `idf-v<idf-ver>-matter-v<matter-ver>-linux-<arch>`, `sha-<commit>-linux-<arch>` | Single-architecture build artifacts the multi-arch tags are assembled from; not intended for direct use |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -251,14 +250,27 @@ docker build -t jethome-dev-esp-matter:local .
 
 ```bash
 docker build \
-  --build-arg BASE_IMAGE_TAG=idf-v<version> \
+  --build-arg BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version> \
   --build-arg ESP_MATTER_VERSION=v<version> \
   -t jethome-dev-esp-matter:local .
 ```
 
 Available build arguments:
-- `BASE_IMAGE_TAG` - ESP-IDF base image tag (default: see Dockerfile)
+- `BASE_IMAGE` - the full reference of the ESP-IDF image to build on (default: see
+  Dockerfile). It is one argument rather than a repository plus a tag so that a
+  digest fits: `…/jethome-dev-esp-idf@sha256:…`, which is what CI passes to pin the
+  exact base its own run produced. It also lets a fork build against its own base
+  instead of this repository's.
 - `ESP_MATTER_VERSION` - ESP-Matter version tag (default: see Dockerfile)
+
+To build on an ESP-IDF image you built yourself:
+
+```bash
+./scripts/build.sh esp-idf
+docker build \
+  --build-arg BASE_IMAGE=jethome-dev-esp-idf:local \
+  -t jethome-dev-esp-matter:local images/esp-matter
+```
 
 ### Multi-Platform Support
 
