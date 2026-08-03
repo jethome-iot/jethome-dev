@@ -193,7 +193,7 @@ The image runs as `root` and everything under `/opt/platformio` is root-owned, s
 `PLATFORMIO_CORE_DIR` is not enough either: the image pins six PlatformIO
 directories (see [Environment Variables](#environment-variables)), each variable
 overrides only its own setting, and the rest keep pointing into `/opt/platformio`.
-Redirect everything PlatformIO writes to:
+Redirect the four that PlatformIO writes to during a build:
 
 ```bash
 docker run --rm \

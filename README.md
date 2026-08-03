@@ -9,7 +9,7 @@ Docker-based development environment for embedded systems, providing containeriz
 
 | Image | Description | Documentation |
 |-------|-------------|---------------|
-| [esp-idf](./images/esp-idf/) | ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation | [README](./images/esp-idf/README.md) |
+| [esp-idf](./images/esp-idf/) | ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation for some of them | [README](./images/esp-idf/README.md) |
 | [esp-matter](./images/esp-matter/) | ESP-Matter SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 platform support + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
@@ -20,7 +20,7 @@ default command — mount your project there and pass `-it` for an interactive
 shell:
 
 ```bash
-# Pull image (esp-idf, esp-matter or platformio)
+# Pull an image - <image> is its directory name, see the table above
 docker pull ghcr.io/jethome-iot/jethome-dev-<image>:latest
 
 # Interactive development
