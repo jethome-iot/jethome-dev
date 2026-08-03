@@ -6,7 +6,10 @@ ARG IDF_BASE_TAG=v5.4.1
 
 FROM espressif/idf:${IDF_BASE_TAG}
 
-# Use bash for all RUN commands (needed for QEMU emulation compatibility)
+# Use bash for all RUN commands: the layers below call the bash builtin `source`,
+# which /bin/sh does not have. (This once said "needed for QEMU emulation
+# compatibility" - CI no longer emulates anything, but the reason above always was
+# the real one.)
 SHELL ["/bin/bash", "-c"]
 
 # Install only additional tools not in base image

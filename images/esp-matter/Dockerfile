@@ -9,7 +9,10 @@ FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:${BASE_IMAGE_TAG}
 # Re-declare build arguments after FROM
 ARG ESP_MATTER_VERSION
 
-# Use bash for all RUN commands (needed for QEMU emulation compatibility)
+# Use bash for all RUN commands: the layers below call the bash builtin `source`,
+# which /bin/sh does not have. (This once said "needed for QEMU emulation
+# compatibility" - CI no longer emulates anything, but the reason above always was
+# the real one.)
 SHELL ["/bin/bash", "-c"]
 
 # Install only Matter-specific development packages not in base image

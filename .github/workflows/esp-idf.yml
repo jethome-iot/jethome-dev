@@ -6,7 +6,8 @@
 # - Main repo dev/PR: Build only (validation)
 # - workflow_dispatch: Build on any branch/fork, push only on main repo master
 # - Forks: Can test builds, but push is restricted to main repo
-# - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel
+# - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
+#   each on a runner of its own architecture (matrix.runner) - no QEMU
 #
 # ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs for
 # jethome-iot on master only, so the ESP-Matter jobs are skipped (not
@@ -41,7 +42,7 @@ env:
 
 jobs:
   esp-idf-build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
@@ -55,6 +56,14 @@ jobs:
         include:
           - version: 'v5.4.1'
             idf_base_tag: 'v5.4.1'
+          # Each platform builds on its own architecture. The arm64 leg used to be
+          # QEMU on an x86 runner, which is also why every image here carries a
+          # version-printing verification layer - emulation lets some installs
+          # silently no-op.
+          - platform: 'linux/amd64'
+            runner: 'ubuntu-latest-8core'
+          - platform: 'linux/arm64'
+            runner: 'ubuntu-latest-8core-arm'
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -87,13 +96,11 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
-          cache-from: type=gha,scope=${{ env.ESP_IDF_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
-          cache-to: type=gha,mode=max,scope=${{ env.ESP_IDF_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
           build-args: |
             IDF_BASE_TAG=${{ matrix.idf_base_tag }}
 
   esp-idf-manifest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4core
     timeout-minutes: 10
     needs: esp-idf-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
@@ -130,8 +137,12 @@ jobs:
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-linux-arm64
 
   esp-matter-build:
-    runs-on: [self-hosted, ubuntu-latest]
-    timeout-minutes: 360
+    runs-on: ${{ matrix.runner }}
+    # Was 360, against a measured 337 on the QEMU leg - a 23-minute margin on a
+    # figure that had grown 36 minutes in eight months. Native builds land around
+    # 15-25 min, so this is a wide ceiling rather than a target; it exists to cap
+    # what a wedged job can cost.
+    timeout-minutes: 120
     needs: esp-idf-manifest
     if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
     permissions:
@@ -146,6 +157,13 @@ jobs:
           - version: 'idf-v5.4.1-matter-v1.4.2'
             jethome_idf_base_tag: 'v5.4.1'
             esp_matter_version: 'v1.4.2'
+          # 8-core is chosen for disk, not cores: the connectedhomeip tree is
+          # ~50 GB and these pools measured 372 GB (amd64) and 393 GB (arm64)
+          # free under Docker, against 88 GB on 4-core.
+          - platform: 'linux/amd64'
+            runner: 'ubuntu-latest-8core'
+          - platform: 'linux/arm64'
+            runner: 'ubuntu-latest-8core-arm'
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
@@ -178,14 +196,12 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.tags.outputs.platform_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
-          cache-from: type=gha,scope=${{ env.ESP_MATTER_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
-          cache-to: type=gha,mode=max,scope=${{ env.ESP_MATTER_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
           build-args: |
             BASE_IMAGE_TAG=idf-${{ matrix.jethome_idf_base_tag }}
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
 
   esp-matter-manifest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-4core
     timeout-minutes: 10
     needs: esp-matter-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'

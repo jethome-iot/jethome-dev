@@ -87,14 +87,28 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
   PR says nothing about ESP-Matter. Validate it with `./scripts/build.sh esp-matter`
   or on `master`.
-- `esp-matter-build` is the only self-hosted job (`[self-hosted, ubuntu-latest]`,
-  `timeout-minutes: 360`): the connectedhomeip submodule tree needs ~50 GB and
-  fails on a GitHub-hosted runner with "No space left on device". Everything else
-  is `ubuntu-latest`, 60 min for build / 10 for manifest.
+- Every build job runs on a larger-runner pool, chosen by platform through a
+  `runner` key in the matrix `include:` and read as `runs-on: ${{ matrix.runner }}`
+  — `ubuntu-latest-8core` for `linux/amd64`, `ubuntu-latest-8core-arm` for
+  `linux/arm64`. **Each platform builds on its own architecture**: there is no
+  QEMU anywhere, and adding a platform means adding the pool for it, not emulating
+  it. Manifest jobs sit on `ubuntu-latest-4core` — they only call GHCR. Timeouts
+  are 60 min for a build, 120 for `esp-matter-build`, 10 for a manifest; the
+  esp-matter figure is a ceiling on a wedged job, not a target (native builds land
+  well under it, the QEMU leg it replaced took 337 minutes).
+- The pool choice for `esp-matter-build` is about disk, not cores: the
+  connectedhomeip tree needs ~50 GB, and the 8-core pools measured 372 GB (amd64)
+  and 393 GB (arm64) free under Docker against 88 GB on 4-core. Re-measure with
+  `runner-smoke.yml` before moving that job to a smaller pool.
+- **No build cache.** `cache-from`/`cache-to` were removed after measurement: zero
+  cache hits across every master run, against 21.6 minutes per run spent writing
+  the cache — for esp-idf, 390 s of export on a 72 s build. `mode=max` wrote about
+  3.9 GiB per leg into a 10 GB repository-wide quota, so LRU evicted entries
+  during the very run that created them, leaving index entries whose blobs were
+  already gone. Re-introduce it only against a measured, repeating hit.
 - `workflow_dispatch` is declared with no inputs anywhere, so
-  `gh workflow run … -f version=… -f force_rebuild=…` is rejected. To force a cold
-  build, clear the GHA cache — scopes are `jethome-dev-<image>-linux-amd64` /
-  `-linux-arm64`.
+  `gh workflow run … -f version=… -f force_rebuild=…` is rejected. Builds are cold
+  by construction now that there is no layer cache.
 - Workflow and step names carry emoji by convention (`🐳 ESP-IDF Docker Image`,
   `📥 Checkout repository`, `🏷️ Generate tags`), and tooling matches the display
   name verbatim: `gh run list --workflow="🐳 ESP-IDF Docker Image"`.
