@@ -149,7 +149,7 @@ jobs:
       # Unconditional: the build below pushes by digest on every run, so every run
       # needs credentials - not just master.
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -216,7 +216,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.esp_idf_manifest) }}
     steps:
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -324,7 +324,7 @@ jobs:
       # GHCR on every run, including pull requests, and an anonymous pull is
       # subject to rate limits the authenticated one is not.
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -399,7 +399,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.esp_matter_manifest) }}
     steps:
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.5.2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
