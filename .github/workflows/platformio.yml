@@ -26,6 +26,12 @@ on:
 env:
   REGISTRY: ghcr.io
   PLATFORMIO_IMAGE_NAME: jethome-dev-platformio
+  # build-push-action v6+ uploads a build record as a workflow artifact by default.
+  # This repository is public, so that archive - full build log and metadata - would
+  # be downloadable by anyone off the run page, on every leg of every push. The
+  # summary itself is kept: it reports what was built without opening the log, and
+  # costs no storage.
+  DOCKER_BUILD_RECORD_UPLOAD: false
 
 jobs:
   platformio-build:
@@ -56,14 +62,14 @@ jobs:
             runner: 'ubuntu-latest-8core-arm'
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 🔧 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: 🔐 Log in to GitHub Container Registry
         if: github.ref_name == 'master'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -78,7 +84,7 @@ jobs:
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
           
       - name: 🐳 Build and push platform-specific image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: images/platformio
           platforms: ${{ matrix.platform }}
@@ -106,7 +112,7 @@ jobs:
             pio_version: 'v6.1.18'
     steps:
       - name: 🔐 Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}

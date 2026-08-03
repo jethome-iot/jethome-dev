@@ -123,7 +123,7 @@ jobs:
       image: ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: 'recursive'
       
@@ -134,7 +134,7 @@ jobs:
         run: . $IDF_PATH/export.sh && pytest --target=esp32 --embedded-services=idf,qemu
       
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware
           path: build/*.bin

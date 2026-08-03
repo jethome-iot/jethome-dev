@@ -1,0 +1,48 @@
+# Dependabot version updates
+#
+# Only github-actions is tracked, and it is worth being precise about what that
+# does and does not buy.
+#
+# The `uses:` pins in .github/workflows/ are floating majors (@vN). Dependabot
+# therefore raises a PR only when a new *major* ships - a few times a year, which
+# is exactly the cadence that went unnoticed until every action here was two or
+# three majors behind. Patches and minors arrive with no PR at all, because the
+# tag moves under us.
+#
+# That last sentence is also the limit of the cooldown below. It delays the one
+# event that already gets human review (a major bump) and delays nothing that
+# arrives automatically - including a maintainer, or an attacker, re-pointing an
+# existing @vN tag. Pinning by commit SHA is what would close that, at the cost of
+# a commit for every patch; this repository has chosen tags.
+#
+# Deliberately NOT tracked, so nobody has to re-derive why:
+#   - images/platformio/Dockerfile's `FROM python:3.11-slim-bookworm`. The docker
+#     ecosystem would track it; that is a separate decision from this one.
+#   - The linter images pinned inside `run:` blocks in lint.yml and scripts/lint.sh
+#     (rhysd/actionlint, hadolint/hadolint). No ecosystem sees a `docker run`
+#     argument - github-actions reads `uses:`, docker reads Dockerfiles.
+#   - The pip installs in images/*/Dockerfile. Most carry no version constraint at
+#     all (the pytest stack, protobuf, jinja2), so there is nothing to bump until
+#     they are pinned; `platformio==${PIO_VERSION}` is pinned but through a build
+#     arg, which no ecosystem resolves.
+#   - IDF_BASE_TAG, ESP_MATTER_VERSION, PIO_VERSION. These are chosen against
+#     Espressif's own compatibility matrix, not against "newest".
+#
+# Note that a bump here edits a workflow file, which is in that workflow's own
+# `paths:` filter - so every Dependabot PR triggers a full paid rebuild, and
+# merging it republishes `latest` with a new digest for an image whose contents did
+# not change. At a few majors a year that is acceptable; it would not be at a
+# weekly minor cadence, which is another reason the pins float.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # One PR per week rather than one per action: each of these rebuilds every
+      # image, so batching is what keeps that bounded.
+      actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7

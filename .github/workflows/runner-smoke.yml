@@ -47,7 +47,7 @@ jobs:
       runners: ${{ steps.collect.outputs.runners }}
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 🏷️ Read labels from the actionlint config
         id: collect
