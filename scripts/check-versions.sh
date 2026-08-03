@@ -32,6 +32,13 @@ VERSIONS="images/versions.json"
 # .github/actionlint.yaml, so they are listed here instead.
 GITHUB_HOSTED=(ubuntu-latest ubuntu-24.04 ubuntu-22.04 ubuntu-24.04-arm ubuntu-22.04-arm)
 
+# The larger-runner pools, read from the linter's config so the two cannot drift.
+mapfile -t POOL_LABELS < <(sed -n 's/^[[:space:]]*-[[:space:]]*//p' .github/actionlint.yaml)
+if [ "${#POOL_LABELS[@]}" -eq 0 ]; then
+    echo "  ✗ .github/actionlint.yaml lists no runner pools - refusing to accept any label" >&2
+    exit 1
+fi
+
 fail=0
 problem() {
     echo "  ✗ $*" >&2
@@ -74,10 +81,18 @@ for image in ${images}; do
     # happens here instead.
     while read -r runner; do
         [ -n "${runner}" ] || continue
-        if ! grep -qE "^[[:space:]]*-[[:space:]]*${runner}[[:space:]]*$" .github/actionlint.yaml \
-            && ! printf '%s\n' "${GITHUB_HOSTED[@]}" | grep -qx "${runner}"; then
-            problem "${image}: runner '${runner}' is neither a pool in .github/actionlint.yaml nor a GitHub-hosted label"
-        fi
+        # Compared as strings, not as a pattern: every label here contains dots
+        # and dashes, and `ubuntu-24.04-arm` used as a regex would also match
+        # `ubuntu-24X04-arm` - accepting exactly the typo this check exists for.
+        known=0
+        for label in "${POOL_LABELS[@]}" "${GITHUB_HOSTED[@]}"; do
+            if [ "${label}" = "${runner}" ]; then
+                known=1
+                break
+            fi
+        done
+        [ "${known}" -eq 1 ] \
+            || problem "${image}: runner '${runner}' is neither a pool in .github/actionlint.yaml nor a GitHub-hosted label"
     done < <(jq -r --arg i "${image}" '.images[$i].platforms[]' "${VERSIONS}")
 
     # Argument *names* are checked for every variant: Docker silently ignores an
