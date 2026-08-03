@@ -47,12 +47,14 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   rebuild) and `<prefix>-<version>-sha-<7 chars>` (immutable, the only thing to
   roll back to). The **primary** variant additionally gets `latest` and the bare
   `sha-<7 chars>`.
-- A manifest job runs under `!cancelled()` with an explicit `prepare` check, not
-  the implicit `success()` over `needs`. With several variants sharing one build
-  job, a legacy variant failing would otherwise withhold the tags of the variants
-  that built fine — leaving `latest` on the previous release while their images sit
-  in GHCR untagged. Each leg publishes only its own tags and fails on its own
-  missing digests. No job is named `build`. Every job that touches GHCR
+- **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
+  explicit `prepare` check, never the implicit `success()` over `needs`. One build
+  job covers every variant of an image, so a legacy variant failing marks the whole
+  job failed — which would otherwise withhold the tags of variants that built fine
+  (`latest` stays on the previous release while their images sit untagged), and
+  skip `esp-matter-build` entirely even for a base that succeeded. Each leg resolves
+  its own artifact and fails by itself when it is missing, which is the right blast
+  radius. No job is named `build`. Every job that touches GHCR
   needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - **Nothing is handed between those jobs by tag.** A build leg pushes by digest and

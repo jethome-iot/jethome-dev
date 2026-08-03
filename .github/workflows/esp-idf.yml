@@ -311,15 +311,22 @@ jobs:
     # tags and is master-only, so hanging off it is what kept ESP-Matter
     # unvalidated on every pull request while a green "🐳 ESP-IDF Docker Image"
     # check implied otherwise. What this job actually needs is the ESP-IDF image
-    # for its own platform, which the build leg pushes by digest on every run - so
-    # the dependency is plain, both branches behave identically, and no status
-    # expression is needed to work around a skipped job.
+    # for its own platform, which the build leg pushes by digest on every run.
+    #
+    # `!cancelled()` rather than the implicit success() over needs: esp-idf-build is
+    # one job covering every ESP-IDF variant, so a failing legacy leg marks the
+    # whole job failed and would skip every Matter variant - including ones whose
+    # own base built fine. Each leg here resolves its own base artifact and fails by
+    # itself if that artifact is missing, which is the correct blast radius.
+    # prepare is still required: without its matrices there is nothing to build.
     #
     # Dependabot is excluded: its token cannot push, so esp-idf-build produces no
     # digest to hand over. Its pull requests change action versions, which
     # esp-idf-build still exercises.
     if: >-
-      ${{ github.repository_owner == 'jethome-iot'
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && github.repository_owner == 'jethome-iot'
       && github.actor != 'dependabot[bot]'
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
