@@ -99,6 +99,16 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   the data is shared — but it is also why `images/versions.json` sits in every
   `paths:` filter: a bump to one image rebuilds the others. The alternative, a file
   per image, trades that for losing the cross-image checks.
+- **ESP-Matter is pinned by commit, not by branch.** Upstream publishes no git
+  tags, only moving `release/*` branches, so a branch names a line rather than a
+  release — `release/v1.5` carried specification v1.5 at one commit and v1.5.1 at
+  another. Each variant carries `pin.ESP_MATTER_REF` (a full SHA) and
+  `upstream_branch` (where it came from); the Dockerfile fetches that commit
+  shallowly rather than cloning the branch, and records it as an OCI label. `pin`
+  reaches the build as a build-arg like `args`, but the checker validates it
+  differently — a SHA can never appear in the tag. Advance pins with
+  `./scripts/update-matter-ref.sh --write`, then check the branch's own README for
+  the specification it now carries and move the image tag if it changed.
 - Adding a *variant* (a second ESP-IDF or Matter version) is an entry in `builds`.
   Only one of them may be `primary`; the rest publish their version tag alone, so
   `latest` is a decision in the data rather than a race between manifest jobs.

@@ -11,7 +11,10 @@
 # resolves to the empty string and never starts.
 #
 # `build_args` is emitted as the newline-joined string the build step wants, rather
-# than an object, because a workflow cannot expand an object into that field.
+# than an object, because a workflow cannot expand an object into that field. It
+# merges `args` and `pin`: both reach the build the same way, they differ only in
+# how check-versions.sh validates them (a pin is a commit SHA and cannot appear in
+# the image tag).
 #
 # `platform_tag` uses gsub, not sub: a platform like linux/arm/v7 has two
 # separators, and a leftover slash is rejected as an artifact name.
@@ -48,7 +51,7 @@ build)
                 base_arg: ($i.base_arg // ""),
                 timeout_minutes: ($i.timeout_minutes // 60),
                 platform_count: ($i.platforms | length),
-                build_args: (($b.args // {}) | to_entries | map("\(.key)=\(.value)") | join("\n"))
+                build_args: ((($b.args // {}) + ($b.pin // {})) | to_entries | map("\(.key)=\(.value)") | join("\n"))
               } ]
     ' "${VERSIONS}"
     ;;

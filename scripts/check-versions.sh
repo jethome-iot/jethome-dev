@@ -145,6 +145,22 @@ for image in ${images}; do
             || problem "${image}: variant '${variant_tag}' passes args [${keys}] but the primary variant passes [${primary_keys}]"
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\([(.args // {}) | keys[]] | sort | join(","))"' "${VERSIONS}")
 
+    # A pin is a full commit SHA: it reaches the build as a --build-arg like any
+    # other, but it can never appear in the tag, so the "tag names its versions"
+    # rule above must not apply to it. What is checkable offline is the shape, and
+    # that the Dockerfile declares the ARG at all - a pin naming an ARG that does
+    # not exist would be silently dropped by Docker, and the build would quietly
+    # take whatever the Dockerfile defaults to.
+    while IFS='|' read -r variant_tag arg value; do
+        [ -n "${arg}" ] || continue
+        case "${value}" in
+        [0-9a-f]*) [ "${#value}" -eq 40 ] || problem "${image}: variant '${variant_tag}' pins ${arg} to '${value}', which is not a full 40-character commit SHA" ;;
+        *) problem "${image}: variant '${variant_tag}' pins ${arg} to '${value}', which is not a commit SHA" ;;
+        esac
+        grep -q "^ARG ${arg}=" "images/${image}/Dockerfile" \
+            || problem "${image}: variant '${variant_tag}' pins ${arg}, which images/${image}/Dockerfile does not declare"
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | ($b.pin // {}) | to_entries[] | "\($b.tag)|\(.key)|\(.value)"' "${VERSIONS}")
+
     base=$(jq -r --arg i "${image}" '.images[$i].base // ""' "${VERSIONS}")
     if [ -n "${base}" ]; then
         jq -e --arg b "${base}" '.images[$b]' "${VERSIONS}" >/dev/null \

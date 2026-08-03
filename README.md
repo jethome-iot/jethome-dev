@@ -184,7 +184,8 @@ jethome-dev/
 │   ├── build.sh             # Local image build helper
 │   ├── lint.sh              # Runs the same linters as CI, locally
 │   ├── versions-matrix.sh   # Turns versions.json into the CI matrices
-│   └── check-versions.sh    # Enforces versions.json against the Dockerfiles
+│   ├── check-versions.sh    # Enforces versions.json against the Dockerfiles
+│   └── update-matter-ref.sh # Reports/advances the pinned ESP-Matter commits
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md

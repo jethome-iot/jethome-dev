@@ -63,12 +63,20 @@ Two things worth knowing before pinning:
   version tag if the Matter specification matters to you, and
   `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` if you need the exact build —
   the version tag is rewritten on every rebuild.
-- **A `matter-v<x.y>` tag names an upstream *branch*, not a release.** ESP-Matter
-  publishes no git tags, so the image is built from `release/v<x.y>`, whose HEAD
-  moves: `release/v1.5` currently carries specification v1.5.1, and a rebuild will
-  pick up whatever lands there next under the same image tag. For certification
-  work, check what the image actually contains:
-  `docker run --rm <image> git -C $ESP_MATTER_PATH rev-parse HEAD`.
+- **The tag names the Matter specification, and the build is pinned to a commit.**
+  ESP-Matter publishes no git tags — only moving `release/*` branches, where a
+  branch names a *line* rather than a release: `release/v1.5` carried
+  specification v1.5 at one commit and v1.5.1 at another. So
+  `images/versions.json` pins the exact upstream commit each variant is built
+  from, and a rebuild reproduces the same tree instead of picking up whatever
+  landed upstream meanwhile. Advancing a pin is a deliberate edit
+  (`./scripts/update-matter-ref.sh`), not a side effect.
+
+  The commit is readable from the image without starting it:
+
+  ```bash
+  docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
+  ```
 
 ### Pull Image
 
@@ -274,12 +282,15 @@ docker build \
 ```
 
 Available build arguments:
+- `ESP_MATTER_REF` - the upstream commit to build from. This is what actually gets
+  checked out; `ESP_MATTER_VERSION` only labels the result.
 - `BASE_IMAGE` - the full reference of the ESP-IDF image to build on (default: see
   Dockerfile). It is one argument rather than a repository plus a tag so that a
   digest fits: `…/jethome-dev-esp-idf@sha256:…`, which is what CI passes to pin the
   exact base its own run produced. It also lets a fork build against its own base
   instead of this repository's.
-- `ESP_MATTER_VERSION` - ESP-Matter version tag (default: see Dockerfile)
+- `ESP_MATTER_VERSION` - the Matter specification this image carries, used for the
+  image label and the verification line (default: see Dockerfile)
 
 To build on an ESP-IDF image you built yourself:
 
