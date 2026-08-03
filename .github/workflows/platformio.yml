@@ -77,9 +77,14 @@ jobs:
         id: matrices
         run: |
           set -euo pipefail
+          # Assigned first, echoed second: `echo "k=$(cmd)"` takes echo's exit
+          # status, so a failing generator would write an empty matrix and leave
+          # this step green.
+          build=$(./scripts/versions-matrix.sh platformio build)
+          manifest=$(./scripts/versions-matrix.sh platformio manifest)
           {
-            echo "build=$(./scripts/versions-matrix.sh platformio build)"
-            echo "manifest=$(./scripts/versions-matrix.sh platformio manifest)"
+            echo "build=${build}"
+            echo "manifest=${manifest}"
           } >> "$GITHUB_OUTPUT"
 
   platformio-build:
@@ -179,12 +184,13 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}
           TAG: ${{ matrix.tag }}
           PRIMARY: ${{ matrix.primary }}
+          EXPECTED_PLATFORMS: ${{ matrix.platform_count }}
         run: |
           set -euo pipefail
           cd /tmp/digests
           found=$(find . -type f | wc -l | tr -d ' ')
-          if [ "${found}" -ne 2 ]; then
-            echo "::error::expected 2 platform digests, found ${found}"
+          if [ "${found}" -ne "${EXPECTED_PLATFORMS}" ]; then
+            echo "::error::expected ${EXPECTED_PLATFORMS} platform digests, found ${found}"
             exit 1
           fi
           # Every source is a digest this run produced, so nothing here can be

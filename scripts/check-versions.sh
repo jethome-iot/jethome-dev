@@ -93,7 +93,42 @@ for image in ${images}; do
         elif [ "${is_primary}" = "true" ] && [ "${default}" != "${value}" ]; then
             problem "${image}: ${arg} is '${value}' in ${VERSIONS} but '${default}' in the Dockerfile"
         fi
-    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | $b.args | to_entries[] | "\($b.tag)|\($b.primary // false)|\(.key)|\(.value)"' "${VERSIONS}")
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | ($b.args // {}) | to_entries[] | "\($b.tag)|\($b.primary // false)|\(.key)|\(.value)"' "${VERSIONS}")
+
+    # `tag` used to be assembled in the workflow from the same fields that fed
+    # build-args, so it could not disagree with them. As free text in a data file
+    # it can, and the result is a GHCR tag whose name contradicts its contents.
+    # Requiring every version that went into the build to appear in the tag is what
+    # restores that link.
+    while IFS='|' read -r variant_tag value; do
+        [ -n "${value}" ] || continue
+        case "${variant_tag}" in
+        *"${value}"*) ;;
+        *) problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag" ;;
+        esac
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | (($b.args // {}) | to_entries[] | "\($b.tag)|\(.value)"), (if ($b.base_tag // "") != "" then "\($b.tag)|\($b.base_tag)" else empty end)' "${VERSIONS}")
+
+    # Digests are downloaded with `digest-<image>-<tag>-*`, so one tag being a
+    # prefix of another would pull in the other variant's platforms and publish a
+    # mixed manifest. Uniqueness alone does not rule that out.
+    while read -r a; do
+        while read -r b; do
+            [ "${a}" != "${b}" ] || continue
+            case "${b}" in
+            "${a}"*) problem "${image}: tag '${a}' is a prefix of '${b}' - the digest download glob cannot tell them apart" ;;
+            esac
+        done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+
+    # Every variant passes the same set of build args. An empty or partial set
+    # would silently fall back to the Dockerfile's defaults and publish that under
+    # this variant's tag - the failure the arg-name check below cannot see, since
+    # it never runs for keys that are absent.
+    primary_keys=$(jq -r --arg i "${image}" '[.images[$i].builds[] | select(.primary == true) | (.args // {}) | keys[]] | sort | join(",")' "${VERSIONS}")
+    while IFS='|' read -r variant_tag keys; do
+        [ "${keys}" = "${primary_keys}" ] \
+            || problem "${image}: variant '${variant_tag}' passes args [${keys}] but the primary variant passes [${primary_keys}]"
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\([(.args // {}) | keys[]] | sort | join(","))"' "${VERSIONS}")
 
     base=$(jq -r --arg i "${image}" '.images[$i].base // ""' "${VERSIONS}")
     if [ -n "${base}" ]; then

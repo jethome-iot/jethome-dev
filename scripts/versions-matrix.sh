@@ -47,7 +47,8 @@ build)
                 base_tag: ($b.base_tag // ""),
                 base_arg: ($i.base_arg // ""),
                 timeout_minutes: ($i.timeout_minutes // 60),
-                build_args: ($b.args | to_entries | map("\(.key)=\(.value)") | join("\n"))
+                platform_count: ($i.platforms | length),
+                build_args: (($b.args // {}) | to_entries | map("\(.key)=\(.value)") | join("\n"))
               } ]
     ' "${VERSIONS}"
     ;;
@@ -58,7 +59,8 @@ manifest)
             | {
                 tag: .tag,
                 primary: (.primary // false),
-                base_tag: (.base_tag // "")
+                base_tag: (.base_tag // ""),
+                platform_count: ($i.platforms | length)
               } ]
     ' "${VERSIONS}"
     ;;

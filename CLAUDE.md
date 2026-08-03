@@ -75,13 +75,24 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   image's Dockerfile — the checker fails the build if you do only one, because
   `scripts/build.sh` passes no `--build-arg` and those defaults are what every
   local build uses.
-- What the checker enforces, each because getting it wrong used to be silent: every
-  image has a Dockerfile and every Dockerfile an image; exactly one variant per
-  image is `primary` (it alone gets `latest` and `sha-<commit>`); tags are unique
-  within an image; every platform has a runner pool; the primary variant's `args`
-  match the Dockerfile's `ARG` defaults; every `base_tag` exists among the base
-  image's tags; and the base image's `ARG` default names the primary variant's
+- What the checker enforces, each because getting it wrong used to be silent:
+  every image has a Dockerfile and every Dockerfile an image; exactly one variant
+  per image is `primary` (it alone gets `latest` and `sha-<commit>`); tags are
+  unique **and none is a prefix of another**, since digests are downloaded with a
+  `digest-<image>-<tag>-*` glob; every variant names in its own tag every version
+  it is built with, so a bumped `args` with a forgotten `tag` cannot publish a name
+  that contradicts its contents; every variant passes the same set of arg *names*
+  as the primary one, because an absent or misspelled arg silently falls back to
+  the Dockerfile default; the primary variant's arg *values* match the Dockerfile's
+  `ARG` defaults; every runner is a pool listed in `.github/actionlint.yaml` (a
+  runtime `runs-on` is invisible to actionlint); every `base_tag` exists among the
+  base image's tags; and the base image's `ARG` default names the primary variant's
   base tag. Run it locally with `./scripts/check-versions.sh`.
+- The checker validates the whole file and both workflows gate on it, so a version
+  file broken for one image blocks publishing for all of them. That is deliberate —
+  the data is shared — but it is also why `images/versions.json` sits in every
+  `paths:` filter: a bump to one image rebuilds the others. The alternative, a file
+  per image, trades that for losing the cross-image checks.
 - Adding a *variant* (a second ESP-IDF or Matter version) is an entry in `builds`.
   Only one of them may be `primary`; the rest publish their version tag alone, so
   `latest` is a decision in the data rather than a race between manifest jobs.

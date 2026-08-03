@@ -94,11 +94,19 @@ jobs:
         id: matrices
         run: |
           set -euo pipefail
+          # Assigned first, echoed second: `echo "k=$(cmd)"` takes echo's exit
+          # status, so a failing generator would write an empty matrix and leave
+          # this step green - the error surfacing later as an opaque fromJSON
+          # failure in another job.
+          esp_idf_build=$(./scripts/versions-matrix.sh esp-idf build)
+          esp_idf_manifest=$(./scripts/versions-matrix.sh esp-idf manifest)
+          esp_matter_build=$(./scripts/versions-matrix.sh esp-matter build)
+          esp_matter_manifest=$(./scripts/versions-matrix.sh esp-matter manifest)
           {
-            echo "esp_idf_build=$(./scripts/versions-matrix.sh esp-idf build)"
-            echo "esp_idf_manifest=$(./scripts/versions-matrix.sh esp-idf manifest)"
-            echo "esp_matter_build=$(./scripts/versions-matrix.sh esp-matter build)"
-            echo "esp_matter_manifest=$(./scripts/versions-matrix.sh esp-matter manifest)"
+            echo "esp_idf_build=${esp_idf_build}"
+            echo "esp_idf_manifest=${esp_idf_manifest}"
+            echo "esp_matter_build=${esp_matter_build}"
+            echo "esp_matter_manifest=${esp_matter_manifest}"
           } >> "$GITHUB_OUTPUT"
 
   esp-idf-build:
@@ -198,7 +206,7 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
           TAG: ${{ matrix.tag }}
           PRIMARY: ${{ matrix.primary }}
-          EXPECTED_PLATFORMS: 2
+          EXPECTED_PLATFORMS: ${{ matrix.platform_count }}
         run: |
           # pipefail matters below: jq exits 0 on empty input, so without it a
           # failed `imagetools inspect` would yield an empty digest and a green step.
@@ -377,12 +385,13 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}
           TAG: ${{ matrix.tag }}
           PRIMARY: ${{ matrix.primary }}
+          EXPECTED_PLATFORMS: ${{ matrix.platform_count }}
         run: |
           set -euo pipefail
           cd /tmp/digests
           found=$(find . -type f | wc -l | tr -d ' ')
-          if [ "${found}" -ne 2 ]; then
-            echo "::error::expected 2 platform digests, found ${found}"
+          if [ "${found}" -ne "${EXPECTED_PLATFORMS}" ]; then
+            echo "::error::expected ${EXPECTED_PLATFORMS} platform digests, found ${found}"
             exit 1
           fi
           refs=()
