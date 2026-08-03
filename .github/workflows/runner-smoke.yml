@@ -1,6 +1,6 @@
 # Runner Smoke Test
 #
-# Probes every runner label this repository intends to use and reports what the
+# Probes every larger-runner pool this repository may use and reports what the
 # machine behind it actually is. It builds nothing and publishes nothing.
 #
 # Why this exists: larger-runner labels are not predefined by GitHub - each one is
@@ -10,10 +10,13 @@
 # it starts counting when the job is assigned, not when it is queued. If a leg
 # below has not started within a few minutes, that label is wrong - cancel the run.
 #
-# The other question it answers is disk. GitHub does not publish free space for
-# larger runners, and images/esp-matter needs ~50 GB for the connectedhomeip
-# submodule tree, so the numbers this workflow prints decide which pool that build
-# can run on at all.
+# The other question it answers is disk. GitHub publishes no free-space figure for
+# these pools, and images/esp-matter needs ~50 GB for the connectedhomeip submodule
+# tree, so the numbers printed here decide which pool that build can run on at all.
+#
+# The label list is read from .github/actionlint.yaml rather than repeated here:
+# a pool added for the linter but never probed would be exactly the second source
+# of truth this repository's own rules warn about.
 #
 # Run it from the Actions tab (workflow_dispatch); nothing triggers it otherwise.
 name: 🔎 Runner Smoke Test
@@ -24,35 +27,87 @@ on:
 permissions: {}
 
 jobs:
+  labels:
+    name: 🏷️ Collect labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      runners: ${{ steps.collect.outputs.runners }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Read labels from the actionlint config
+        id: collect
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          import pathlib
+          import re
+          import sys
+
+          # Two GitHub-hosted standard runners are probed alongside the pools, as
+          # the reference point every number below is read against.
+          BASELINE = ["ubuntu-latest", "ubuntu-24.04-arm"]
+
+          config = pathlib.Path(".github/actionlint.yaml").read_text()
+          block = re.search(
+              r"^self-hosted-runner:\s*$.*?^\s+labels:\s*$(.*?)(?=^\S|\Z)",
+              config,
+              re.M | re.S,
+          )
+          if block is None:
+              sys.exit("no self-hosted-runner.labels block in .github/actionlint.yaml")
+
+          pools = re.findall(r"^\s+-\s+(\S+)\s*$", block.group(1), re.M)
+          if not pools:
+              sys.exit("self-hosted-runner.labels is empty in .github/actionlint.yaml")
+
+          print("runners=" + json.dumps(BASELINE + pools))
+          PY
+
+      - name: 🧾 Show what will be probed
+        run: |
+          echo '${{ steps.collect.outputs.runners }}' | tr ',' '\n'
+
   probe:
     name: 🔎 ${{ matrix.runner }}
+    needs: labels
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 5
+    permissions: {}
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          # GitHub-hosted standard runners, used as the reference point
-          - ubuntu-latest
-          - ubuntu-24.04-arm
-          # larger runner pools, x86_64
-          - ubuntu-latest-4core
-          - ubuntu-latest-8core
-          - ubuntu-latest-16core
-          - ubuntu-latest-32core
-          # larger runner pools, arm64
-          - ubuntu-latest-4core-arm
-          - ubuntu-latest-8core-arm
-          - ubuntu-latest-16core-arm
-          - ubuntu-latest-32core-arm
+        runner: ${{ fromJSON(needs.labels.outputs.runners) }}
     steps:
       - name: 🧾 Report runner facts
         run: |
           set -u
-          DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || echo /var/lib/docker)
-          ROOT_FREE=$(df -BG --output=avail / | tail -1 | tr -d ' G')
-          DOCKER_FREE=$(df -BG --output=avail "${DOCKER_ROOT}" | tail -1 | tr -d ' G')
+
+          # Every value is captured separately and defaulted on empty. Inlining
+          # these into the table would hide failures twice over: a fallback after
+          # a pipe binds to the last command in it, and awk exits 0 on empty
+          # input, so a probe of a runner without docker would print a blank cell
+          # rather than say so - on exactly the machines this workflow exists to
+          # characterise.
+          free_gb() {
+            df -BG --output=avail "$1" 2>/dev/null | tail -1 | tr -d ' G'
+          }
+
+          DOCKER_ROOT=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+          DOCKER_VER=$(docker version --format '{{.Server.Version}}' 2>/dev/null || true)
+          BUILDX_VER=$(docker buildx version 2>/dev/null | awk '{print $2}')
           MEM_GB=$(awk '/^MemTotal:/ {printf "%.1f", $2/1024/1024}' /proc/meminfo)
+
+          ROOT_FREE=$(free_gb /)
+          # /mnt is a separate, usually much larger volume on GitHub-hosted
+          # runners; the root filesystem figure alone answers the disk question
+          # wrongly.
+          MNT_FREE=$(free_gb /mnt)
+          DOCKER_FREE=$(free_gb "${DOCKER_ROOT:-/var/lib/docker}")
 
           {
             echo "### ${{ matrix.runner }}"
@@ -62,18 +117,22 @@ jobs:
             echo "| runner name | ${RUNNER_NAME:-unknown} |"
             echo "| arch | $(uname -m) |"
             echo "| vCPU | $(nproc) |"
-            echo "| RAM | ${MEM_GB} GB |"
-            echo "| free on / | ${ROOT_FREE} GB |"
-            echo "| docker root | ${DOCKER_ROOT} |"
-            echo "| free on docker root | ${DOCKER_FREE} GB |"
+            echo "| RAM | ${MEM_GB:-unknown} GB |"
+            echo "| free on / | ${ROOT_FREE:-unknown} GB |"
+            echo "| free on /mnt | ${MNT_FREE:-absent} GB |"
+            echo "| docker root | ${DOCKER_ROOT:-unavailable} |"
+            echo "| free on docker root | ${DOCKER_FREE:-unknown} GB |"
             echo "| os | $(. /etc/os-release && echo "${PRETTY_NAME}") |"
             echo "| kernel | $(uname -r) |"
-            echo "| docker | $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unavailable) |"
-            echo "| buildx | $(docker buildx version 2>/dev/null | awk '{print $2}' || echo unavailable) |"
+            echo "| docker | ${DOCKER_VER:-unavailable} |"
+            echo "| buildx | ${BUILDX_VER:-unavailable} |"
             echo
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          echo "::notice title=${{ matrix.runner }}::$(uname -m), $(nproc) vCPU, ${MEM_GB} GB RAM, ${DOCKER_FREE} GB free on ${DOCKER_ROOT}"
+          echo "::notice title=${{ matrix.runner }}::$(uname -m), $(nproc) vCPU, ${MEM_GB:-?} GB RAM, ${DOCKER_FREE:-?} GB free on ${DOCKER_ROOT:-unknown}"
 
+      # Runs even when the step above aborts: on a machine nobody has inspected
+      # yet, the raw dump is what is left to read.
       - name: 💽 Full disk layout
+        if: always()
         run: df -h

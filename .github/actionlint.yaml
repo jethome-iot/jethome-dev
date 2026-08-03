@@ -2,12 +2,20 @@
 #
 # Larger-runner labels are not predefined by GitHub - each one is the name of a
 # pool an org admin created - so actionlint cannot know them and rejects every
-# `runs-on` that uses one. Listing them here is what makes the linter useful: an
-# unlisted label is now a lint error rather than a job that silently sits queued
-# for 24 hours.
+# `runs-on` that uses one. Listing them here is what makes the linter useful: a
+# label that is not below is now a lint error rather than a job that silently
+# sits queued for 24 hours.
 #
-# Keep this list in sync with the pools in the jethome-iot organisation. This file
-# is the only place in the repository where they are written down.
+# This lists the larger-runner pools only. GitHub's own labels (`ubuntu-latest`,
+# `ubuntu-24.04-arm`, `self-hosted`) are known to actionlint and must not be
+# repeated here. `runner-smoke.yml` reads this block to decide what to probe, so
+# a pool belongs here before anything else references it.
+#
+# What the check is worth: actionlint compares label *names* against this list,
+# it cannot ask GitHub whether a pool exists. A name that is listed but whose pool
+# was deleted or renamed still passes - only `runner-smoke.yml` answers that.
+#
+# Keep in sync with the pools in the jethome-iot organisation.
 self-hosted-runner:
   labels:
     - ubuntu-latest-4core

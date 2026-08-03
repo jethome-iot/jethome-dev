@@ -50,7 +50,7 @@ discover_images
 print_color() {
     local color=$1
     shift
-    echo -e "${color}$@${NC}"
+    echo -e "${color}$*${NC}"
 }
 
 # Print usage
@@ -111,7 +111,7 @@ build_image() {
     
     if [ -z "$context" ]; then
         print_color "$RED" "Error: Unknown image '$name'"
-        echo "Available images: ${!IMAGES[@]}"
+        echo "Available images: ${!IMAGES[*]}"
         exit 1
     fi
     

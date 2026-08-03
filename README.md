@@ -60,6 +60,24 @@ IMAGE_TAG=dev ./scripts/build.sh esp-idf
 
 The script builds images with the `local` tag by default to distinguish them from registry images. Use the `-r` or `--run` flag to automatically run the image in interactive mode after a successful build. You can customize the tag using the `IMAGE_TAG` environment variable.
 
+**Lint Before Pushing:**
+
+```bash
+./scripts/lint.sh
+```
+
+Runs the same checks as the `🧹 Lint` workflow: actionlint over the workflow files
+and shellcheck over the tracked `*.sh` files are gates, hadolint over the
+Dockerfiles is advisory. Both run as containers, so the Docker daemon has to be
+up. The workflow itself is triggered by changes to workflows, shell scripts and
+Dockerfiles.
+
+`🔎 Runner Smoke Test` is a separate `workflow_dispatch`-only workflow: it runs a
+one-minute job on every runner pool listed in `.github/actionlint.yaml` and
+reports architecture, vCPU, RAM and free disk. Run it after a pool is added or
+renamed — a `runs-on` naming a pool that does not exist does not fail, it queues
+for 24 hours.
+
 **Test Workflows on GitHub Actions:**
 
 ```bash
@@ -124,9 +142,12 @@ docker build -t jethome-dev-platformio:local .
 ```
 jethome-dev/
 ├── .github/
+│   ├── actionlint.yaml      # Larger-runner pools, read by the linter and the probe
 │   └── workflows/           # GitHub Actions workflows
 │       ├── esp-idf.yml      # ESP-IDF and ESP-Matter image workflows
-│       └── platformio.yml   # PlatformIO image workflow
+│       ├── platformio.yml   # PlatformIO image workflow
+│       ├── lint.yml         # actionlint + shellcheck (gates), hadolint (advisory)
+│       └── runner-smoke.yml # Reports what each runner pool actually is
 ├── images/
 │   ├── esp-idf/             # ESP-IDF development image
 │   │   ├── Dockerfile       # Image definition
@@ -140,7 +161,8 @@ jethome-dev/
 │       ├── README.md        # Detailed documentation
 │       └── pio_project/     # Stub project for the disabled pre-build step
 ├── scripts/
-│   └── build.sh             # Local image build helper
+│   ├── build.sh             # Local image build helper
+│   └── lint.sh              # Runs the same linters as CI, locally
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md
