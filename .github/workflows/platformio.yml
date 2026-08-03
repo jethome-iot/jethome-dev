@@ -2,7 +2,8 @@
 #
 # Build Strategy:
 # - Main repo master: Build + Push to GHCR
-# - Main repo dev/PR: Build only (validation)
+# - Main repo dev/PR: Build only (validation) - nothing is uploaded. Unlike
+#   esp-idf.yml, no other job consumes this image, so there is nothing to push for.
 # - workflow_dispatch: Build on any branch of the main repo, push only on master
 # - Forks: nothing runs - the runner pools are not reachable there; use
 #   ./scripts/build.sh instead

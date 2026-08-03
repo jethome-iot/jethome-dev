@@ -2,9 +2,14 @@
 # Builds ESP-IDF development image with pytest, QEMU, and testing tools
 #
 # Build Strategy:
-# - Main repo master: Build + Push to GHCR
-# - Main repo dev/PR: Build only (validation)
-# - workflow_dispatch: Build on any branch of the main repo, push only on master
+# - Tags (latest, sha-<commit>, <prefix>-<version>) are written on master only, by
+#   the manifest jobs.
+# - Images themselves are pushed by digest on EVERY run, master or not, carrying no
+#   tag and reachable by nothing but that digest. esp-matter-build consumes them,
+#   which is what lets it validate on a pull request. The cost is untagged blobs
+#   accumulating in GHCR.
+# - Dependabot is the exception: its GITHUB_TOKEN is read-only, so those runs build
+#   without pushing and esp-matter-build sits them out.
 # - Forks: nothing runs - the runner pools are not reachable there; use
 #   ./scripts/build.sh instead
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,

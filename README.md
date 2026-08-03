@@ -137,9 +137,12 @@ run.
 **Note:** every image is build-validated on pull requests and on `dev`, including
 one built `FROM` another image of this repo, and on the base that same run
 produced — so a change touching both images is checked as the pair it will become.
-This works because build jobs push by digest on every run; those pushes carry no
-tag, and only `master` ever writes `latest` or a version tag. The untagged blobs a
-pull request leaves in GHCR accumulate and want an occasional cleanup.
+This works because the **ESP-IDF** build job pushes by digest on every run — it is
+the only image another one is built from, so it is the only one that needs to.
+Those pushes carry no tag, and only `master` ever writes `latest` or a version tag.
+The untagged blobs a pull request leaves in GHCR accumulate and want an occasional
+cleanup. PlatformIO, which nothing builds on, still uploads nothing outside
+`master`.
 
 Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from both
 workflows' path filters.
