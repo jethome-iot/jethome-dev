@@ -59,17 +59,23 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
-- `esp-idf-manifest` exports the manifest's own digest as a job output, and
-  `esp-matter-build` builds `FROM` that digest via a single `BASE_IMAGE` build-arg.
+- `esp-idf-manifest` publishes the manifest's own digest as an artifact named
+  `manifest-digest-<image>-<version>`, and `esp-matter-build` downloads the one
+  matching the ESP-IDF version in its own tag, then builds `FROM` it via a single
+  `BASE_IMAGE` build-arg. An artifact rather than a job output because that job has
+  a matrix: a scalar output would be overwritten by whichever leg finished last.
   One argument rather than repo + tag because a digest needs `@`, not `:` — and it
   makes the base repository overridable, so a fork or a local build can point at
   its own esp-idf instead of this one.
 - The versions CI passes in (`IDF_BASE_TAG`, `ESP_MATTER_VERSION`, `PIO_VERSION`)
   live in the matrix `version:` + `include:` blocks and reach the image as
   `build-args`. A bump means editing **two** matrix blocks per image — the build
-  job's and the manifest job's. Updating one alone does not fail loudly: old tags
-  live on in GHCR, so the manifest job happily republishes the previous version's
-  images under the new `latest`.
+  job's and the manifest job's. For esp-matter this now fails loudly rather than
+  silently: it resolves its base through an artifact named after the ESP-IDF
+  version in its own tag, so a half-done bump cannot publish an `idf-v<old>` tag
+  built on `v<new>` — the download simply fails. Nothing yet catches the same
+  mistake within one image's own pair of blocks; that is what `PR-3`'s generated
+  matrices are for.
 - **Bump the matching `ARG` default in the Dockerfile too**, in the same change.
   `scripts/build.sh` passes no `--build-arg`, so those defaults are what every
   local build uses: leave one behind and local builds silently stay on the old
@@ -82,25 +88,32 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `images/platformio/Dockerfile`.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
-- Both image workflows carry a `concurrency` group keyed on workflow + ref, with
-  `cancel-in-progress` **only** on pull requests. On `master` runs queue instead:
-  cancelling one mid-flight leaves images pushed by digest with no manifest
-  pointing at them, and leaves `esp-matter-build` building on a base whose
-  manifest job was killed.
+- `concurrency` cancels superseded **pull-request** runs and groups nothing else:
+  the key carries `github.sha` on a push, giving every commit its own group. Note
+  that `cancel-in-progress: false` does **not** produce a queue — GitHub cancels a
+  *pending* run in a group whenever a newer one arrives, whatever that flag says.
+  Grouping master pushes by ref would therefore drop the middle commit of any three
+  landing inside one build window, along with its `sha-<commit>` image, which the
+  READMEs document as the way to pin an exact commit.
+- Each manifest job asserts it received one digest per platform before publishing.
+  With `fail-fast: false` a failed leg would otherwise leave a single file in the
+  directory and quietly publish a single-platform image under the multi-arch tags.
+  The digest capture runs under `set -o pipefail`, because `jq` exits 0 on empty
+  input: without it a failed `imagetools inspect` yields an empty digest and a
+  green step.
 - Publishing is gated on two questions, asked at different levels. **Who**: the
   build job's `if: github.repository_owner == 'jethome-iot'` — nothing runs
   anywhere else, so no step below needs to re-ask. **Where**: the login step's
-  `if: github.ref_name == 'master'` and `push:` with the same expression — on a PR
-  or on `dev` the image is built and thrown away, never uploaded. Manifest jobs
+  `if: github.ref_name == 'master'` and the `push=` field inside the build step's
+  `outputs:` CSV, carrying the same expression — on a PR or on `dev` the image is
+  built and thrown away, never uploaded. Manifest jobs
   ask both in their own job `if`, since they have no build step to gate. The org
   literal is hardcoded.
 - `esp-matter-build` has `needs: esp-idf-manifest`, which requires both
   `jethome-iot` **and** `master`, so both ESP-Matter jobs are skipped entirely on
   `dev`, on PRs and on non-master dispatch. The dependency is real:
-  `images/esp-matter/Dockerfile` is
-  `FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-<version>`, a multi-arch tag
-  only that manifest job publishes (owner hardcoded, so forks pull from
-  `jethome-iot` too).
+  `images/esp-matter/Dockerfile` is `FROM ${BASE_IMAGE}`, and the digest CI passes
+  there is published by that manifest job in the same run.
 - Worse than "no validation": a PR touching only `images/esp-matter/**` still
   matches the workflow's `paths:` filter, so `esp-idf-build` runs on its unchanged
   context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
@@ -126,8 +139,9 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   generous until the native arm64 leg has been measured: the only native number
   that exists is 24 min on amd64 (the QEMU leg it replaced took 337). Lowering it
   too early fails in an unobvious way — the arm64 leg is killed, the manifest job
-  is skipped with it, and the amd64 platform tag has already been overwritten,
-  leaving GHCR with a platform tag newer than the manifest pointing at it.
+  is skipped with it, and the amd64 image is already in GHCR as an untagged blob
+  that nothing references — so the published tags stay on the previous build while
+  a run reports failure.
 - **Nothing runs in a fork.** Those pools belong to `jethome-iot`, a fork cannot
   resolve their labels, and an unresolvable `runs-on` queues for 24 hours rather
   than failing — so the build jobs are gated on `github.repository_owner ==

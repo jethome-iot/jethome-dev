@@ -33,14 +33,17 @@ env:
   # costs no storage.
   DOCKER_BUILD_RECORD_UPLOAD: false
 
-# A run must not overtake the one before it: the manifest jobs publish moving tags
-# (latest, sha-<commit>), and esp-matter-build runs for minutes on a base the
-# previous run published. On master this queues rather than cancels - a cancelled
-# run leaves images pushed by digest with no manifest pointing at them. On a pull
-# request there is nothing to leave behind, so superseded runs are cancelled and
-# not paid for.
+# Superseded pull-request runs are cancelled - nothing has been published yet and
+# they cost money. Pushes are deliberately NOT grouped together: the group key
+# includes the commit, so each one gets its own group and none can cancel another.
+#
+# `cancel-in-progress: false` would not have given a queue. GitHub cancels a
+# *pending* run in a group whenever a newer one arrives, regardless of that flag -
+# so grouping master pushes by ref would silently drop the middle commit of any
+# three that land inside one build window, and its sha-<commit> image, which the
+# READMEs document as the way to pin an exact commit, would never exist.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -121,7 +124,7 @@ jobs:
         if: github.ref_name == 'master'
         uses: actions/upload-artifact@v7
         with:
-          name: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ steps.tags.outputs.platform_tag }}
+          name: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -152,7 +155,7 @@ jobs:
       - name: ⬇️ Download digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-*
+          pattern: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.version }}-*
           merge-multiple: true
           path: /tmp/digests
 
@@ -161,7 +164,13 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}
           VERSION: ${{ matrix.version }}
         run: |
+          set -euo pipefail
           cd /tmp/digests
+          found=$(find . -type f | wc -l | tr -d ' ')
+          if [ "${found}" -ne 2 ]; then
+            echo "::error::expected 2 platform digests, found ${found}"
+            exit 1
+          fi
           SHA_SHORT="${GITHUB_SHA:0:7}"
           # Every source is a digest this run produced, so nothing here can be
           # resolved to another run's image. The version tag goes last on purpose:
