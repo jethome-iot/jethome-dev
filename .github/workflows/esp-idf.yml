@@ -4,8 +4,9 @@
 # Build Strategy:
 # - Main repo master: Build + Push to GHCR
 # - Main repo dev/PR: Build only (validation)
-# - workflow_dispatch: Build on any branch/fork, push only on main repo master
-# - Forks: Can test builds, but push is restricted to main repo
+# - workflow_dispatch: Build on any branch of the main repo, push only on master
+# - Forks: nothing runs - the runner pools are not reachable there; use
+#   ./scripts/build.sh instead
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
 #   each on a runner of its own architecture (matrix.runner) - no QEMU
 #
@@ -44,7 +45,11 @@ jobs:
   esp-idf-build:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
-    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
+    # Owner-only, with no workflow_dispatch escape hatch: the runner pools belong
+    # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
+    # `runs-on` queues for 24 hours rather than failing. A fork that wants to build
+    # these images runs ./scripts/build.sh.
+    if: github.repository_owner == 'jethome-iot'
     permissions:
       contents: read
       packages: write
@@ -56,10 +61,10 @@ jobs:
         include:
           - version: 'v5.4.1'
             idf_base_tag: 'v5.4.1'
-          # Each platform builds on its own architecture. The arm64 leg used to be
-          # QEMU on an x86 runner, which is also why every image here carries a
-          # version-printing verification layer - emulation lets some installs
-          # silently no-op.
+          # Each platform builds on its own architecture; the arm64 leg was QEMU
+          # on an x86 runner before this. A platform value with no entry here
+          # leaves runs-on empty and the leg never starts - actionlint does not
+          # catch that.
           - platform: 'linux/amd64'
             runner: 'ubuntu-latest-8core'
           - platform: 'linux/arm64'
@@ -67,18 +72,18 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+        if: github.ref_name == 'master'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: 🏷️ Generate tags
         id: tags
         run: |
@@ -86,13 +91,13 @@ jobs:
           echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
-          
+
       - name: 🐳 Build and push platform-specific image
         uses: docker/build-push-action@v5
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
+          push: ${{ github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:idf-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
@@ -100,7 +105,7 @@ jobs:
             IDF_BASE_TAG=${{ matrix.idf_base_tag }}
 
   esp-idf-manifest:
-    runs-on: ubuntu-latest-4core
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: esp-idf-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
@@ -139,12 +144,20 @@ jobs:
   esp-matter-build:
     runs-on: ${{ matrix.runner }}
     # Was 360, against a measured 337 on the QEMU leg - a 23-minute margin on a
-    # figure that had grown 36 minutes in eight months. Native builds land around
-    # 15-25 min, so this is a wide ceiling rather than a target; it exists to cap
-    # what a wedged job can cost.
-    timeout-minutes: 120
+    # figure that had grown 36 minutes in eight months. A cap, not a target: it
+    # bounds what a wedged job costs.
+    #
+    # Deliberately generous until arm64 is measured. The only native esp-matter
+    # figure that exists is 24 min on amd64; arm64 has never run outside QEMU, so
+    # its per-core performance on connectedhomeip is unknown. Getting this wrong
+    # downward is expensive in an unobvious way: the arm64 leg is killed, the
+    # manifest job is skipped with it, and the amd64 platform tag has already been
+    # overwritten - leaving GHCR with a platform tag newer than the manifest that
+    # points at it. Lower this once two runs have reported real numbers.
+    timeout-minutes: 180
     needs: esp-idf-manifest
-    if: github.repository_owner == 'jethome-iot' || github.event_name == 'workflow_dispatch'
+    # Owner-only, as esp-idf-build; see the note there.
+    if: github.repository_owner == 'jethome-iot'
     permissions:
       contents: read
       packages: write
@@ -167,18 +180,18 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+        if: github.ref_name == 'master'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: 🏷️ Generate tags
         id: tags
         run: |
@@ -186,13 +199,13 @@ jobs:
           echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
-          
+
       - name: 🐳 Build and push platform-specific ESP-Matter image
         uses: docker/build-push-action@v5
         with:
           context: images/esp-matter
           platforms: ${{ matrix.platform }}
-          push: ${{ github.repository_owner == 'jethome-iot' && github.ref_name == 'master' }}
+          push: ${{ github.ref_name == 'master' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}-${{ steps.tags.outputs.platform_tag }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}:sha-${{ steps.tags.outputs.sha_short }}-${{ steps.tags.outputs.platform_tag }}
@@ -201,7 +214,7 @@ jobs:
             ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
 
   esp-matter-manifest:
-    runs-on: ubuntu-latest-4core
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: esp-matter-build
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'

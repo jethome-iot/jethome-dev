@@ -69,15 +69,16 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `images/platformio/Dockerfile`.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
-- Publishing is gated in three places per build job, all of which must stay in
-  sync: job `if: github.repository_owner == 'jethome-iot' || github.event_name ==
-  'workflow_dispatch'`, the login step's `if: … owner == 'jethome-iot' &&
-  github.ref_name == 'master'`, and `push:` with that same master-only expression.
-  Manifest jobs use the master-only form as their job `if`. The org literal is
-  hardcoded.
+- Publishing is gated on two questions, asked at different levels. **Who**: the
+  build job's `if: github.repository_owner == 'jethome-iot'` — nothing runs
+  anywhere else, so no step below needs to re-ask. **Where**: the login step's
+  `if: github.ref_name == 'master'` and `push:` with the same expression — on a PR
+  or on `dev` the image is built and thrown away, never uploaded. Manifest jobs
+  ask both in their own job `if`, since they have no build step to gate. The org
+  literal is hardcoded.
 - `esp-matter-build` has `needs: esp-idf-manifest`, which requires both
   `jethome-iot` **and** `master`, so both ESP-Matter jobs are skipped entirely on
-  `dev`, on PRs, on non-master dispatch and in every fork. The dependency is real:
+  `dev`, on PRs and on non-master dispatch. The dependency is real:
   `images/esp-matter/Dockerfile` is
   `FROM ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-<version>`, a multi-arch tag
   only that manifest job publishes (owner hardcoded, so forks pull from
@@ -92,10 +93,29 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   — `ubuntu-latest-8core` for `linux/amd64`, `ubuntu-latest-8core-arm` for
   `linux/arm64`. **Each platform builds on its own architecture**: there is no
   QEMU anywhere, and adding a platform means adding the pool for it, not emulating
-  it. Manifest jobs sit on `ubuntu-latest-4core` — they only call GHCR. Timeouts
-  are 60 min for a build, 120 for `esp-matter-build`, 10 for a manifest; the
-  esp-matter figure is a ceiling on a wedged job, not a target (native builds land
-  well under it, the QEMU leg it replaced took 337 minutes).
+  it. That coupling is unchecked and fails quietly: a `platform:` value with no
+  matching `include:` entry leaves `matrix.runner` empty, `runs-on` evaluates to
+  the empty string, and the leg never starts — actionlint passes it (verified
+  against the image `lint.yml` runs, which catches a *wrong* label but not a
+  missing key). The mapping is also copied into each build job, so a platform
+  change touches every one of them. **Manifest jobs stay on `ubuntu-latest`** —
+  they are seconds of GHCR calls, so a pool would buy nothing, and they are the
+  only jobs that publish a multi-arch tag: pointing them at a pool would make tag
+  publication hostage to that pool still existing and still being granted to this
+  repository, and an unreachable pool queues for 24 hours rather than failing.
+- Timeouts are 60 min for a build, 180 for `esp-matter-build`, 10 for a manifest.
+  The esp-matter figure is a ceiling on a wedged job, not a target, and it stays
+  generous until the native arm64 leg has been measured: the only native number
+  that exists is 24 min on amd64 (the QEMU leg it replaced took 337). Lowering it
+  too early fails in an unobvious way — the arm64 leg is killed, the manifest job
+  is skipped with it, and the amd64 platform tag has already been overwritten,
+  leaving GHCR with a platform tag newer than the manifest pointing at it.
+- **Nothing runs in a fork.** Those pools belong to `jethome-iot`, a fork cannot
+  resolve their labels, and an unresolvable `runs-on` queues for 24 hours rather
+  than failing — so the build jobs are gated on `github.repository_owner ==
+  'jethome-iot'` with no `workflow_dispatch` escape hatch. A fork builds with
+  `./scripts/build.sh`. Do not re-add a dispatch exception without giving the job
+  a runner a fork can actually reach.
 - The pool choice for `esp-matter-build` is about disk, not cores: the
   connectedhomeip tree needs ~50 GB, and the 8-core pools measured 372 GB (amd64)
   and 393 GB (arm64) free under Docker against 88 GB on 4-core. Re-measure with
@@ -116,14 +136,18 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 ## Dockerfiles
 
 - Every image sets `WORKDIR /workspace` and ends with a version-printing
-  verification `RUN` as its last build layer — that layer is what catches installs
-  which silently no-op under emulation. Both platforms must build.
+  verification `RUN` as its last build layer. It is the only thing standing between
+  a silently failed install and a published image: a tool that never installed
+  still leaves a green build until something asks it for its version. Emulation
+  used to be the loudest source of those (CI no longer emulates), but it was never
+  the only one — a mirror serving a stale package or an installer that exits 0 on
+  a partial install produce the same image. Keep the layer. Both platforms must
+  build.
 - Docker's default `SHELL` is `/bin/sh`, so an image that sets none must keep its
   `RUN` layers POSIX — check the image's own Dockerfile before reaching for a
   bash-ism. esp-idf and esp-matter set `SHELL ["/bin/bash", "-c"]` because their
-  layers need the bash builtin `source` (their comment: "needed for QEMU emulation
-  compatibility"); platformio does not. A trailing `CMD ["/bin/bash"]` sets the
-  interactive shell, not the build shell.
+  layers call the bash builtin `source`; platformio does not. A trailing
+  `CMD ["/bin/bash"]` sets the interactive shell, not the build shell.
 - Toolchain activation is per-image, not repo-wide. The ESP images source
   `${IDF_PATH}/export.sh` in every `RUN` that needs the toolchain (esp-idf
   additionally needs `export IDF_PATH_FORCE=1` in the same `RUN`; esp-matter also

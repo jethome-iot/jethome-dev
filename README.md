@@ -94,12 +94,12 @@ It never runs on a pull request.
 # Both workflows also support workflow_dispatch (Actions tab), which ignores the
 # path filters. Images are pushed to GHCR from master only.
 #
-# In a fork the build jobs are skipped on push and pull_request - they require
-# the jethome-iot owner - so run them from the Actions tab (workflow_dispatch),
-# which satisfies that condition. An image built FROM another image of this repo
-# (today esp-matter) stays skipped even then: it chains off the base image's
-# manifest job, which runs for jethome-iot on master only - see the note below.
-# Pushing to GHCR stays disabled either way.
+# In a fork nothing runs at all: the build jobs require the jethome-iot owner,
+# and the runner pools they target are not reachable from a fork - a job asking
+# for one would queue for 24 hours rather than fail. Build in a fork with
+# ./scripts/build.sh instead. An image built FROM another image of this repo
+# (today esp-matter) is also skipped on dev and on pull requests: it chains off
+# the base image's manifest job, which runs on master only - see the note below.
 git checkout dev
 git push origin dev
 
