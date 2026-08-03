@@ -6,13 +6,23 @@
 # separator differs. CI pins the exact esp-idf image its own run produced; the
 # default below is what a local ./scripts/build.sh uses, and it also makes the
 # owner overridable instead of hardcoded, so a fork can build against its own base.
-ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.4.1
-ARG ESP_MATTER_VERSION=v1.4.2
+ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.5.5
+# The Matter specification this image carries. Descriptive only - what actually
+# gets checked out is ESP_MATTER_REF below.
+ARG ESP_MATTER_VERSION=v1.6
+# The exact upstream commit. ESP-Matter publishes no git tags, only moving
+# release/* branches, so a branch name identifies a line rather than a release:
+# release/v1.5 carried specification v1.5 at one commit and v1.5.1 at another.
+# Pinning the commit is what makes an image tag mean something - and what makes a
+# rebuild reproduce the same tree instead of picking up whatever landed upstream.
+# Update with ./scripts/update-matter-ref.sh.
+ARG ESP_MATTER_REF=2c125619610b9a16bb8e92f5ebbf55111638615e
 
 FROM ${BASE_IMAGE}
 
 # Re-declare build arguments after FROM
 ARG ESP_MATTER_VERSION
+ARG ESP_MATTER_REF
 
 # Use bash for all RUN commands: the layers below call the bash builtin `source`,
 # which /bin/sh does not have. (This once said "needed for QEMU emulation
@@ -37,15 +47,23 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone ESP-Matter repository and submodules
-# Using shallow clones to reduce image size
+# Fetch the pinned commit rather than cloning a branch. GitHub serves a shallow
+# fetch of an arbitrary SHA, so this stays as cheap as `clone --depth 1` while
+# being reproducible. Submodules need no pinning of their own: their commits are
+# recorded in this tree, so fixing the superproject fixes all of it.
 WORKDIR /opt
-RUN git clone --depth 1 --branch release/${ESP_MATTER_VERSION} \
-    https://github.com/espressif/esp-matter.git && \
+RUN git init esp-matter && \
     cd esp-matter && \
+    git remote add origin https://github.com/espressif/esp-matter.git && \
+    git fetch --depth 1 origin ${ESP_MATTER_REF} && \
+    git checkout FETCH_HEAD && \
     git submodule update --init --depth 1 && \
     cd connectedhomeip/connectedhomeip && \
     ./scripts/checkout_submodules.py --platform esp32 linux --shallow
+
+# Answers "what is actually in here" without starting the container.
+LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
+      org.opencontainers.image.version="${ESP_MATTER_VERSION}"
 
 # Install ESP-Matter (without host tools to reduce image size)
 # Source ESP-IDF environment first to activate Python venv with pip

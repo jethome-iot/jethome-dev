@@ -43,14 +43,40 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
-| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
+
+**Several combinations are published at once**, each under its own version tag —
+`latest` and the bare `sha-<short-commit>` follow one of them, the primary.
+[`images/versions.json`](../versions.json) is the list of what gets built and which
+one is primary; the package page on GHCR shows what is currently published.
+
+Two things worth knowing before pinning:
+
+- `latest` moves when the primary does, which happens on a version bump. Pin the
+  version tag if the Matter specification matters to you, and
+  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` if you need the exact build —
+  the version tag is rewritten on every rebuild.
+- **The tag names the Matter specification, and the build is pinned to a commit.**
+  ESP-Matter publishes no git tags — only moving `release/*` branches, where a
+  branch names a *line* rather than a release: `release/v1.5` carried
+  specification v1.5 at one commit and v1.5.1 at another. So
+  `images/versions.json` pins the exact upstream commit each variant is built
+  from, and a rebuild reproduces the same tree instead of picking up whatever
+  landed upstream meanwhile. Advancing a pin is a deliberate edit
+  (`./scripts/update-matter-ref.sh`), not a side effect.
+
+  The commit is readable from the image without starting it:
+
+  ```bash
+  docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
+  ```
 
 ### Pull Image
 
@@ -256,12 +282,15 @@ docker build \
 ```
 
 Available build arguments:
+- `ESP_MATTER_REF` - the upstream commit to build from. This is what actually gets
+  checked out; `ESP_MATTER_VERSION` only labels the result.
 - `BASE_IMAGE` - the full reference of the ESP-IDF image to build on (default: see
   Dockerfile). It is one argument rather than a repository plus a tag so that a
   digest fits: `…/jethome-dev-esp-idf@sha256:…`, which is what CI passes to pin the
   exact base its own run produced. It also lets a fork build against its own base
   instead of this repository's.
-- `ESP_MATTER_VERSION` - ESP-Matter version tag (default: see Dockerfile)
+- `ESP_MATTER_VERSION` - the Matter specification this image carries, used for the
+  image label and the verification line (default: see Dockerfile)
 
 To build on an ESP-IDF image you built yourself:
 

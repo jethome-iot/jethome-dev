@@ -17,6 +17,19 @@
     "digest through 'base_arg', so the tag here is what binds a variant to the exact",
     "base version its own tag advertises.",
     "",
+    "'pin' is passed as a build arg like 'args', but is checked differently: its",
+    "values are commit SHAs, so they cannot appear in the tag. ESP-Matter publishes",
+    "no git tags - only moving release/* branches - so a branch names a line, not a",
+    "release: release/v1.5 carried specification v1.5 at one commit and v1.5.1 at",
+    "another. The pin is what makes the image tag mean something and a rebuild",
+    "reproduce the same tree. 'upstream_branch' records where the pin came from;",
+    "./scripts/update-matter-ref.sh advances it.",
+    "",
+    "The idf-v5.4.1 line (and the Matter v1.4.2 variant on it) is kept building on",
+    "purpose while projects still depend on those tags - it is not the primary and",
+    "gets no `latest`. Drop both entries once nothing pins them; the published tags",
+    "survive in GHCR either way, they just stop being rebuilt.",
+    "",
     "Not listed here: ARGs that CI never passes (ESP32_PLATFORM_VERSION,",
     "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile). Their",
     "Dockerfile default is the only source of truth and is bumped there."
@@ -30,8 +43,15 @@
       "timeout_minutes": 60,
       "builds": [
         {
-          "tag": "idf-v5.4.1",
+          "tag": "idf-v5.5.5",
           "primary": true,
+          "args": {
+            "IDF_BASE_TAG": "v5.5.5"
+          }
+        },
+        {
+          "tag": "idf-v5.4.1",
+          "primary": false,
           "args": {
             "IDF_BASE_TAG": "v5.4.1"
           }
@@ -48,11 +68,39 @@
       "timeout_minutes": 180,
       "builds": [
         {
-          "tag": "idf-v5.4.1-matter-v1.4.2",
+          "tag": "idf-v5.5.5-matter-v1.6",
           "primary": true,
+          "base_tag": "idf-v5.5.5",
+          "upstream_branch": "release/v1.6",
+          "args": {
+            "ESP_MATTER_VERSION": "v1.6"
+          },
+          "pin": {
+            "ESP_MATTER_REF": "2c125619610b9a16bb8e92f5ebbf55111638615e"
+          }
+        },
+        {
+          "tag": "idf-v5.5.5-matter-v1.5.1",
+          "primary": false,
+          "base_tag": "idf-v5.5.5",
+          "upstream_branch": "release/v1.5",
+          "args": {
+            "ESP_MATTER_VERSION": "v1.5.1"
+          },
+          "pin": {
+            "ESP_MATTER_REF": "44dfffd046f04552a87fa5ff7cf9695be486f177"
+          }
+        },
+        {
+          "tag": "idf-v5.4.1-matter-v1.4.2",
+          "primary": false,
           "base_tag": "idf-v5.4.1",
+          "upstream_branch": "release/v1.4.2",
           "args": {
             "ESP_MATTER_VERSION": "v1.4.2"
+          },
+          "pin": {
+            "ESP_MATTER_REF": "2e4e0050c0bf6167f6bfc3351086c4e1126a6893"
           }
         }
       ]

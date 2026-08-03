@@ -37,12 +37,19 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
-| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+
+**Several ESP-IDF versions are published at once**, each under its own
+`idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
+chosen in [`images/versions.json`](../versions.json) — that file is also where you
+can see which versions currently exist. Pin the version tag if the release matters
+to you, and `idf-v<version>-sha-<short-commit>` if you need the exact build: the version
+tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
 ### Pull Image
 
@@ -90,10 +97,20 @@ run `idf.py --list-targets` inside the image for the authoritative list:
 | ESP32 | Xtensa |
 | ESP32-S2 | Xtensa |
 | ESP32-S3 | Xtensa |
+| ESP32-C2 | RISC-V |
 | ESP32-C3 | RISC-V |
+| ESP32-C5 | RISC-V |
 | ESP32-C6 | RISC-V |
+| ESP32-C61 | RISC-V |
 | ESP32-H2 | RISC-V |
 | ESP32-P4 | RISC-V |
+
+The table is the supported set of the **primary** ESP-IDF version. An older
+version published alongside it may classify a chip differently — ESP32-C5 and
+ESP32-C61 are supported in 5.5.x but preview in 5.4.x, where they need
+`idf.py --preview set-target`. Preview targets are not printed by
+`idf.py --list-targets`; run `idf.py --preview --list-targets` inside the image you
+actually use, which is the only authoritative answer for that image.
 
 QEMU emulation covers only part of that list — the ESP-IDF QEMU fork implements a
 subset of the targets, and which ones changes as the base image is bumped. See

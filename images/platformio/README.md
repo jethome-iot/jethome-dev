@@ -37,12 +37,12 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `pio-v<version>` | Pin to specific PlatformIO version (recommended for CI/CD) |
-| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`pio-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
 ### Pull Image
 

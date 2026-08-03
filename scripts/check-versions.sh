@@ -145,6 +145,41 @@ for image in ${images}; do
             || problem "${image}: variant '${variant_tag}' passes args [${keys}] but the primary variant passes [${primary_keys}]"
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\([(.args // {}) | keys[]] | sort | join(","))"' "${VERSIONS}")
 
+    # A pin is a full commit SHA: it reaches the build as a --build-arg like any
+    # other, but it can never appear in the tag, so the "tag names its versions"
+    # rule above must not apply to it. What is checkable offline is the shape, and
+    # that the Dockerfile declares the ARG at all - a pin naming an ARG that does
+    # not exist would be silently dropped by Docker, and the build would quietly
+    # take whatever the Dockerfile defaults to.
+    while IFS='|' read -r variant_tag is_primary arg value; do
+        [ -n "${arg}" ] || continue
+        # Every character, not just the first: `[0-9a-f]*` as a shell pattern only
+        # constrains the leading one, so `2c1z…` would have passed here and failed
+        # later at `git fetch` instead.
+        case "${value}" in
+        *[!0-9a-f]*) problem "${image}: variant '${variant_tag}' pins ${arg} to '${value}', which is not hexadecimal" ;;
+        *) [ "${#value}" -eq 40 ] || problem "${image}: variant '${variant_tag}' pins ${arg} to a ${#value}-character value; a full commit SHA is 40" ;;
+        esac
+        pin_default=$(sed -n "s/^ARG ${arg}=//p" "images/${image}/Dockerfile" | head -1)
+        if [ -z "${pin_default}" ]; then
+            problem "${image}: variant '${variant_tag}' pins ${arg}, which images/${image}/Dockerfile does not declare - Docker would ignore it"
+        elif [ "${is_primary}" = "true" ] && [ "${pin_default}" != "${value}" ]; then
+            # Same rule as for args: the primary variant is what a local build
+            # reproduces. Advancing a pin without moving the ARG default would have
+            # CI build the new commit while ./scripts/build.sh checks out the old.
+            problem "${image}: ${arg} is '${value}' in ${VERSIONS} but '${pin_default}' in the Dockerfile"
+        fi
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | ($b.pin // {}) | to_entries[] | "\($b.tag)|\($b.primary // false)|\(.key)|\(.value)"' "${VERSIONS}")
+
+    # A variant with no `pin` at all emits no row above, so the loop cannot catch
+    # it - and the Dockerfile would fall back to the primary's commit, publishing
+    # one variant's tree under another variant's tag. Same key-set rule as `args`.
+    primary_pins=$(jq -r --arg i "${image}" '[.images[$i].builds[] | select(.primary == true) | (.pin // {}) | keys[]] | sort | join(",")' "${VERSIONS}")
+    while IFS='|' read -r variant_tag keys; do
+        [ "${keys}" = "${primary_pins}" ] \
+            || problem "${image}: variant '${variant_tag}' pins [${keys}] but the primary variant pins [${primary_pins}]"
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\([(.pin // {}) | keys[]] | sort | join(","))"' "${VERSIONS}")
+
     base=$(jq -r --arg i "${image}" '.images[$i].base // ""' "${VERSIONS}")
     if [ -n "${base}" ]; then
         jq -e --arg b "${base}" '.images[$b]' "${VERSIONS}" >/dev/null \

@@ -42,10 +42,19 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `workflow_dispatch` **or** a push to `runner-probe/**`, never on a pull request;
   the branch trigger is the only way to exercise a change to the probe itself,
   since `workflow_dispatch` is offered only for workflows already on `master`.
-- Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
-  `linux/amd64` / `linux/arm64`) then `<image>-manifest`
-  (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
-  `<prefix>-<version>`). No job is named `build`. Every job that touches GHCR
+- Two jobs per image: `<image>-build` (one leg per variant × platform) then
+  `<image>-manifest`. Tags per variant: `<prefix>-<version>` (moves on every
+  rebuild) and `<prefix>-<version>-sha-<7 chars>` (immutable, the only thing to
+  roll back to). The **primary** variant additionally gets `latest` and the bare
+  `sha-<7 chars>`.
+- **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
+  explicit `prepare` check, never the implicit `success()` over `needs`. One build
+  job covers every variant of an image, so a legacy variant failing marks the whole
+  job failed — which would otherwise withhold the tags of variants that built fine
+  (`latest` stays on the previous release while their images sit untagged), and
+  skip `esp-matter-build` entirely even for a base that succeeded. Each leg resolves
+  its own artifact and fails by itself when it is missing, which is the right blast
+  radius. No job is named `build`. Every job that touches GHCR
   needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - **Nothing is handed between those jobs by tag.** A build leg pushes by digest and
@@ -55,7 +64,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   overwrite one another. The manifest is then assembled from
   `<image>@sha256:<digest>` references. A tag in between would be a mutable name
   resolved at a later moment, and between those moments another run can overwrite
-  it: that is how a `sha-<commit>` tag ends up holding a different commit's image.
+  it: that is how a `sha-<short-commit>` tag ends up holding a different commit's image.
   There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
@@ -76,7 +85,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   local build uses.
 - What the checker enforces, each because getting it wrong used to be silent:
   every image has a Dockerfile and every Dockerfile an image; exactly one variant
-  per image is `primary` (it alone gets `latest` and `sha-<commit>`); tags are
+  per image is `primary` (it alone gets `latest` and `sha-<short-commit>`); tags are
   unique **and none is a prefix of another**, since digests are downloaded with a
   `digest-<image>-<tag>-*` glob; every variant names in its own tag every version
   it is built with, so a bumped `args` with a forgotten `tag` cannot publish a name
@@ -92,6 +101,16 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   the data is shared — but it is also why `images/versions.json` sits in every
   `paths:` filter: a bump to one image rebuilds the others. The alternative, a file
   per image, trades that for losing the cross-image checks.
+- **ESP-Matter is pinned by commit, not by branch.** Upstream publishes no git
+  tags, only moving `release/*` branches, so a branch names a line rather than a
+  release — `release/v1.5` carried specification v1.5 at one commit and v1.5.1 at
+  another. Each variant carries `pin.ESP_MATTER_REF` (a full SHA) and
+  `upstream_branch` (where it came from); the Dockerfile fetches that commit
+  shallowly rather than cloning the branch, and records it as an OCI label. `pin`
+  reaches the build as a build-arg like `args`, but the checker validates it
+  differently — a SHA can never appear in the tag. Advance pins with
+  `./scripts/update-matter-ref.sh --write`, then check the branch's own README for
+  the specification it now carries and move the image tag if it changed.
 - Adding a *variant* (a second ESP-IDF or Matter version) is an entry in `builds`.
   Only one of them may be `primary`; the rest publish their version tag alone, so
   `latest` is a decision in the data rather than a race between manifest jobs.
@@ -106,7 +125,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   that `cancel-in-progress: false` does **not** produce a queue — GitHub cancels a
   *pending* run in a group whenever a newer one arrives, whatever that flag says.
   Grouping master pushes by ref would therefore drop the middle commit of any three
-  landing inside one build window, along with its `sha-<commit>` image, which the
+  landing inside one build window, along with its `sha-<short-commit>` image, which the
   READMEs document as the way to pin an exact commit.
 - Each manifest job asserts it received one digest per platform before publishing.
   With `fail-fast: false` a failed leg would otherwise leave a single file in the
@@ -238,7 +257,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 
 - Never hardcode a version number in a README. Describe capabilities and use
   placeholders: `idf-v<version>`, `idf-v<idf-ver>-matter-v<matter-ver>`,
-  `pio-v<version>`, `sha-<commit>`. The only exceptions are `ARG` defaults inside a
+  `pio-v<version>`, `sha-<short-commit>`. The only exceptions are `ARG` defaults inside a
   Dockerfile and build-argument examples.
 - The root README indexes the images and covers repo-wide topics (layout, local
   scripts, CI triggers, registry) plus one image-agnostic `docker run` example;
