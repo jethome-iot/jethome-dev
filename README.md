@@ -72,6 +72,20 @@ Dockerfiles is advisory. Both run as containers, so the Docker daemon has to be
 up. The workflow itself is triggered by changes to workflows, shell scripts and
 Dockerfiles.
 
+**Check Versions Before a Bump:**
+
+```bash
+./scripts/check-versions.sh
+```
+
+CI runs this first thing and fails the whole workflow if it does not pass. It
+checks `images/versions.json` — the single source of truth for what CI builds —
+against the Dockerfiles: the versions passed as build arguments must match the
+`ARG` defaults a local build uses, every variant must name the versions it is built
+with in its own tag, exactly one variant per image may be `primary` (the one that
+gets `latest`), and an image built on another must name a base tag that base
+actually publishes.
+
 `🔎 Runner Smoke Test` is a separate workflow: it runs a one-minute job on every
 runner pool listed in `.github/actionlint.yaml` and reports architecture, vCPU,
 RAM and free disk. Run it after a pool is added, renamed, or granted access to
@@ -155,6 +169,7 @@ jethome-dev/
 │       ├── lint.yml         # actionlint + shellcheck (gates), hadolint (advisory)
 │       └── runner-smoke.yml # Reports what each runner pool actually is
 ├── images/
+│   ├── versions.json        # Single source of truth for the versions CI builds
 │   ├── esp-idf/             # ESP-IDF development image
 │   │   ├── Dockerfile       # Image definition
 │   │   └── README.md        # Detailed documentation
@@ -168,7 +183,9 @@ jethome-dev/
 │       └── pio_project/     # Stub project for the disabled pre-build step
 ├── scripts/
 │   ├── build.sh             # Local image build helper
-│   └── lint.sh              # Runs the same linters as CI, locally
+│   ├── lint.sh              # Runs the same linters as CI, locally
+│   ├── versions-matrix.sh   # Turns versions.json into the CI matrices
+│   └── check-versions.sh    # Enforces versions.json against the Dockerfiles
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md

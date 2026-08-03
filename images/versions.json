@@ -1,0 +1,77 @@
+{
+  "_readme": [
+    "Single source of truth for what CI builds. scripts/versions-matrix.sh turns this",
+    "into the GitHub Actions matrices; scripts/check-versions.sh enforces the",
+    "invariants that used to be someone's job to remember. Bumping a version is an",
+    "edit here plus the matching ARG default in that image's Dockerfile - and the",
+    "checker fails the build if you do only one.",
+    "",
+    "Per image: 'platforms' maps a build platform to the runner pool that builds it",
+    "natively (a platform with no pool would leave runs-on empty and the leg would",
+    "never start). 'builds' lists the variants published for that image; 'tag' is the",
+    "version tag in GHCR, 'args' are passed as --build-arg, and exactly one variant",
+    "carries 'primary': true - that one also gets 'latest' and 'sha-<commit>'.",
+    "",
+    "An image built on another one names it in 'base' and points each variant at a",
+    "'base_tag' that must exist among the base image's tags. CI passes the base as a",
+    "digest through 'base_arg', so the tag here is what binds a variant to the exact",
+    "base version its own tag advertises.",
+    "",
+    "Not listed here: ARGs that CI never passes (ESP32_PLATFORM_VERSION,",
+    "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile). Their",
+    "Dockerfile default is the only source of truth and is bumped there."
+  ],
+  "images": {
+    "esp-idf": {
+      "platforms": {
+        "linux/amd64": "ubuntu-latest-8core",
+        "linux/arm64": "ubuntu-latest-8core-arm"
+      },
+      "timeout_minutes": 60,
+      "builds": [
+        {
+          "tag": "idf-v5.4.1",
+          "primary": true,
+          "args": {
+            "IDF_BASE_TAG": "v5.4.1"
+          }
+        }
+      ]
+    },
+    "esp-matter": {
+      "base": "esp-idf",
+      "base_arg": "BASE_IMAGE",
+      "platforms": {
+        "linux/amd64": "ubuntu-latest-8core",
+        "linux/arm64": "ubuntu-latest-8core-arm"
+      },
+      "timeout_minutes": 180,
+      "builds": [
+        {
+          "tag": "idf-v5.4.1-matter-v1.4.2",
+          "primary": true,
+          "base_tag": "idf-v5.4.1",
+          "args": {
+            "ESP_MATTER_VERSION": "v1.4.2"
+          }
+        }
+      ]
+    },
+    "platformio": {
+      "platforms": {
+        "linux/amd64": "ubuntu-latest-8core",
+        "linux/arm64": "ubuntu-latest-8core-arm"
+      },
+      "timeout_minutes": 60,
+      "builds": [
+        {
+          "tag": "pio-v6.1.18",
+          "primary": true,
+          "args": {
+            "PIO_VERSION": "6.1.18"
+          }
+        }
+      ]
+    }
+  }
+}
