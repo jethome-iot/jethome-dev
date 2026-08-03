@@ -151,7 +151,7 @@ jobs:
       image: ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: 'recursive'
       
@@ -163,7 +163,7 @@ jobs:
           idf.py build
       
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: matter-firmware
           path: |

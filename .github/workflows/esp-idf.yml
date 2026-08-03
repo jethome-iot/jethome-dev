@@ -40,6 +40,12 @@ env:
   REGISTRY: ghcr.io
   ESP_IDF_IMAGE_NAME: jethome-dev-esp-idf
   ESP_MATTER_IMAGE_NAME: jethome-dev-esp-matter
+  # build-push-action v6+ uploads a build record as a workflow artifact by default.
+  # This repository is public, so that archive - full build log and metadata - would
+  # be downloadable by anyone off the run page, on every leg of every push. The
+  # summary itself is kept: it reports what was built without opening the log, and
+  # costs no storage.
+  DOCKER_BUILD_RECORD_UPLOAD: false
 
 jobs:
   esp-idf-build:

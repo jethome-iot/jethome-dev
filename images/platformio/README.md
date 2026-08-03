@@ -145,7 +145,7 @@ jobs:
       image: ghcr.io/jethome-iot/jethome-dev-platformio:latest
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       
       - name: Build firmware
         run: pio run
@@ -154,7 +154,7 @@ jobs:
         run: pio test -e native
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware
           path: .pio/build/*/firmware.bin
