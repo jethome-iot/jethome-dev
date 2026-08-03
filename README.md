@@ -66,6 +66,18 @@ The script builds images with the `local` tag by default to distinguish them fro
 ./scripts/lint.sh
 ```
 
+Also worth running before a version bump:
+
+```bash
+./scripts/check-versions.sh
+```
+
+CI runs it first thing and fails the whole workflow if it does not pass. It checks
+`images/versions.json` against the Dockerfiles — the versions CI passes as build
+arguments must match the `ARG` defaults a local build uses, exactly one variant per
+image may be `primary` (the one that gets `latest`), and an image built on another
+must name a base tag that base actually publishes.
+
 Runs the same checks as the `🧹 Lint` workflow: actionlint over the workflow files
 and shellcheck over the tracked `*.sh` files are gates, hadolint over the
 Dockerfiles is advisory. Both run as containers, so the Docker daemon has to be
@@ -155,6 +167,7 @@ jethome-dev/
 │       ├── lint.yml         # actionlint + shellcheck (gates), hadolint (advisory)
 │       └── runner-smoke.yml # Reports what each runner pool actually is
 ├── images/
+│   ├── versions.json        # Single source of truth for the versions CI builds
 │   ├── esp-idf/             # ESP-IDF development image
 │   │   ├── Dockerfile       # Image definition
 │   │   └── README.md        # Detailed documentation
@@ -168,7 +181,9 @@ jethome-dev/
 │       └── pio_project/     # Stub project for the disabled pre-build step
 ├── scripts/
 │   ├── build.sh             # Local image build helper
-│   └── lint.sh              # Runs the same linters as CI, locally
+│   ├── lint.sh              # Runs the same linters as CI, locally
+│   ├── versions-matrix.sh   # Turns versions.json into the CI matrices
+│   └── check-versions.sh    # Enforces versions.json against the Dockerfiles
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE
 └── README.md

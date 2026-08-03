@@ -28,12 +28,18 @@ on:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
       - 'images/esp-matter/**'
+      - 'images/versions.json'
+      - 'scripts/versions-matrix.sh'
+      - 'scripts/check-versions.sh'
   pull_request:
     branches: [master, dev]
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
       - 'images/esp-matter/**'
+      - 'images/versions.json'
+      - 'scripts/versions-matrix.sh'
+      - 'scripts/check-versions.sh'
   workflow_dispatch:
 
 env:
@@ -61,7 +67,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Both matrices come from images/versions.json, so a version lives in one place
+  # instead of the four matrix blocks that used to be edited together. The
+  # consistency check runs first and fails the whole workflow: cheaper to stop here
+  # than to publish a tag whose contents do not match its name.
+  prepare:
+    name: 🧮 Resolve matrices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.repository_owner == 'jethome-iot'
+    permissions:
+      contents: read
+    outputs:
+      esp_idf_build: ${{ steps.matrices.outputs.esp_idf_build }}
+      esp_idf_manifest: ${{ steps.matrices.outputs.esp_idf_manifest }}
+      esp_matter_build: ${{ steps.matrices.outputs.esp_matter_build }}
+      esp_matter_manifest: ${{ steps.matrices.outputs.esp_matter_manifest }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v7
+
+      - name: ✅ Check version consistency
+        run: ./scripts/check-versions.sh
+
+      - name: 🧮 Generate matrices
+        id: matrices
+        run: |
+          set -euo pipefail
+          {
+            echo "esp_idf_build=$(./scripts/versions-matrix.sh esp-idf build)"
+            echo "esp_idf_manifest=$(./scripts/versions-matrix.sh esp-idf manifest)"
+            echo "esp_matter_build=$(./scripts/versions-matrix.sh esp-matter build)"
+            echo "esp_matter_manifest=$(./scripts/versions-matrix.sh esp-matter manifest)"
+          } >> "$GITHUB_OUTPUT"
+
   esp-idf-build:
+    name: esp-idf-build (${{ matrix.tag }}, ${{ matrix.platform }})
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     # Owner-only, with no workflow_dispatch escape hatch: the runner pools belong
@@ -75,19 +117,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['v5.4.1']
-        platform: ['linux/amd64', 'linux/arm64']
-        include:
-          - version: 'v5.4.1'
-            idf_base_tag: 'v5.4.1'
-          # Each platform builds on its own architecture; the arm64 leg was QEMU
-          # on an x86 runner before this. A platform value with no entry here
-          # leaves runs-on empty and the leg never starts - actionlint does not
-          # catch that.
-          - platform: 'linux/amd64'
-            runner: 'ubuntu-latest-8core'
-          - platform: 'linux/arm64'
-            runner: 'ubuntu-latest-8core-arm'
+        include: ${{ fromJSON(needs.prepare.outputs.esp_idf_build) }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v7
@@ -103,14 +133,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Generate tags
-        id: tags
-        run: |
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
-          echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
-
       # Pushed by digest, with no tag of its own: a tag here would be a mutable
       # name that the manifest job below has to look up again later, and between
       # those two moments another run can overwrite it. The digest is the only
@@ -122,8 +144,7 @@ jobs:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
-          build-args: |
-            IDF_BASE_TAG=${{ matrix.idf_base_tag }}
+          build-args: ${{ matrix.build_args }}
 
       # Matrix legs cannot each set a job output - they would overwrite one
       # another - so the digests travel as one empty file per leg, named after the
@@ -139,15 +160,16 @@ jobs:
         if: github.ref_name == 'master'
         uses: actions/upload-artifact@v7
         with:
-          name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
+          name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   esp-idf-manifest:
+    name: esp-idf-manifest (${{ matrix.tag }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: esp-idf-build
+    needs: [prepare, esp-idf-build]
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
@@ -155,10 +177,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['v5.4.1']
-        include:
-          - version: 'v5.4.1'
-            idf_base_tag: 'v5.4.1'
+        include: ${{ fromJSON(needs.prepare.outputs.esp_idf_manifest) }}
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -170,14 +189,15 @@ jobs:
       - name: ⬇️ Download digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}-*
+          pattern: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-*
           merge-multiple: true
           path: /tmp/digests
 
       - name: 🐳 Create and push multi-arch manifest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
-          VERSION: ${{ matrix.version }}
+          TAG: ${{ matrix.tag }}
+          PRIMARY: ${{ matrix.primary }}
           EXPECTED_PLATFORMS: 2
         run: |
           # pipefail matters below: jq exits 0 on empty input, so without it a
@@ -203,12 +223,18 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          SHA_SHORT="${GITHUB_SHA:0:7}"
-          docker buildx imagetools create \
-            -t "${IMAGE}:latest" \
-            -t "${IMAGE}:sha-${SHA_SHORT}" \
-            -t "${IMAGE}:idf-${VERSION}" \
-            "${refs[@]}"
+          # Only the primary variant moves latest and sha-<commit>; a second
+          # variant publishes its version tag alone. Without that, two variants of
+          # one image would race for latest and whichever manifest job finished
+          # last would win. The version tag is last on purpose: GHCR shows the
+          # last one as the package's primary tag.
+          tags=()
+          if [ "${PRIMARY}" = "true" ]; then
+            SHA_SHORT="${GITHUB_SHA:0:7}"
+            tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
+          fi
+          tags+=(-t "${IMAGE}:${TAG}")
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
 
           # Hand the manifest's own digest to esp-matter-build, so it builds FROM
           # the exact image this run published rather than whatever the tag points
@@ -216,7 +242,7 @@ jobs:
           # output because this job has a matrix: a scalar output would be
           # overwritten by whichever leg finished last, silently pinning
           # esp-matter to an arbitrary ESP-IDF version once there is more than one.
-          digest=$(docker buildx imagetools inspect "${IMAGE}:idf-${VERSION}" \
+          digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" \
             --format '{{json .Manifest}}' | jq -er '.digest')
           case "${digest}" in
             sha256:*) ;;
@@ -224,17 +250,19 @@ jobs:
           esac
           mkdir -p /tmp/manifest
           printf '%s' "${digest}" > /tmp/manifest/digest
-          echo "published ${IMAGE}:idf-${VERSION} as ${digest}"
+          echo "published ${IMAGE}:${TAG} as ${digest}"
 
       - name: ⬆️ Upload base image digest
         uses: actions/upload-artifact@v7
         with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.version }}
+          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}
           path: /tmp/manifest/digest
           if-no-files-found: error
           retention-days: 1
 
   esp-matter-build:
+    name: esp-matter-build (${{ matrix.tag }}, ${{ matrix.platform }})
+    needs: [prepare, esp-idf-manifest]
     runs-on: ${{ matrix.runner }}
     # Was 360, against a measured 337 on the QEMU leg - a 23-minute margin on a
     # figure that had grown 36 minutes in eight months. A cap, not a target: it
@@ -248,7 +276,6 @@ jobs:
     # build while the amd64 image sits in GHCR as an unreferenced blob. Lower this
     # once two runs have reported real numbers.
     timeout-minutes: 180
-    needs: esp-idf-manifest
     # Owner-only, as esp-idf-build; see the note there.
     if: github.repository_owner == 'jethome-iot'
     permissions:
@@ -256,20 +283,12 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
+      # The pool for each platform comes from images/versions.json. 8-core is
+      # chosen for disk, not cores: the connectedhomeip tree is ~50 GB and those
+      # pools measured 372 GB (amd64) and 393 GB (arm64) free under Docker,
+      # against 88 GB on 4-core.
       matrix:
-        version: ['idf-v5.4.1-matter-v1.4.2']
-        platform: ['linux/amd64', 'linux/arm64']
-        include:
-          - version: 'idf-v5.4.1-matter-v1.4.2'
-            jethome_idf_base_tag: 'v5.4.1'
-            esp_matter_version: 'v1.4.2'
-          # 8-core is chosen for disk, not cores: the connectedhomeip tree is
-          # ~50 GB and these pools measured 372 GB (amd64) and 393 GB (arm64)
-          # free under Docker, against 88 GB on 4-core.
-          - platform: 'linux/amd64'
-            runner: 'ubuntu-latest-8core'
-          - platform: 'linux/arm64'
-            runner: 'ubuntu-latest-8core-arm'
+        include: ${{ fromJSON(needs.prepare.outputs.esp_matter_build) }}
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v7
@@ -285,14 +304,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Generate tags
-        id: tags
-        run: |
-          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "sha_short=${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
-          echo "platform_tag=${PLATFORM_TAG}" >> "$GITHUB_OUTPUT"
-
       # Named after the ESP-IDF version this image declares in its own tag, so the
       # base it builds on and the version it advertises cannot drift apart: bump
       # esp-idf without bumping the blocks below and this download fails outright
@@ -300,7 +311,7 @@ jobs:
       - name: ⬇️ Resolve base image digest
         uses: actions/download-artifact@v8
         with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.jethome_idf_base_tag }}
+          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}
           path: /tmp/base
 
       - name: 🏷️ Read base image digest
@@ -323,7 +334,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}@${{ steps.base.outputs.digest }}
-            ESP_MATTER_VERSION=${{ matrix.esp_matter_version }}
+            ${{ matrix.build_args }}
 
       - name: 📤 Export digest
         if: github.ref_name == 'master'
@@ -336,15 +347,16 @@ jobs:
         if: github.ref_name == 'master'
         uses: actions/upload-artifact@v7
         with:
-          name: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.version }}-${{ steps.tags.outputs.platform_tag }}
+          name: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   esp-matter-manifest:
+    name: esp-matter-manifest (${{ matrix.tag }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: esp-matter-build
+    needs: [prepare, esp-matter-build]
     if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
     permissions:
       contents: read
@@ -352,11 +364,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['idf-v5.4.1-matter-v1.4.2']
-        include:
-          - version: 'idf-v5.4.1-matter-v1.4.2'
-            jethome_idf_base_tag: 'v5.4.1'
-            esp_matter_version: 'v1.4.2'
+        include: ${{ fromJSON(needs.prepare.outputs.esp_matter_manifest) }}
     steps:
       - name: 🔐 Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -368,14 +376,15 @@ jobs:
       - name: ⬇️ Download digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.version }}-*
+          pattern: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.tag }}-*
           merge-multiple: true
           path: /tmp/digests
 
       - name: 🐳 Create and push multi-arch manifest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }}
-          VERSION: idf-${{ matrix.jethome_idf_base_tag }}-matter-${{ matrix.esp_matter_version }}
+          TAG: ${{ matrix.tag }}
+          PRIMARY: ${{ matrix.primary }}
         run: |
           set -euo pipefail
           cd /tmp/digests
@@ -388,9 +397,11 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          SHA_SHORT="${GITHUB_SHA:0:7}"
-          docker buildx imagetools create \
-            -t "${IMAGE}:latest" \
-            -t "${IMAGE}:sha-${SHA_SHORT}" \
-            -t "${IMAGE}:${VERSION}" \
-            "${refs[@]}"
+          # Only the primary variant moves latest and sha-<commit>.
+          tags=()
+          if [ "${PRIMARY}" = "true" ]; then
+            SHA_SHORT="${GITHUB_SHA:0:7}"
+            tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
+          fi
+          tags+=(-t "${IMAGE}:${TAG}")
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
