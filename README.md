@@ -134,19 +134,18 @@ for your host architecture only and with the Dockerfile's own `ARG` defaults
 instead of the versions CI passes in, so a green local build is not a green CI
 run.
 
-**Note:** an image built `FROM` another image of this repo is not build-validated on
-`dev`. Its build job needs the base image's manifest job, which runs only for
-`jethome-iot` on `master` — that job publishes the multi-arch tag the derived
-Dockerfile pulls. Today that is ESP-Matter: `esp-matter-build` needs
-`esp-idf-manifest`, so both ESP-Matter jobs are skipped on `dev`, on pull requests,
-on `workflow_dispatch` outside `master`, and in forks entirely. Every other image
-builds from its own context and is validated on `dev`.
+**Note:** every image is build-validated on pull requests and on `dev`, including
+one built `FROM` another image of this repo, and on the base that same run
+produced — so a change touching both images is checked as the pair it will become.
+This works because the **ESP-IDF** build job pushes by digest on every run — it is
+the only image another one is built from, so it is the only one that needs to.
+Those pushes carry no tag, and only `master` ever writes `latest` or a version tag.
+The untagged blobs a pull request leaves in GHCR accumulate and want an occasional
+cleanup. PlatformIO, which nothing builds on, still uploads nothing outside
+`master`.
 
-A change touching only `images/esp-matter/**` still matches the workflow's path
-filter, so `esp-idf-build` runs on its unchanged context and the check reports
-success: a green "🐳 ESP-IDF Docker Image" on such a PR does **not** mean the
-ESP-Matter image compiles. Validate it locally with
-`./scripts/build.sh esp-matter` (~50GB of disk, several hours) or on `master`.
+Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from both
+workflows' path filters.
 
 ### Manual Building
 

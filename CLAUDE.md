@@ -59,14 +59,13 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
-- `esp-idf-manifest` publishes the manifest's own digest as an artifact named
-  `manifest-digest-<image>-<version>`, and `esp-matter-build` downloads the one
-  matching the ESP-IDF version in its own tag, then builds `FROM` it via a single
-  `BASE_IMAGE` build-arg. An artifact rather than a job output because that job has
-  a matrix: a scalar output would be overwritten by whichever leg finished last.
-  One argument rather than repo + tag because a digest needs `@`, not `:` — and it
-  makes the base repository overridable, so a fork or a local build can point at
-  its own esp-idf instead of this one.
+- `esp-matter-build` depends on `esp-idf-build`, **not** on the manifest job, and
+  takes the per-platform digest for its own architecture from that build's
+  artifact. The artifact is named after the ESP-IDF version this image declares in
+  its own tag, so base and advertised version cannot drift apart. It reaches the
+  Dockerfile through a single `BASE_IMAGE` build-arg — one argument rather than
+  repo + tag, because a digest needs `@` where a tag needs `:`, and because it makes
+  the base repository overridable for a fork or a local build.
 - **`images/versions.json` is the single source of truth for what CI builds.** A
   `prepare` job runs `scripts/check-versions.sh`, then `scripts/versions-matrix.sh
   <image> build|manifest`, and every other job takes its matrix from
@@ -123,16 +122,30 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   built and thrown away, never uploaded. Manifest jobs
   ask both in their own job `if`, since they have no build step to gate. The org
   literal is hardcoded.
-- `esp-matter-build` has `needs: esp-idf-manifest`, which requires both
-  `jethome-iot` **and** `master`, so both ESP-Matter jobs are skipped entirely on
-  `dev`, on PRs and on non-master dispatch. The dependency is real:
-  `images/esp-matter/Dockerfile` is `FROM ${BASE_IMAGE}`, and the digest CI passes
-  there is published by that manifest job in the same run.
-- Worse than "no validation": a PR touching only `images/esp-matter/**` still
-  matches the workflow's `paths:` filter, so `esp-idf-build` runs on its unchanged
-  context and the check goes green — a passing "🐳 ESP-IDF Docker Image" on such a
-  PR says nothing about ESP-Matter. Validate it with `./scripts/build.sh esp-matter`
-  or on `master`.
+- **Every image is build-validated on pull requests**, ESP-Matter included, and on
+  the ESP-IDF this very run produced — so a branch bumping both versions at once is
+  checked as the pair it will become, not against whatever is published today.
+- That works because `esp-idf-build` pushes by digest on **every** run, not only on
+  master — so its GHCR login is unconditional too, unlike the other build jobs'.
+  Nothing published that way is reachable by name: only the manifest jobs create
+  tags, and they stay master-only. A pull request therefore leaves untagged blobs in
+  GHCR and moves no tag. They accumulate; clean them up periodically.
+- **Dependabot is the exception.** GitHub gives its runs a read-only
+  `GITHUB_TOKEN` regardless of the job's `permissions:`, so the digest push would
+  be rejected. Its pull requests skip the push and the digest upload, and
+  `esp-matter-build` sits them out — the action bump they carry is still exercised
+  by esp-idf-build compiling the image.
+- Publishing is still master-only in the sense that matters — no tag, `latest`
+  included, is ever written outside master.
+- **Every build job also checks the PR's head repository**, not just the owner. On
+  a pull request *from* a fork `github.repository_owner` is still `jethome-iot`, so
+  the owner check alone would let a fork-controlled Dockerfile run on this org's
+  paid pools. The condition is
+  `github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
+- Both workflows exclude `!images/**/*.md` from their `paths:`. Negations come last
+  and are order-sensitive, and `paths:` cannot be mixed with `paths-ignore:` for one
+  event. Without this a documentation-only commit rebuilds and republishes every
+  image.
 - Every build job runs on a larger-runner pool, chosen by platform through a
   `runner` key in the matrix `include:` and read as `runs-on: ${{ matrix.runner }}`
   — `ubuntu-latest-8core` for `linux/amd64`, `ubuntu-latest-8core-arm` for

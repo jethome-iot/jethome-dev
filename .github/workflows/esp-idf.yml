@@ -2,28 +2,35 @@
 # Builds ESP-IDF development image with pytest, QEMU, and testing tools
 #
 # Build Strategy:
-# - Main repo master: Build + Push to GHCR
-# - Main repo dev/PR: Build only (validation)
-# - workflow_dispatch: Build on any branch of the main repo, push only on master
+# - Tags (latest, sha-<commit>, <prefix>-<version>) are written on master only, by
+#   the manifest jobs.
+# - Images themselves are pushed by digest on EVERY run, master or not, carrying no
+#   tag and reachable by nothing but that digest. esp-matter-build consumes them,
+#   which is what lets it validate on a pull request. The cost is untagged blobs
+#   accumulating in GHCR.
+# - Dependabot is the exception: its GITHUB_TOKEN is read-only, so those runs build
+#   without pushing and esp-matter-build sits them out.
 # - Forks: nothing runs - the runner pools are not reachable there; use
 #   ./scripts/build.sh instead
 # - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
 #   each on a runner of its own architecture (matrix.runner) - no QEMU
 #
-# ESP-Matter exception: esp-matter-build needs esp-idf-manifest, which runs for
-# jethome-iot on master only, so the ESP-Matter jobs are skipped (not
-# build-validated) on dev, on pull requests, on workflow_dispatch outside master,
-# and in forks entirely. The image is built FROM the esp-idf digest that manifest
-# job publishes and hands over in the same run.
-# Consequence: a change touching only images/esp-matter/** still matches the paths
-# filter below, so esp-idf-build runs on its unchanged context and this workflow
-# reports success - a green check here does not mean ESP-Matter compiles.
-# Validate it with ./scripts/build.sh esp-matter, or on master.
+# ESP-Matter builds on the esp-idf image this same run produced, on every branch:
+# esp-idf-build pushes by digest always, and esp-matter-build takes the digest for
+# its own platform from that job's artifact. So a green check here does mean
+# ESP-Matter compiles - including on a branch that bumps both versions at once,
+# where the new base exists under no tag yet.
+# Only the manifest jobs write tags, and they stay master-only. A pull request
+# leaves untagged blobs in GHCR; they need an occasional cleanup.
 name: 🐳 ESP-IDF Docker Image
 
 on:
   push:
     branches: [master, dev]
+    # Negations come last and are order-sensitive; `paths:` and `paths-ignore:`
+    # cannot both be used for one event. Documentation-only commits used to
+    # trigger a full rebuild and republish every tag - the docs-only merge that
+    # started this series set off a 5.5-hour ESP-Matter leg.
     paths:
       - '.github/workflows/esp-idf.yml'
       - 'images/esp-idf/**'
@@ -31,6 +38,7 @@ on:
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   pull_request:
     branches: [master, dev]
     paths:
@@ -40,6 +48,7 @@ on:
       - 'images/versions.json'
       - 'scripts/versions-matrix.sh'
       - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
   workflow_dispatch:
 
 env:
@@ -75,7 +84,7 @@ jobs:
     name: 🧮 Resolve matrices
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.repository_owner == 'jethome-iot'
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
     outputs:
@@ -118,7 +127,11 @@ jobs:
     # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
     # `runs-on` queues for 24 hours rather than failing. A fork that wants to build
     # these images runs ./scripts/build.sh.
-    if: github.repository_owner == 'jethome-iot'
+    # Two conditions, not one. The owner check keeps this out of forks that run the
+    # workflow themselves. The head-repo check keeps it out of pull requests *from*
+    # a fork, where github.repository_owner is still jethome-iot - so without it a
+    # fork-controlled Dockerfile would execute on this org's paid runner pools.
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
       packages: write
@@ -133,8 +146,9 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Unconditional: the build below pushes by digest on every run, so every run
+      # needs credentials - not just master.
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.ref_name == 'master'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -145,27 +159,41 @@ jobs:
       # name that the manifest job below has to look up again later, and between
       # those two moments another run can overwrite it. The digest is the only
       # thing handed forward.
+      #
+      # This pushes on pull requests too, not just master. Nothing published this
+      # way is reachable by name - only the manifest job creates tags, and it stays
+      # master-only - so a PR leaves untagged blobs behind and no moving tag. What
+      # it buys is that esp-matter-build can build on the ESP-IDF this very run
+      # produced, including on a branch that bumps both versions at once, where the
+      # new base does not exist under any tag yet.
+      #
+      # Except for Dependabot: GitHub hands its runs a read-only GITHUB_TOKEN
+      # whatever the permissions block asks for, so the push would be rejected. Its
+      # pull requests bump action versions, which this job still exercises by
+      # building; only the upload is skipped, and esp-matter-build sits that run out
+      # (see its `if`).
       - name: 🐳 Build and push by digest
         id: build
         uses: docker/build-push-action@v7
         with:
           context: images/esp-idf
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.actor != 'dependabot[bot]' }}
           build-args: ${{ matrix.build_args }}
 
       # Matrix legs cannot each set a job output - they would overwrite one
       # another - so the digests travel as one empty file per leg, named after the
-      # digest itself.
+      # digest itself. Uploaded on every run: esp-matter-build consumes this on
+      # pull requests as well.
       - name: 📤 Export digest
-        if: github.ref_name == 'master'
+        if: github.actor != 'dependabot[bot]'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: ⬆️ Upload digest
-        if: github.ref_name == 'master'
+        if: github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@v7
         with:
           name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
@@ -244,40 +272,36 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}")
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
 
-          # Hand the manifest's own digest to esp-matter-build, so it builds FROM
-          # the exact image this run published rather than whatever the tag points
-          # at by the time it starts. It travels as an artifact rather than a job
-          # output because this job has a matrix: a scalar output would be
-          # overwritten by whichever leg finished last, silently pinning
-          # esp-matter to an arbitrary ESP-IDF version once there is more than one.
+          # Reported, not handed on: esp-matter-build takes the per-platform
+          # digests from esp-idf-build directly, so nothing downstream waits on
+          # this job any more.
           digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" \
             --format '{{json .Manifest}}' | jq -er '.digest')
-          case "${digest}" in
-            sha256:*) ;;
-            *) echo "::error::manifest digest not resolved: '${digest}'"; exit 1 ;;
-          esac
-          mkdir -p /tmp/manifest
-          printf '%s' "${digest}" > /tmp/manifest/digest
           echo "published ${IMAGE}:${TAG} as ${digest}"
-
-      - name: ⬆️ Upload base image digest
-        uses: actions/upload-artifact@v7
-        with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}
-          path: /tmp/manifest/digest
-          if-no-files-found: error
-          retention-days: 1
 
   esp-matter-build:
     name: esp-matter-build (${{ matrix.tag }}, ${{ matrix.platform }})
-    needs: [prepare, esp-idf-manifest]
+    needs: [prepare, esp-idf-build]
     runs-on: ${{ matrix.runner }}
     # From images/versions.json. A cap on a wedged job, not a target: killing this
     # leg skips the manifest job with it and leaves the published tags on the
     # previous build while the other platform's image sits in GHCR unreferenced.
     timeout-minutes: ${{ matrix.timeout_minutes }}
-    # Owner-only, as esp-idf-build; see the note there.
-    if: github.repository_owner == 'jethome-iot'
+    # Depends on esp-idf-build, not esp-idf-manifest. The manifest job publishes
+    # tags and is master-only, so hanging off it is what kept ESP-Matter
+    # unvalidated on every pull request while a green "🐳 ESP-IDF Docker Image"
+    # check implied otherwise. What this job actually needs is the ESP-IDF image
+    # for its own platform, which the build leg pushes by digest on every run - so
+    # the dependency is plain, both branches behave identically, and no status
+    # expression is needed to work around a skipped job.
+    #
+    # Dependabot is excluded: its token cannot push, so esp-idf-build produces no
+    # digest to hand over. Its pull requests change action versions, which
+    # esp-idf-build still exercises.
+    if: >-
+      ${{ github.repository_owner == 'jethome-iot'
+      && github.actor != 'dependabot[bot]'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     permissions:
       contents: read
       packages: write
@@ -296,34 +320,42 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # Unconditional, unlike the other build jobs: this one pulls its base from
+      # GHCR on every run, including pull requests, and an anonymous pull is
+      # subject to rate limits the authenticated one is not.
       - name: 🔐 Log in to GitHub Container Registry
-        if: github.ref_name == 'master'
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Named after the ESP-IDF version this image declares in its own tag, so the
-      # base it builds on and the version it advertises cannot drift apart: bump
-      # esp-idf without bumping the blocks below and this download fails outright
-      # instead of publishing an idf-v<old> tag built on v<new>.
-      - name: ⬇️ Resolve base image digest
+      # The ESP-IDF image for this platform, pushed by digest by esp-idf-build in
+      # this same run. Not the multi-arch manifest: that is published only on
+      # master, and this leg builds one platform anyway. Naming the artifact after
+      # the ESP-IDF version this image declares in its own tag keeps the base it
+      # stands on and the version it advertises from drifting apart - a half-done
+      # bump fails here rather than publishing an idf-v<old> tag built on v<new>.
+      - name: ⬇️ Download base image digest
         uses: actions/download-artifact@v8
         with:
-          name: manifest-digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}
+          name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.base_tag }}-${{ matrix.platform_tag }}
           path: /tmp/base
 
-      - name: 🏷️ Read base image digest
+      - name: 🏷️ Resolve base image reference
         id: base
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}
         run: |
           set -euo pipefail
-          digest=$(cat /tmp/base/digest)
+          # One file, named after the digest it stands for.
+          digest=$(find /tmp/base -type f -printf '%f\n' | head -1)
           case "${digest}" in
-            sha256:*) ;;
-            *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
+            [0-9a-f]*) ;;
+            *) echo "::error::no usable base digest in the artifact"; exit 1 ;;
           esac
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "ref=${IMAGE}@sha256:${digest}" >> "$GITHUB_OUTPUT"
+          echo "base image: ${IMAGE}@sha256:${digest}"
 
       - name: 🐳 Build and push by digest
         id: build
@@ -333,7 +365,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
-            ${{ matrix.base_arg }}=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }}@${{ steps.base.outputs.digest }}
+            ${{ matrix.base_arg }}=${{ steps.base.outputs.ref }}
             ${{ matrix.build_args }}
 
       - name: 📤 Export digest
