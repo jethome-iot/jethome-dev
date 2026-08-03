@@ -66,7 +66,7 @@ jobs:
     name: 🧮 Resolve matrices
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.repository_owner == 'jethome-iot'
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
     outputs:
@@ -102,7 +102,11 @@ jobs:
     # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
     # `runs-on` queues for 24 hours rather than failing. A fork that wants to build
     # this image runs ./scripts/build.sh.
-    if: github.repository_owner == 'jethome-iot'
+    # Two conditions, not one. The owner check keeps this out of forks that run the
+    # workflow themselves. The head-repo check keeps it out of pull requests *from*
+    # a fork, where github.repository_owner is still jethome-iot - so without it a
+    # fork-controlled Dockerfile would execute on this org's paid runner pools.
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
       packages: write

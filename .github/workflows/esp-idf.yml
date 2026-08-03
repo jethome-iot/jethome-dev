@@ -79,7 +79,7 @@ jobs:
     name: 🧮 Resolve matrices
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.repository_owner == 'jethome-iot'
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
     outputs:
@@ -122,7 +122,11 @@ jobs:
     # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
     # `runs-on` queues for 24 hours rather than failing. A fork that wants to build
     # these images runs ./scripts/build.sh.
-    if: github.repository_owner == 'jethome-iot'
+    # Two conditions, not one. The owner check keeps this out of forks that run the
+    # workflow themselves. The head-repo check keeps it out of pull requests *from*
+    # a fork, where github.repository_owner is still jethome-iot - so without it a
+    # fork-controlled Dockerfile would execute on this org's paid runner pools.
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
       packages: write
@@ -283,9 +287,22 @@ jobs:
     # esp-idf-manifest only runs on master, and `needs` on a skipped job would skip
     # this one too - which is why ESP-Matter went unvalidated on every pull request
     # while a green "🐳 ESP-IDF Docker Image" check implied otherwise. `!cancelled()`
-    # lets it proceed when that job was skipped, and the explicit failure test keeps
-    # it from building on a base whose publication actually failed.
-    if: ${{ !cancelled() && github.repository_owner == 'jethome-iot' && needs.esp-idf-manifest.result != 'failure' }}
+    # lets it proceed when that job was skipped.
+    #
+    # The two branches differ on purpose. On master the manifest must have
+    # *succeeded*: a failed esp-idf-build leaves the manifest job `skipped`, not
+    # `failed`, so accepting anything but success would start two 180-minute builds
+    # that then die looking for digest artifacts nobody created - burying the real
+    # failure. Elsewhere the manifest is skipped by design, and only an outright
+    # failure should stop this.
+    if: >-
+      ${{ !cancelled()
+      && github.repository_owner == 'jethome-iot'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.ref_name == 'master'
+          && needs.esp-idf-manifest.result == 'success'
+          || github.ref_name != 'master'
+          && needs.esp-idf-manifest.result != 'failure') }}
     permissions:
       contents: read
       packages: write
@@ -338,15 +355,23 @@ jobs:
               *) echo "::error::base digest not usable: '${digest}'"; exit 1 ;;
             esac
             ref="${IMAGE}@${digest}"
-          else
+          elif docker manifest inspect "${IMAGE}:${BASE_TAG}" >/dev/null 2>&1; then
             # No artifact: this is a pull request, where esp-idf-manifest does not
             # run and nothing has been published. Validating against the last
             # published base is the point - it checks this image's own layers,
-            # which is what the change under review touches. A PR that also edits
-            # esp-idf is checked against that image's *previous* release; the
-            # combination is only exercised once both land on master.
+            # which is what the change under review touches.
             ref="${IMAGE}:${BASE_TAG}"
-            echo "::notice::no digest artifact (not a master run) - validating against the published ${BASE_TAG}"
+            echo "::notice::not a master run - validating against the published ${BASE_TAG}"
+          else
+            # The base tag does not exist yet, which is exactly what a coordinated
+            # bump looks like on a pull request: this branch raises the ESP-IDF
+            # version and Matter's base_tag together, but the new esp-idf image is
+            # only published once it lands on master. Falling back to :latest still
+            # validates this image's own layers - the point of the PR check - where
+            # insisting on the unpublished tag would fail every version bump at
+            # `FROM`.
+            ref="${IMAGE}:latest"
+            echo "::warning::${BASE_TAG} is not published yet - validating against :latest instead. The real pairing is exercised when this lands on master."
           fi
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
           echo "base image: ${ref}"

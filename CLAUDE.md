@@ -130,12 +130,23 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `idf-<version>` tag. That validates this image's own layers, which is what a
   change to it touches; the *combination* of an edited esp-idf and an edited
   esp-matter is only exercised once both land on master.
-- That fallback is why the job's `if` is written as
-  `${{ !cancelled() && … && needs.esp-idf-manifest.result != 'failure' }}` rather
-  than a plain `needs:`. A `needs` on a skipped job skips this one as well, which
-  is exactly how ESP-Matter went unvalidated on every pull request while a green
-  "🐳 ESP-IDF Docker Image" check implied otherwise. Note the `${{ }}` wrapper —
-  YAML reserves `!` at the start of a scalar.
+- If that tag is not published either — a coordinated bump raises the ESP-IDF
+  version and Matter's `base_tag` together, and the new esp-idf image only exists
+  once it lands — the build falls back to `:latest` with a warning. Insisting on
+  the unpublished tag would fail every version-bump PR at `FROM`.
+- That is why the job's `if` is an expression rather than a plain `needs:`. A
+  `needs` on a skipped job skips this one as well, which is exactly how ESP-Matter
+  went unvalidated while a green "🐳 ESP-IDF Docker Image" check implied otherwise.
+  On `master` it requires the manifest to have **succeeded**, not merely
+  "not failed": a failed `esp-idf-build` leaves the manifest job `skipped`, and
+  accepting that would start two 180-minute builds that die looking for digest
+  artifacts nobody created, burying the original failure. Note the `${{ }}`
+  wrapper — YAML reserves `!` at the start of a scalar.
+- **Every build job also checks the PR's head repository**, not just the owner. On
+  a pull request *from* a fork `github.repository_owner` is still `jethome-iot`, so
+  the owner check alone would let a fork-controlled Dockerfile run on this org's
+  paid pools. The condition is
+  `github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
 - Both workflows exclude `!images/**/*.md` from their `paths:`. Negations come last
   and are order-sensitive, and `paths:` cannot be mixed with `paths-ignore:` for one
   event. Without this a documentation-only commit rebuilds and republishes every
