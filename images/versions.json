@@ -17,6 +17,11 @@
     "digest through 'base_arg', so the tag here is what binds a variant to the exact",
     "base version its own tag advertises.",
     "",
+    "The idf-v5.4.1 line (and the Matter v1.4.2 variant on it) is kept building on",
+    "purpose while projects still depend on those tags - it is not the primary and",
+    "gets no `latest`. Drop both entries once nothing pins them; the published tags",
+    "survive in GHCR either way, they just stop being rebuilt.",
+    "",
     "Not listed here: ARGs that CI never passes (ESP32_PLATFORM_VERSION,",
     "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile). Their",
     "Dockerfile default is the only source of truth and is bumped there."
@@ -30,8 +35,15 @@
       "timeout_minutes": 60,
       "builds": [
         {
-          "tag": "idf-v5.4.1",
+          "tag": "idf-v5.5.5",
           "primary": true,
+          "args": {
+            "IDF_BASE_TAG": "v5.5.5"
+          }
+        },
+        {
+          "tag": "idf-v5.4.1",
+          "primary": false,
           "args": {
             "IDF_BASE_TAG": "v5.4.1"
           }
@@ -48,8 +60,24 @@
       "timeout_minutes": 180,
       "builds": [
         {
-          "tag": "idf-v5.4.1-matter-v1.4.2",
+          "tag": "idf-v5.5.5-matter-v1.6",
           "primary": true,
+          "base_tag": "idf-v5.5.5",
+          "args": {
+            "ESP_MATTER_VERSION": "v1.6"
+          }
+        },
+        {
+          "tag": "idf-v5.5.5-matter-v1.5",
+          "primary": false,
+          "base_tag": "idf-v5.5.5",
+          "args": {
+            "ESP_MATTER_VERSION": "v1.5"
+          }
+        },
+        {
+          "tag": "idf-v5.4.1-matter-v1.4.2",
+          "primary": false,
           "base_tag": "idf-v5.4.1",
           "args": {
             "ESP_MATTER_VERSION": "v1.4.2"

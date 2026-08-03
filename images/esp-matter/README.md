@@ -52,6 +52,13 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
 
+**Several combinations are published at once**, each under its own version tag —
+`latest` and `sha-<commit>` follow one of them, the primary. Which combinations
+exist and which is primary is decided in
+[`images/versions.json`](../versions.json); `docker buildx imagetools inspect` or
+the package page lists what is currently available. Pin the version tag if you care
+which Matter specification you get: `latest` moves when the primary does.
+
 ### Pull Image
 
 ```bash

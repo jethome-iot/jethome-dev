@@ -6,8 +6,8 @@
 # separator differs. CI pins the exact esp-idf image its own run produced; the
 # default below is what a local ./scripts/build.sh uses, and it also makes the
 # owner overridable instead of hardcoded, so a fork can build against its own base.
-ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.4.1
-ARG ESP_MATTER_VERSION=v1.4.2
+ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.5.5
+ARG ESP_MATTER_VERSION=v1.6
 
 FROM ${BASE_IMAGE}
 

@@ -39,6 +39,11 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
 
+**Several ESP-IDF versions are published at once**, each under its own
+`idf-v<version>` tag; `latest` and `sha-<commit>` follow the primary one, chosen in
+[`images/versions.json`](../versions.json). Pin the version tag if the release
+matters to you.
+
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
@@ -90,10 +95,17 @@ run `idf.py --list-targets` inside the image for the authoritative list:
 | ESP32 | Xtensa |
 | ESP32-S2 | Xtensa |
 | ESP32-S3 | Xtensa |
+| ESP32-C2 | RISC-V |
 | ESP32-C3 | RISC-V |
+| ESP32-C5 | RISC-V |
 | ESP32-C6 | RISC-V |
+| ESP32-C61 | RISC-V |
 | ESP32-H2 | RISC-V |
 | ESP32-P4 | RISC-V |
+
+Targets Espressif still marks preview (ESP32-H21 and ESP32-H4 at the time of
+writing) are present but not in the list above; `idf.py --list-targets` inside the
+image is what distinguishes them.
 
 QEMU emulation covers only part of that list — the ESP-IDF QEMU fork implements a
 subset of the targets, and which ones changes as the base image is bumped. See

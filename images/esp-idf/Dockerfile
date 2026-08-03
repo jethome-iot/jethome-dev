@@ -2,7 +2,7 @@
 # Based on official Espressif image
 # Original: https://github.com/espressif/esp-idf/blob/master/tools/docker/Dockerfile
 
-ARG IDF_BASE_TAG=v5.4.1
+ARG IDF_BASE_TAG=v5.5.5
 
 FROM espressif/idf:${IDF_BASE_TAG}
 
