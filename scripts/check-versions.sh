@@ -28,6 +28,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 VERSIONS="images/versions.json"
 
+# GitHub's own labels are known to actionlint and deliberately absent from
+# .github/actionlint.yaml, so they are listed here instead.
+GITHUB_HOSTED=(ubuntu-latest ubuntu-24.04 ubuntu-22.04 ubuntu-24.04-arm ubuntu-22.04-arm)
+
 fail=0
 problem() {
     echo "  ✗ $*" >&2
@@ -64,17 +68,32 @@ for image in ${images}; do
     empty_runners=$(jq -r --arg i "${image}" '[.images[$i].platforms[] | select(. == "" or . == null)] | length' "${VERSIONS}")
     [ "${empty_runners}" -eq 0 ] || problem "${image}: a platform has no runner pool"
 
-    # The primary variant is what a local build reproduces, so its args are the
-    # ones that must match the Dockerfile.
-    while IFS='=' read -r arg value; do
+    # runs-on is now filled at runtime from this file, so actionlint no longer sees
+    # the label and cannot compare it against .github/actionlint.yaml. A typo would
+    # leave the leg queued for 24 hours with no diagnostic, so the comparison
+    # happens here instead.
+    while read -r runner; do
+        [ -n "${runner}" ] || continue
+        if ! grep -qE "^[[:space:]]*-[[:space:]]*${runner}[[:space:]]*$" .github/actionlint.yaml \
+            && ! printf '%s\n' "${GITHUB_HOSTED[@]}" | grep -qx "${runner}"; then
+            problem "${image}: runner '${runner}' is neither a pool in .github/actionlint.yaml nor a GitHub-hosted label"
+        fi
+    done < <(jq -r --arg i "${image}" '.images[$i].platforms[]' "${VERSIONS}")
+
+    # Argument *names* are checked for every variant: Docker silently ignores an
+    # unconsumed --build-arg, so a typo in a non-primary variant would build the
+    # Dockerfile's default version and publish it under the other version's tag.
+    # Argument *values* are only compared for the primary variant, since that is
+    # the one a local build (which passes no --build-arg) reproduces.
+    while IFS='|' read -r variant_tag is_primary arg value; do
         [ -n "${arg}" ] || continue
         default=$(sed -n "s/^ARG ${arg}=//p" "images/${image}/Dockerfile" | head -1)
         if [ -z "${default}" ]; then
-            problem "${image}: Dockerfile has no 'ARG ${arg}=' default, but versions.json passes it"
-        elif [ "${default}" != "${value}" ]; then
+            problem "${image}: variant '${variant_tag}' passes ${arg}, which images/${image}/Dockerfile does not declare - Docker would ignore it"
+        elif [ "${is_primary}" = "true" ] && [ "${default}" != "${value}" ]; then
             problem "${image}: ${arg} is '${value}' in ${VERSIONS} but '${default}' in the Dockerfile"
         fi
-    done < <(jq -r --arg i "${image}" '.images[$i].builds[] | select(.primary == true) | .args | to_entries[] | "\(.key)=\(.value)"' "${VERSIONS}")
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | $b.args | to_entries[] | "\($b.tag)|\($b.primary // false)|\(.key)|\(.value)"' "${VERSIONS}")
 
     base=$(jq -r --arg i "${image}" '.images[$i].base // ""' "${VERSIONS}")
     if [ -n "${base}" ]; then

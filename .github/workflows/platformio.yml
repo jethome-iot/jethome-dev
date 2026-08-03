@@ -86,7 +86,7 @@ jobs:
     name: platformio-build (${{ matrix.tag }}, ${{ matrix.platform }})
     needs: prepare
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     # Owner-only, with no workflow_dispatch escape hatch: the runner pools belong
     # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
     # `runs-on` queues for 24 hours rather than failing. A fork that wants to build

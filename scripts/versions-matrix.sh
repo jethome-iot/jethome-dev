@@ -12,6 +12,9 @@
 #
 # `build_args` is emitted as the newline-joined string the build step wants, rather
 # than an object, because a workflow cannot expand an object into that field.
+#
+# `platform_tag` uses gsub, not sub: a platform like linux/arm/v7 has two
+# separators, and a leftover slash is rejected as an artifact name.
 set -euo pipefail
 
 if [ $# -ne 2 ]; then
@@ -40,8 +43,10 @@ build)
                 primary: ($b.primary // false),
                 platform: $p.key,
                 runner: $p.value,
-                platform_tag: ($p.key | sub("/"; "-")),
+                platform_tag: ($p.key | gsub("/"; "-")),
                 base_tag: ($b.base_tag // ""),
+                base_arg: ($i.base_arg // ""),
+                timeout_minutes: ($i.timeout_minutes // 60),
                 build_args: ($b.args | to_entries | map("\(.key)=\(.value)") | join("\n"))
               } ]
     ' "${VERSIONS}"
