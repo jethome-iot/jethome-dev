@@ -37,9 +37,11 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `.github/actionlint.yaml` (GitHub's own labels are known to actionlint and are
   not repeated there); add one there before referencing it, or `lint.yml` fails
   the change. The check compares names against that list and cannot ask GitHub
-  whether the pool is still alive — `runner-smoke.yml` (`workflow_dispatch` only)
-  is what answers that, and it reads the same list, so a pool is probed and
-  linted from one source.
+  whether the pool is reachable — `runner-smoke.yml` is what answers that, and it
+  reads the same list, so a pool is probed and linted from one source. It runs on
+  `workflow_dispatch` **or** a push to `runner-probe/**`, never on a pull request;
+  the branch trigger is the only way to exercise a change to the probe itself,
+  since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
   `linux/amd64` / `linux/arm64`, pushes platform-suffixed tags) then
   `<image>-manifest` (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,

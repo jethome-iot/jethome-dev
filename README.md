@@ -72,11 +72,17 @@ Dockerfiles is advisory. Both run as containers, so the Docker daemon has to be
 up. The workflow itself is triggered by changes to workflows, shell scripts and
 Dockerfiles.
 
-`🔎 Runner Smoke Test` is a separate `workflow_dispatch`-only workflow: it runs a
-one-minute job on every runner pool listed in `.github/actionlint.yaml` and
-reports architecture, vCPU, RAM and free disk. Run it after a pool is added or
-renamed — a `runs-on` naming a pool that does not exist does not fail, it queues
-for 24 hours.
+`🔎 Runner Smoke Test` is a separate workflow: it runs a one-minute job on every
+runner pool listed in `.github/actionlint.yaml` and reports architecture, vCPU,
+RAM and free disk. Run it after a pool is added, renamed, or granted access to
+this repository — a `runs-on` naming a pool it cannot reach does not fail, it
+queues for 24 hours.
+
+Two ways to start it: from the Actions tab (`workflow_dispatch`), or by pushing a
+branch named `runner-probe/<anything>`. The second exists because
+`workflow_dispatch` is only offered for workflows already on the default branch,
+which would leave a change to the probe itself untestable until after it merged.
+It never runs on a pull request.
 
 **Test Workflows on GitHub Actions:**
 
