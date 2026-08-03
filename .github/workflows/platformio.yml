@@ -53,7 +53,7 @@ env:
 # `cancel-in-progress: false` would not have given a queue. GitHub cancels a
 # *pending* run in a group whenever a newer one arrives, regardless of that flag -
 # so grouping master pushes by ref would silently drop the middle commit of any
-# three that land inside one build window, and its sha-<commit> image, which the
+# three that land inside one build window, and its sha-<short-commit> image, which the
 # READMEs document as the way to pin an exact commit, would never exist.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
@@ -218,8 +218,8 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          # Only the primary variant moves `latest` and the bare `sha-<commit>`.
-          # Every variant gets `<version>-sha-<commit>`: the version tag itself is
+          # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
+          # Every variant gets `<version>-sha-<short-commit>`: the version tag itself is
           # rewritten on every push, so without it a consumer pinned to a
           # non-primary variant has no name for the build they were running.
           SHA_SHORT="${GITHUB_SHA:0:7}"

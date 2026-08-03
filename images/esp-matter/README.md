@@ -43,17 +43,17 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
-| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
 
 **Several combinations are published at once**, each under its own version tag —
-`latest` and the bare `sha-<commit>` follow one of them, the primary.
+`latest` and the bare `sha-<short-commit>` follow one of them, the primary.
 [`images/versions.json`](../versions.json) is the list of what gets built and which
 one is primary; the package page on GHCR shows what is currently published.
 
@@ -61,7 +61,7 @@ Two things worth knowing before pinning:
 
 - `latest` moves when the primary does, which happens on a version bump. Pin the
   version tag if the Matter specification matters to you, and
-  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<commit>` if you need the exact build —
+  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` if you need the exact build —
   the version tag is rewritten on every rebuild.
 - **A `matter-v<x.y>` tag names an upstream *branch*, not a release.** ESP-Matter
   publishes no git tags, so the image is built from `release/v<x.y>`, whose HEAD

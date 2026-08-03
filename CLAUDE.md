@@ -62,7 +62,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   overwrite one another. The manifest is then assembled from
   `<image>@sha256:<digest>` references. A tag in between would be a mutable name
   resolved at a later moment, and between those moments another run can overwrite
-  it: that is how a `sha-<commit>` tag ends up holding a different commit's image.
+  it: that is how a `sha-<short-commit>` tag ends up holding a different commit's image.
   There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
@@ -83,7 +83,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   local build uses.
 - What the checker enforces, each because getting it wrong used to be silent:
   every image has a Dockerfile and every Dockerfile an image; exactly one variant
-  per image is `primary` (it alone gets `latest` and `sha-<commit>`); tags are
+  per image is `primary` (it alone gets `latest` and `sha-<short-commit>`); tags are
   unique **and none is a prefix of another**, since digests are downloaded with a
   `digest-<image>-<tag>-*` glob; every variant names in its own tag every version
   it is built with, so a bumped `args` with a forgotten `tag` cannot publish a name
@@ -113,7 +113,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   that `cancel-in-progress: false` does **not** produce a queue — GitHub cancels a
   *pending* run in a group whenever a newer one arrives, whatever that flag says.
   Grouping master pushes by ref would therefore drop the middle commit of any three
-  landing inside one build window, along with its `sha-<commit>` image, which the
+  landing inside one build window, along with its `sha-<short-commit>` image, which the
   READMEs document as the way to pin an exact commit.
 - Each manifest job asserts it received one digest per platform before publishing.
   With `fail-fast: false` a failed leg would otherwise leave a single file in the
@@ -245,7 +245,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 
 - Never hardcode a version number in a README. Describe capabilities and use
   placeholders: `idf-v<version>`, `idf-v<idf-ver>-matter-v<matter-ver>`,
-  `pio-v<version>`, `sha-<commit>`. The only exceptions are `ARG` defaults inside a
+  `pio-v<version>`, `sha-<short-commit>`. The only exceptions are `ARG` defaults inside a
   Dockerfile and build-argument examples.
 - The root README indexes the images and covers repo-wide topics (layout, local
   scripts, CI triggers, registry) plus one image-agnostic `docker run` example;

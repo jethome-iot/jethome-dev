@@ -37,19 +37,19 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
-| **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
+| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
 
 **Several ESP-IDF versions are published at once**, each under its own
-`idf-v<version>` tag; `latest` and the bare `sha-<commit>` follow the primary one,
+`idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
 chosen in [`images/versions.json`](../versions.json) — that file is also where you
 can see which versions currently exist. Pin the version tag if the release matters
-to you, and `idf-v<version>-sha-<commit>` if you need the exact build: the version
+to you, and `idf-v<version>-sha-<short-commit>` if you need the exact build: the version
 tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<commit>`) to reproduce exact build
+- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
 ### Pull Image
 
