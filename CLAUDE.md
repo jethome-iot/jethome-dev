@@ -42,10 +42,17 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `workflow_dispatch` **or** a push to `runner-probe/**`, never on a pull request;
   the branch trigger is the only way to exercise a change to the probe itself,
   since `workflow_dispatch` is offered only for workflows already on `master`.
-- Two jobs per image: `<image>-build` (matrix axis `platform`, one leg per
-  `linux/amd64` / `linux/arm64`) then `<image>-manifest`
-  (`docker buildx imagetools create` → `latest`, `sha-<7 chars>`,
-  `<prefix>-<version>`). No job is named `build`. Every job that touches GHCR
+- Two jobs per image: `<image>-build` (one leg per variant × platform) then
+  `<image>-manifest`. Tags per variant: `<prefix>-<version>` (moves on every
+  rebuild) and `<prefix>-<version>-sha-<7 chars>` (immutable, the only thing to
+  roll back to). The **primary** variant additionally gets `latest` and the bare
+  `sha-<7 chars>`.
+- A manifest job runs under `!cancelled()` with an explicit `prepare` check, not
+  the implicit `success()` over `needs`. With several variants sharing one build
+  job, a legacy variant failing would otherwise withhold the tags of the variants
+  that built fine — leaving `latest` on the previous release while their images sit
+  in GHCR untagged. Each leg publishes only its own tags and fails on its own
+  missing digests. No job is named `build`. Every job that touches GHCR
   needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - **Nothing is handed between those jobs by tag.** A build leg pushes by digest and

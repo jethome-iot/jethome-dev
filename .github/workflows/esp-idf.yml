@@ -206,7 +206,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [prepare, esp-idf-build]
-    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+    # `!cancelled()` rather than the implicit success(): one variant's leg failing
+    # must not withhold the tags of the variants that built fine. With several
+    # variants in one matrix job, a legacy build breaking would otherwise leave
+    # `latest` pointing at the previous release while the new images sit in GHCR
+    # untagged. Each leg publishes only its own tags, and one that has no digests
+    # fails on the download below - which is the correct outcome for that variant
+    # alone. prepare is still required: without its matrices there is nothing to
+    # publish.
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && github.repository_owner == 'jethome-iot'
+      && github.ref_name == 'master' }}
     permissions:
       contents: read
       packages: write
@@ -259,16 +271,24 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          # Only the primary variant moves latest and sha-<commit>; a second
-          # variant publishes its version tag alone. Without that, two variants of
-          # one image would race for latest and whichever manifest job finished
-          # last would win. The version tag is last on purpose: GHCR shows the
-          # last one as the package's primary tag.
+          # Only the primary variant moves `latest` and the bare `sha-<commit>`;
+          # otherwise two variants of one image would race for them and whichever
+          # manifest job finished last would win.
+          #
+          # Every variant does get an immutable tag, though: `<version>-sha-<commit>`.
+          # The version tag alone is rewritten by `imagetools create` on every push,
+          # so without this a consumer pinned to a non-primary variant would have no
+          # name at all for the build they were running when a rebuild changed it -
+          # nothing to roll back to.
+          #
+          # The version tag is created last on purpose: GHCR shows the last one as
+          # the package's primary tag.
+          SHA_SHORT="${GITHUB_SHA:0:7}"
           tags=()
           if [ "${PRIMARY}" = "true" ]; then
-            SHA_SHORT="${GITHUB_SHA:0:7}"
             tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
           fi
+          tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
           tags+=(-t "${IMAGE}:${TAG}")
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
 
@@ -389,7 +409,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [prepare, esp-matter-build]
-    if: github.repository_owner == 'jethome-iot' && github.ref_name == 'master'
+    # `!cancelled()` rather than the implicit success(): one variant's leg failing
+    # must not withhold the tags of the variants that built fine. With several
+    # variants in one matrix job, a legacy build breaking would otherwise leave
+    # `latest` pointing at the previous release while the new images sit in GHCR
+    # untagged. Each leg publishes only its own tags, and one that has no digests
+    # fails on the download below - which is the correct outcome for that variant
+    # alone. prepare is still required: without its matrices there is nothing to
+    # publish.
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && github.repository_owner == 'jethome-iot'
+      && github.ref_name == 'master' }}
     permissions:
       contents: read
       packages: write
@@ -430,11 +462,15 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          # Only the primary variant moves latest and sha-<commit>.
+          # Only the primary variant moves `latest` and the bare `sha-<commit>`.
+          # Every variant gets `<version>-sha-<commit>`: the version tag itself is
+          # rewritten on every push, so without it a consumer pinned to a
+          # non-primary variant has no name for the build they were running.
+          SHA_SHORT="${GITHUB_SHA:0:7}"
           tags=()
           if [ "${PRIMARY}" = "true" ]; then
-            SHA_SHORT="${GITHUB_SHA:0:7}"
             tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
           fi
+          tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
           tags+=(-t "${IMAGE}:${TAG}")
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"

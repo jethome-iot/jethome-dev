@@ -40,9 +40,11 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 | **Commit** | `sha-<commit>` | Pin to exact git commit (debugging) |
 
 **Several ESP-IDF versions are published at once**, each under its own
-`idf-v<version>` tag; `latest` and `sha-<commit>` follow the primary one, chosen in
-[`images/versions.json`](../versions.json). Pin the version tag if the release
-matters to you.
+`idf-v<version>` tag; `latest` and the bare `sha-<commit>` follow the primary one,
+chosen in [`images/versions.json`](../versions.json) — that file is also where you
+can see which versions currently exist. Pin the version tag if the release matters
+to you, and `idf-v<version>-sha-<commit>` if you need the exact build: the version
+tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -103,9 +105,12 @@ run `idf.py --list-targets` inside the image for the authoritative list:
 | ESP32-H2 | RISC-V |
 | ESP32-P4 | RISC-V |
 
-Targets Espressif still marks preview (ESP32-H21 and ESP32-H4 at the time of
-writing) are present but not in the list above; `idf.py --list-targets` inside the
-image is what distinguishes them.
+The table is the supported set of the **primary** ESP-IDF version. An older
+version published alongside it may classify a chip differently — ESP32-C5 and
+ESP32-C61 are supported in 5.5.x but preview in 5.4.x, where they need
+`idf.py --preview set-target`. Preview targets are not printed by
+`idf.py --list-targets`; run `idf.py --preview --list-targets` inside the image you
+actually use, which is the only authoritative answer for that image.
 
 QEMU emulation covers only part of that list — the ESP-IDF QEMU fork implements a
 subset of the targets, and which ones changes as the base image is bumped. See

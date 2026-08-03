@@ -53,11 +53,22 @@ Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to kee
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
 
 **Several combinations are published at once**, each under its own version tag —
-`latest` and `sha-<commit>` follow one of them, the primary. Which combinations
-exist and which is primary is decided in
-[`images/versions.json`](../versions.json); `docker buildx imagetools inspect` or
-the package page lists what is currently available. Pin the version tag if you care
-which Matter specification you get: `latest` moves when the primary does.
+`latest` and the bare `sha-<commit>` follow one of them, the primary.
+[`images/versions.json`](../versions.json) is the list of what gets built and which
+one is primary; the package page on GHCR shows what is currently published.
+
+Two things worth knowing before pinning:
+
+- `latest` moves when the primary does, which happens on a version bump. Pin the
+  version tag if the Matter specification matters to you, and
+  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<commit>` if you need the exact build —
+  the version tag is rewritten on every rebuild.
+- **A `matter-v<x.y>` tag names an upstream *branch*, not a release.** ESP-Matter
+  publishes no git tags, so the image is built from `release/v<x.y>`, whose HEAD
+  moves: `release/v1.5` currently carries specification v1.5.1, and a rebuild will
+  pick up whatever lands there next under the same image tag. For certification
+  work, check what the image actually contains:
+  `docker run --rm <image> git -C $ESP_MATTER_PATH rev-parse HEAD`.
 
 ### Pull Image
 
