@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Run the same three checks as .github/workflows/lint.yml, locally.
+# Run the same four checks as .github/workflows/lint.yml, locally.
 #
-# The workflow is a hard gate on the first two, so without this script every
-# actionlint or shellcheck mistake costs a push and a CI round-trip to discover.
-# Both files pin the same tool versions on purpose - bump them together, or the
-# local run stops predicting the remote one.
+# The workflow is a hard gate on all but the last, so without this script every
+# actionlint, shellcheck or pinning mistake costs a push and a CI round-trip to
+# discover. Both files pin the same tool versions on purpose - bump them together,
+# or the local run stops predicting the remote one.
 #
 # Usage: ./scripts/lint.sh
 set -euo pipefail
@@ -31,6 +31,11 @@ echo "==> Shell scripts (shellcheck, errors only)"
 if ! git ls-files '*.sh' | xargs -r \
     docker run --rm -i -v "${REPO_ROOT}:/repo" -w /repo \
         --entrypoint shellcheck "${ACTIONLINT_IMAGE}" --severity=error; then
+    status=1
+fi
+
+echo "==> Package pins (pip and pio are gates, apt is advisory)"
+if ! ./scripts/check-pins.sh; then
     status=1
 fi
 

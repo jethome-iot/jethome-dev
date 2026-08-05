@@ -4,6 +4,8 @@
 # workflow files, shell scripts and Dockerfiles. It builds no image and needs no
 # registry access.
 #
+# Four checks; three of them are gates.
+#
 # actionlint and shellcheck are gates. actionlint catches the failure modes this
 # repository has actually hit - a `runs-on` label that matches no runner pool (see
 # .github/actionlint.yaml), a `needs:` pointing at a renamed job, an expression
@@ -12,15 +14,32 @@
 # (an array spliced into a string, an unquoted expansion that splits) and stays
 # quiet about style.
 #
-# hadolint is advisory: `--no-fail` plus `continue-on-error`, because these
-# Dockerfiles break some of its rules deliberately - pinned apt versions would
-# fight the version bumps CI drives through build args, and it reports `source` as
-# undefined without seeing that the ESP images set `SHELL ["/bin/bash", "-c"]`.
-# Read its output, do not obey it blindly. `continue-on-error` is what keeps that
-# promise honest: without it a failed image pull - a Docker Hub rate limit, say -
-# would turn the gate red on behalf of the one check documented as unable to.
+# check-pins.sh is a gate over what the images *install*, which is a different
+# question from what CI *builds* (images/versions.json, checked in each build
+# workflow's `prepare`). It gates pip and pio and leaves apt advisory; its own
+# header carries the measurements behind that split. It runs here rather than in
+# `prepare` on purpose: a Dockerfile belongs to one image, so an unpinned package
+# in one of them must not withhold another image's tags.
 #
-# Run `./scripts/lint.sh` to get the same three checks locally.
+# hadolint is advisory: `--no-fail` plus `continue-on-error`, because these
+# Dockerfiles break some of its rules deliberately. DL3008 (pin apt versions) is
+# declined on measurement, not on principle: Debian rewrites its pool at every
+# point release, so a pinned `curl=7.88.1-10+deb12u14` is a 404 for whoever
+# rebuilds a quarter later, while in Ubuntu the only version that never disappears
+# is the release-pocket one - pinning `jq=1.7.1-3build1` silently rolls back six
+# CVE fixes. DL3003 fires on a `cd` into a directory created in the same `RUN`,
+# which `WORKDIR` cannot express. SC3046 is a state-tracking bug rather than a
+# missing `SHELL`: hadolint reads `SHELL ["/bin/bash", "-c"]` correctly and then
+# forgets it at the next `ENV` or `ARG`, which is why it reports `source` in
+# esp-matter (after its `ENV ESP_MATTER_PATH`) and not in esp-idf, which has no
+# `ENV` at all. DL3013 (pin pip versions) is no longer on this list - check-pins.sh
+# above gates it, per package rather than per instruction.
+#
+# Read hadolint's output, do not obey it blindly. `continue-on-error` is what keeps
+# that promise honest: without it a failed image pull - a Docker Hub rate limit,
+# say - would turn the gate red on behalf of the one check documented as unable to.
+#
+# Run `./scripts/lint.sh` to get the same four checks locally.
 name: 🧹 Lint
 
 on:
@@ -67,6 +86,9 @@ jobs:
           git ls-files '*.sh' | tee /dev/stderr | xargs -r \
             docker run --rm -i -v "${PWD}:/repo" -w /repo \
               --entrypoint shellcheck rhysd/actionlint:1.7.12 --severity=error
+
+      - name: 📌 Check package pins
+        run: ./scripts/check-pins.sh
 
       - name: 🐳 Lint Dockerfiles
         continue-on-error: true

@@ -32,7 +32,11 @@
     "",
     "Not listed here: ARGs that CI never passes (ESP32_PLATFORM_VERSION,",
     "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile). Their",
-    "Dockerfile default is the only source of truth and is bumped there."
+    "Dockerfile default is the only source of truth and is bumped there. The package",
+    "pins inside a Dockerfile - the esp-idf test harness and esptool - are the same",
+    "regime, and they could not live here even if that were desirable: every value in",
+    "'args' has to appear in the variant's tag, and a harness version never does.",
+    "./scripts/check-pins.sh is what checks them instead."
   ],
   "images": {
     "esp-idf": {

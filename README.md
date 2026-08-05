@@ -66,11 +66,28 @@ The script builds images with the `local` tag by default to distinguish them fro
 ./scripts/lint.sh
 ```
 
-Runs the same checks as the `🧹 Lint` workflow: actionlint over the workflow files
-and shellcheck over the tracked `*.sh` files are gates, hadolint over the
-Dockerfiles is advisory. Both run as containers, so the Docker daemon has to be
-up. The workflow itself is triggered by changes to workflows, shell scripts and
-Dockerfiles.
+Runs the same checks as the `🧹 Lint` workflow: actionlint over the workflow files,
+shellcheck over the tracked `*.sh` files and `./scripts/check-pins.sh` over the
+Dockerfiles are gates, hadolint over the Dockerfiles is advisory. actionlint,
+shellcheck and hadolint run as containers, so the Docker daemon has to be up; the
+pin check is plain bash. The workflow itself is triggered by changes to workflows,
+shell scripts and Dockerfiles.
+
+**Check What the Images Install:**
+
+```bash
+./scripts/check-pins.sh
+```
+
+`images/versions.json` pins what CI *builds*; this pins what a build *installs*.
+Every package named on a `pip install` line must carry `==`, and every `pio`
+package must be `name@version` rather than a range — `@^2.6.0` resolves again on
+every rebuild just like a bare name does. `apt` is advisory and stays that way:
+Debian rewrites its pool at every point release, so a pinned version becomes a 404
+a quarter later, and in Ubuntu the only version that never disappears is the one
+that predates its own security updates. A deliberate exception is a
+`# pin-allow: <package> - <reason>` comment in the Dockerfile it applies to, and an
+exception that covers nothing fails the check.
 
 **Check Versions Before a Bump:**
 

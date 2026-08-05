@@ -243,7 +243,44 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   used to be the loudest source of those (CI no longer emulates), but it was never
   the only one — a mirror serving a stale package or an installer that exits 0 on
   a partial install produce the same image. Keep the layer. Both platforms must
-  build.
+  build. **What a layer pins, the verification prints**: `esptool` is in the
+  esp-idf list precisely because nothing there installs it directly and it changed
+  underneath without anyone noticing, and the `pip freeze` written to
+  `/opt/esp/python-packages.txt` is the image's own version snapshot — written to a
+  file rather than piped, so the grep after it still fails the build when a pin did
+  not take.
+- **A version an image installs by name is a version this repository chose**, and
+  `./scripts/check-pins.sh` enforces that per package manager, because the price of
+  a pin differs per manager. `pip` takes `==` on every name — pip here runs with no
+  constraints whatsoever (the ESP base sets `IDF_PYTHON_CHECK_CONSTRAINTS=no` and
+  nothing exports `PIP_CONSTRAINT`), so a bare name resolves to whatever PyPI
+  served that morning, and one tag has already carried two different harnesses.
+  `pio` takes `name@version`; `@^version` is a semver range, not a pin, and it
+  shipped Unity 2.6.1 under an `ARG` saying 2.6.0. `apt` is deliberately *not*
+  pinned: Debian rewrites its pool at every point release so a pinned version 404s
+  a quarter later, in Ubuntu the only version that never disappears is the
+  release-pocket one whose pin rolls back CVE fixes, and the base image below us is
+  unpinned anyway. Specs are checked after `ARG` expansion, so a range cannot hide
+  in a Dockerfile default. A deliberate exception is `# pin-allow: <package> -
+  <reason>` in that Dockerfile, it names a package rather than muting a rule, and
+  an exception covering nothing fails the check. The gate lives in `lint.yml`, not
+  in `prepare`: a Dockerfile belongs to one image, so an unpinned package in one
+  must not withhold another image's tags — the cross-image blast radius is
+  justified for `images/versions.json` alone, where the data really is shared.
+- **Pinning the test harness pins the flasher.** `pytest-embedded` 2.x requires
+  `esptool>=5.2`, nothing holds esptool back, and pip overwrites the copy ESP-IDF
+  ships — while `$IDF_PATH/components/esptool_py/esptool/esptool.py` is a shim
+  around `python -m esptool`, so the harness decides what `idf.py flash` runs. The
+  esp-idf image therefore pins `esptool` explicitly and runs 5.3.1 against ESP-IDF
+  5.5's own `esptool~=4.12`. That divergence is deliberate, measured, and resolves
+  itself at ESP-IDF 6.0, whose constraints already pair esptool 5.x with
+  pytest-embedded 2.x. Three ways to "fix" it that do not work, all verified:
+  editing `espidf.constraints.*.txt` inside the image (it is a cache with a one-day
+  TTL, restored the moment constraints are armed), re-pointing `PIP_CONSTRAINT` at
+  Espressif's copy (mutable under a stable URL — the pytest pins were deleted from
+  it mid-2026, and there is no per-patch file to bind instead), and arming
+  `IDF_PYTHON_CHECK_CONSTRAINTS` (every `idf.py` call, `--version` included, then
+  exits non-zero, and `export.sh` fails with it).
 - Docker's default `SHELL` is `/bin/sh`, so an image that sets none must keep its
   `RUN` layers POSIX — check the image's own Dockerfile before reaching for a
   bash-ism. esp-idf and esp-matter set `SHELL ["/bin/bash", "-c"]` because their

@@ -21,10 +21,15 @@
 #   - The linter images pinned inside `run:` blocks in lint.yml and scripts/lint.sh
 #     (rhysd/actionlint, hadolint/hadolint). No ecosystem sees a `docker run`
 #     argument - github-actions reads `uses:`, docker reads Dockerfiles.
-#   - The pip installs in images/*/Dockerfile. Most carry no version constraint at
-#     all (the pytest stack, protobuf, jinja2), so there is nothing to bump until
-#     they are pinned; `platformio==${PIO_VERSION}` is pinned but through a build
-#     arg, which no ecosystem resolves.
+#   - The pip installs in images/*/Dockerfile. The esp-idf harness now carries `==`
+#     on every package, but Dependabot's pip ecosystem reads requirements.txt,
+#     setup.py, setup.cfg, pyproject.toml or Pipfile - never a `pip install` line
+#     inside a Dockerfile - so pinning them changed nothing here. Bumps are manual,
+#     by design: those numbers are chosen against ESP-IDF's own constraints, and
+#     the esptool one is a deliberate divergence from them (see CLAUDE.md). The
+#     platformio installs are still unpinned and carry a `pin-allow` saying why.
+#     `platformio==${PIO_VERSION}` is pinned but through a build arg, which no
+#     ecosystem resolves.
 #   - IDF_BASE_TAG, ESP_MATTER_VERSION, PIO_VERSION. These are chosen against
 #     Espressif's own compatibility matrix, not against "newest".
 #

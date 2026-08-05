@@ -23,11 +23,18 @@ This image extends the official Espressif ESP-IDF image with additional tools fo
 **Testing Frameworks:**
 - pytest
 - pytest-embedded
+- pytest-embedded-serial
 - pytest-embedded-serial-esp
 - pytest-embedded-idf
 - pytest-embedded-qemu
 - pytest-timeout
 - pytest-cov
+
+Each is installed at an exact version, and so is **esptool** — which this image
+pins ahead of the version ESP-IDF's own constraint file names, because the harness
+requires the newer line and `idf.py flash` runs whatever the environment holds.
+The trade-off is written out in the Dockerfile. What a given build actually
+carries is in `/opt/esp/python-packages.txt` inside the image.
 
 ## Quick Start
 
