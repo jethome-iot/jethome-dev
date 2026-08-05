@@ -65,7 +65,7 @@
         "linux/amd64": "ubuntu-latest-8core",
         "linux/arm64": "ubuntu-latest-8core-arm"
       },
-      "timeout_minutes": 180,
+      "timeout_minutes": 60,
       "builds": [
         {
           "tag": "idf-v5.5.5-matter-v1.6",

@@ -187,19 +187,18 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   only jobs that publish a multi-arch tag: pointing them at a pool would make tag
   publication hostage to that pool still existing and still being granted to this
   repository, and an unreachable pool queues for 24 hours rather than failing.
-- **Build** timeouts live in `images/versions.json` (`timeout_minutes` per image):
-  60 for a build, 180 for `esp-matter-build`. The other jobs hardcode theirs in the
-  workflow — 10 for a manifest, 5 for `prepare` — because the manifest matrix
-  carries no such field; changing `timeout_minutes` will not move them. All of them
-  are a ceiling on a wedged job, not a target. The esp-matter figure predates any
-  native measurement — it was
-  set against a QEMU leg that took 337 minutes. Native runs land at **7–11 minutes
-  on both architectures**, so 180 is now roughly fifteen times the real number and
-  could reasonably drop to 60. It costs nothing while nothing hits it, which is why
-  this is written down rather than changed: lowering it wrongly fails in an
-  unobvious way — the leg is killed, its manifest is skipped, and the other
-  platform's image sits in GHCR unreferenced while the published tags stay on the
-  previous build.
+- **Build** timeouts live in `images/versions.json` (`timeout_minutes` per image),
+  60 for every image today. The other jobs hardcode theirs in the workflow — 10 for
+  a manifest, 5 for `prepare` — because the manifest matrix carries no such field;
+  changing `timeout_minutes` will not move them. All of them are a ceiling on a
+  wedged job, not a target.
+- `esp-matter-build` carried 180 until its native legs were measured. That figure
+  was set against a QEMU leg that took 337 minutes; native runs land at **8–11
+  minutes on both architectures**, so 60 is still a five- to sevenfold margin. Do
+  not tighten it towards the observed number: the failure is quiet, not loud — the
+  leg is killed, its manifest is skipped with it, and the other platform's image
+  sits in GHCR unreferenced while the published tags stay on the previous build.
+  Re-measure before changing it, `runner-smoke.yml` reports what the pools are.
 - **Nothing runs in a fork.** Those pools belong to `jethome-iot`, a fork cannot
   resolve their labels, and an unresolvable `runs-on` queues for 24 hours rather
   than failing — so the build jobs are gated on `github.repository_owner ==
