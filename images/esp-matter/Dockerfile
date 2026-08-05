@@ -83,9 +83,19 @@ RUN chmod +x /opt/esp/esp_matter_entrypoint.sh
 WORKDIR /workspace
 
 # Verify installation
+#
+# The freeze is regenerated here, not inherited. install.sh above resolves
+# esp-matter's own requirements into the same ESP-IDF venv the base image pinned,
+# so the snapshot the base wrote describes an environment that no longer exists -
+# and the esp-idf README points readers at this very file. esptool is printed for
+# the same reason it is printed there: it is what a reinstall replaces silently,
+# and `idf.py flash` runs whatever the venv holds.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
+    esptool version && \
+    pip freeze > /opt/esp/python-packages.txt && \
+    grep -E '^(pytest|esptool)' /opt/esp/python-packages.txt && \
     idf.py --version && \
     echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"
 

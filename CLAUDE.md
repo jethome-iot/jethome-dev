@@ -243,12 +243,17 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   used to be the loudest source of those (CI no longer emulates), but it was never
   the only one — a mirror serving a stale package or an installer that exits 0 on
   a partial install produce the same image. Keep the layer. Both platforms must
-  build. **What a layer pins, the verification prints**: `esptool` is in the
-  esp-idf list precisely because nothing there installs it directly and it changed
-  underneath without anyone noticing, and the `pip freeze` written to
-  `/opt/esp/python-packages.txt` is the image's own version snapshot — written to a
-  file rather than piped, so the grep after it still fails the build when a pin did
-  not take.
+  build. **What a layer pins, the verification prints — and for the one that
+  changed silently, asserts.** `esptool` is in the esp-idf list precisely because
+  nothing there installs it directly, so its layer greps for the exact
+  `esptool==<version>` rather than for the name: any version passing is the bug
+  itself, since ESP-IDF's own environment ships a different one. That repeats the
+  number, deliberately — the two disagreeing fails the build instead of publishing
+  an image contradicting its Dockerfile. The `pip freeze` beside it goes to
+  `/opt/esp/python-packages.txt`, a file rather than a pipe so nothing swallows a
+  failure, and **an image that installs on top regenerates it**: esp-matter's
+  `install.sh` populates the same venv, so inheriting the base's snapshot would
+  leave the file describing an environment that no longer exists.
 - **A version an image installs by name is a version this repository chose**, and
   `./scripts/check-pins.sh` enforces that per package manager, because the price of
   a pin differs per manager. `pip` takes `==` on every name — pip here runs with no

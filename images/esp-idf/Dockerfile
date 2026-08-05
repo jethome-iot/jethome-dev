@@ -66,14 +66,20 @@ WORKDIR /workspace
 # esptool cannot tell a good build from the one issue #18 describes.
 #
 # The freeze is written to a file rather than piped, so the image carries its own
-# version snapshot and the grep still fails the build when the pins did not take
-# (an empty match exits non-zero, and there is no pipe to swallow it).
+# version snapshot and no pipe can swallow a failure.
+#
+# The esptool line is an assertion, not a listing: `grep -E '^esptool'` would pass
+# on any version, and "any version" is exactly the bug - ESP-IDF's own environment
+# ships 4.12.0 and anything reinstalling it would go unnoticed. It repeats the
+# number from the pip layer on purpose; the two disagreeing fails the build here,
+# loudly, instead of publishing an image whose flasher contradicts its Dockerfile.
 RUN export IDF_PATH_FORCE=1 && \
     source ${IDF_PATH}/export.sh && \
     python --version && \
     pytest --version && \
     esptool version && \
     pip freeze > /opt/esp/python-packages.txt && \
+    grep -qx 'esptool==5.3.1' /opt/esp/python-packages.txt && \
     grep -E '^(pytest|esptool)' /opt/esp/python-packages.txt && \
     jq --version && \
     idf.py --version && \
