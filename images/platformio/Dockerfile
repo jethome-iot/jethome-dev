@@ -36,6 +36,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PlatformIO and additional Python packages
+#
+# pin-allow: protobuf - pinning it belongs to platformio's own change, not to the
+#   esp-idf one that introduced ./scripts/check-pins.sh. Neither package has a
+#   consumer here (PlatformIO core requires neither, nor does the espressif32
+#   platform; the READMEs offer them to the user), so "which version" is the wrong
+#   question until "keep or drop" is answered.
+# pin-allow: jinja2 - same change, same question. Note that jinja2's last four
+#   releases were security patches, so if it stays it wants a floor and a ceiling
+#   rather than an `==` that freezes the image on a future CVE.
 RUN pip install --no-cache-dir \
     platformio==${PIO_VERSION} \
     protobuf \
@@ -49,6 +58,11 @@ RUN pio platform install  \
     native@${NATIVE_PLATFORM_VERSION}
 
 # Install Unity test framework globally
+#
+# pin-allow: Unity - `@^` is a semver range, not a pin, and it already diverged:
+#   the ARG says 2.6.0 and the published image carries Unity 2.6.1. Dropping the
+#   caret changes what the image contains, so it goes with the platformio change
+#   together with the matching ARG bump - not into an esp-idf one.
 RUN pio pkg install -g --library "throwtheswitch/Unity@^${UNITY_VERSION}" \
  && pio pkg list -g | grep Unity
 

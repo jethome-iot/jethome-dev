@@ -83,9 +83,27 @@ RUN chmod +x /opt/esp/esp_matter_entrypoint.sh
 WORKDIR /workspace
 
 # Verify installation
+#
+# The freeze is regenerated here, not inherited. install.sh above resolves
+# esp-matter's own requirements into the same ESP-IDF venv the base image pinned,
+# so the snapshot the base wrote describes an environment that no longer exists -
+# and the esp-idf README points readers at this very file.
+#
+# esptool is asserted, not merely printed: install.sh is free to move it, and
+# `idf.py flash` runs whatever the venv holds. The expected version is read out of
+# the base's own snapshot *before* that file is overwritten, so this image asserts
+# "install.sh did not move esptool" without repeating a version number the base
+# already owns. A base with no snapshot (a fork, or an older esp-idf) skips the
+# assertion rather than failing on it.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
+    esptool version && \
+    base_esptool="$(grep -m1 '^esptool==' /opt/esp/python-packages.txt || true)" && \
+    pip freeze > /opt/esp/python-packages.txt && \
+    { [ -z "${base_esptool}" ] && echo "no base snapshot - esptool not asserted" \
+      || grep -qx "${base_esptool}" /opt/esp/python-packages.txt; } && \
+    grep -E '^(pytest|esptool)' /opt/esp/python-packages.txt && \
     idf.py --version && \
     echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"
 
