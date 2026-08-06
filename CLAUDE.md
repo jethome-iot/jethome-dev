@@ -67,7 +67,6 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `<image>@sha256:<digest>` references. A tag in between would be a mutable name
   resolved at a later moment, and between those moments another run can overwrite
   it: that is how a `sha-<short-commit>` tag ends up holding a different commit's image.
-  There are no `-linux-<arch>` tags in GHCR any more.
 - The version tag is listed **last** in `imagetools create` on purpose: GHCR shows
   the last tag as the package's primary tag.
 - `esp-matter-build` depends on `esp-idf-build`, **not** on the manifest job, and
@@ -152,19 +151,15 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   The org literal is hardcoded throughout.
 - **Every image is build-validated on pull requests**, ESP-Matter included, and on
   the ESP-IDF this very run produced — so a branch bumping both versions at once is
-  checked as the pair it will become, not against whatever is published today.
-- That works because `esp-idf-build` pushes by digest on **every** run, not only on
-  master — so its GHCR login is unconditional too, unlike the other build jobs'.
-  Nothing published that way is reachable by name: only the manifest jobs create
-  tags, and they stay master-only. A pull request therefore leaves untagged blobs in
-  GHCR and moves no tag. They accumulate; clean them up periodically.
+  checked as the pair it will become, not against whatever is published today. What
+  a pull request pushes is reachable by digest alone and never by name, so it leaves
+  untagged blobs in GHCR and moves no tag. They accumulate; clean them up
+  periodically.
 - **Dependabot is the exception.** GitHub gives its runs a read-only
   `GITHUB_TOKEN` regardless of the job's `permissions:`, so the digest push would
   be rejected. Its pull requests skip the push and the digest upload, and
   `esp-matter-build` sits them out — the action bump they carry is still exercised
   by esp-idf-build compiling the image.
-- Publishing is still master-only in the sense that matters — no tag, `latest`
-  included, is ever written outside master.
 - **Every build job also checks the PR's head repository**, not just the owner. On
   a pull request *from* a fork `github.repository_owner` is still `jethome-iot`, so
   the owner check alone would let a fork-controlled Dockerfile run on this org's
@@ -192,13 +187,12 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   a manifest, 5 for `prepare` — because the manifest matrix carries no such field;
   changing `timeout_minutes` will not move them. All of them are a ceiling on a
   wedged job, not a target.
-- `esp-matter-build` carried 180 until its native legs were measured. That figure
-  was set against a QEMU leg that took 337 minutes; native runs land at **8–11
-  minutes on both architectures**, so 60 is still a five- to sevenfold margin. Do
-  not tighten it towards the observed number: the failure is quiet, not loud — the
-  leg is killed, its manifest is skipped with it, and the other platform's image
-  sits in GHCR unreferenced while the published tags stay on the previous build.
-  Re-measure before changing it, `runner-smoke.yml` reports what the pools are.
+- The slowest image is esp-matter, whose legs land at **8–11 minutes on both
+  architectures**, so 60 is a five- to sevenfold margin. Do not tighten it towards
+  the observed number: the failure is quiet, not loud — the leg is killed, its
+  manifest is skipped with it, and the other platform's image sits in GHCR
+  unreferenced while the published tags stay on the previous build. Re-measure
+  before changing it; `runner-smoke.yml` reports what the pools are.
 - **Nothing runs in a fork.** Those pools belong to `jethome-iot`, a fork cannot
   resolve their labels, and an unresolvable `runs-on` queues for 24 hours rather
   than failing — so the build jobs are gated on `github.repository_owner ==
@@ -209,15 +203,14 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   connectedhomeip tree needs ~50 GB, and the 8-core pools measured 372 GB (amd64)
   and 393 GB (arm64) free under Docker against 88 GB on 4-core. Re-measure with
   `runner-smoke.yml` before moving that job to a smaller pool.
-- **No build cache.** `cache-from`/`cache-to` were removed after measurement: zero
-  cache hits across every master run, against 21.6 minutes per run spent writing
-  the cache — for esp-idf, 390 s of export on a 72 s build. `mode=max` wrote about
-  3.9 GiB per leg into a 10 GB repository-wide quota, so LRU evicted entries
-  during the very run that created them, leaving index entries whose blobs were
-  already gone. Re-introduce it only against a measured, repeating hit.
+- **No build cache**, by measurement: zero `cache-from`/`cache-to` hits across every
+  master run, against 21.6 minutes per run spent writing the cache — for esp-idf,
+  390 s of export on a 72 s build. `mode=max` wrote about 3.9 GiB per leg into a
+  10 GB repository-wide quota, so LRU evicted entries during the very run that
+  created them, leaving index entries whose blobs were already gone. Re-introduce it
+  only against a measured, repeating hit. Builds are cold by construction.
 - `workflow_dispatch` is declared with no inputs anywhere, so
-  `gh workflow run … -f version=… -f force_rebuild=…` is rejected. Builds are cold
-  by construction now that there is no layer cache.
+  `gh workflow run … -f version=… -f force_rebuild=…` is rejected.
 - Actions are pinned to a floating major (`@v<N>`, not a SHA), and Dependabot
   (`.github/dependabot.yml`, `github-actions` only) raises the major when one
   ships. Resolve the number from the registry rather than from memory —
@@ -239,13 +232,12 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 - Every image sets `WORKDIR /workspace` and ends with a version-printing
   verification `RUN` as its last build layer. It is the only thing standing between
   a silently failed install and a published image: a tool that never installed
-  still leaves a green build until something asks it for its version. Emulation
-  used to be the loudest source of those (CI no longer emulates), but it was never
-  the only one — a mirror serving a stale package or an installer that exits 0 on
-  a partial install produce the same image. Keep the layer. Both platforms must
-  build. **What a layer pins, the verification prints — and for the one that
-  changed silently, asserts.** `esptool` is in the esp-idf list precisely because
-  nothing there installs it directly, so its layer greps for the exact
+  still leaves a green build until something asks it for its version. A mirror
+  serving a stale package, or an installer that exits 0 on a partial install,
+  produces exactly that. Keep the layer. Both platforms must build. **What a layer
+  pins, the verification prints — and for the one that changed silently, asserts.**
+  `esptool` is in the esp-idf list precisely because nothing there installs it
+  directly, so its layer greps for the exact
   `esptool==<version>` rather than for the name: any version passing is the bug
   itself, since ESP-IDF's own environment ships a different one. That repeats the
   number, deliberately — the two disagreeing fails the build instead of publishing
