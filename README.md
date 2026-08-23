@@ -12,7 +12,7 @@ Docker-based development environment for embedded systems, providing containeriz
 |-------|-------------|---------------|
 | [esp-idf](./images/esp-idf/) | ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation for some of them | [README](./images/esp-idf/README.md) |
 | [esp-matter](./images/esp-matter/) | ESP-Matter SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
-| [host](./images/host/) | Host (POSIX) builds and QA: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-tidy, ruff, lychee | [README](./images/host/README.md) |
+| [host](./images/host/) | Host (POSIX) builds and QA: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-tidy, ruff, lychee, docker CLI | [README](./images/host/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 platform support + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
