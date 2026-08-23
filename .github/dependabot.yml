@@ -32,6 +32,13 @@
 #     ecosystem resolves.
 #   - IDF_BASE_TAG, ESP_MATTER_VERSION, PIO_VERSION. These are chosen against
 #     Espressif's own compatibility matrix, not against "newest".
+#   - Everything images/host/Dockerfile pins. Its pip installs are ARG defaults,
+#     which no ecosystem resolves; PAHO_REF is a commit fetched by a `git fetch`
+#     line; and LYCHEE_VERSION travels with two literal checksums that a bump has
+#     to recompute per architecture. All three are bumped by hand, and the QA
+#     versions deliberately track what the consuming project pins for the same
+#     tools rather than what is newest - the image agreeing with its consumer is
+#     the whole point of it.
 #
 # Note that a bump here edits a workflow file, which is in that workflow's own
 # `paths:` filter - so every Dependabot PR triggers a full paid rebuild, and

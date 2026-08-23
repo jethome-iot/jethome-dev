@@ -1,0 +1,234 @@
+# Host Docker Build Workflow
+#
+# Build Strategy:
+# - Main repo master: Build + Push to GHCR
+# - Main repo dev/PR: Build only (validation) - nothing is uploaded. Like
+#   platformio.yml and unlike esp-idf.yml, no other image is built FROM this one,
+#   so there is nothing for a pull request to push for.
+# - workflow_dispatch: Build on any branch of the main repo, push only on master
+# - Forks: nothing runs - the runner pools are not reachable there; use
+#   ./scripts/build.sh instead
+# - Multi-platform: Platform matrix builds linux/amd64 and linux/arm64 in parallel,
+#   each on a runner of its own architecture (matrix.runner) - no QEMU. This image
+#   is the one a developer on Apple Silicon runs interactively, so an emulated
+#   arm64 leg would be the slow half of exactly the audience it exists for.
+name: 🐳 Host Docker Image
+
+on:
+  push:
+    branches: [master, dev]
+    # Negations come last and are order-sensitive; `paths:` and `paths-ignore:`
+    # cannot both be used for one event. Without the exclusion a
+    # documentation-only commit rebuilds and republishes the image.
+    paths:
+      - '.github/workflows/host.yml'
+      - 'images/host/**'
+      - 'images/versions.json'
+      - 'scripts/versions-matrix.sh'
+      - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
+  pull_request:
+    branches: [master, dev]
+    paths:
+      - '.github/workflows/host.yml'
+      - 'images/host/**'
+      - 'images/versions.json'
+      - 'scripts/versions-matrix.sh'
+      - 'scripts/check-versions.sh'
+      - '!images/**/*.md'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  HOST_IMAGE_NAME: jethome-dev-host
+  # build-push-action v6+ uploads a build record as a workflow artifact by default.
+  # This repository is public, so that archive - full build log and metadata - would
+  # be downloadable by anyone off the run page, on every leg of every push. The
+  # summary itself is kept: it reports what was built without opening the log, and
+  # costs no storage.
+  DOCKER_BUILD_RECORD_UPLOAD: false
+
+# Superseded pull-request runs are cancelled - nothing has been published yet and
+# they cost money. Pushes are deliberately NOT grouped together: the group key
+# includes the commit, so each one gets its own group and none can cancel another.
+#
+# `cancel-in-progress: false` would not have given a queue. GitHub cancels a
+# *pending* run in a group whenever a newer one arrives, regardless of that flag -
+# so grouping master pushes by ref would silently drop the middle commit of any
+# three that land inside one build window, and its sha-<short-commit> image, which the
+# READMEs document as the way to pin an exact commit, would never exist.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Both matrices come from images/versions.json, so a version lives in one place
+  # instead of two matrix blocks that have to be edited together. The consistency
+  # check runs first and fails the whole workflow.
+  prepare:
+    name: 🧮 Resolve matrices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.matrices.outputs.build }}
+      manifest: ${{ steps.matrices.outputs.manifest }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v7
+
+      - name: ✅ Check version consistency
+        run: ./scripts/check-versions.sh
+
+      - name: 🧮 Generate matrices
+        id: matrices
+        run: |
+          set -euo pipefail
+          # Assigned first, echoed second: `echo "k=$(cmd)"` takes echo's exit
+          # status, so a failing generator would write an empty matrix and leave
+          # this step green.
+          build=$(./scripts/versions-matrix.sh host build)
+          manifest=$(./scripts/versions-matrix.sh host manifest)
+          {
+            echo "build=${build}"
+            echo "manifest=${manifest}"
+          } >> "$GITHUB_OUTPUT"
+
+  host-build:
+    name: host-build (${{ matrix.tag }}, ${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    # Owner-only, with no workflow_dispatch escape hatch: the runner pools belong
+    # to jethome-iot, a fork cannot resolve their labels, and an unresolvable
+    # `runs-on` queues for 24 hours rather than failing. A fork that wants to build
+    # this image runs ./scripts/build.sh.
+    # Two conditions, not one. The owner check keeps this out of forks that run the
+    # workflow themselves. The head-repo check keeps it out of pull requests *from*
+    # a fork, where github.repository_owner is still jethome-iot - so without it a
+    # fork-controlled Dockerfile would execute on this org's paid runner pools.
+    if: github.repository_owner == 'jethome-iot' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.build) }}
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v7
+
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: 🔐 Log in to GitHub Container Registry
+        if: github.ref_name == 'master'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest, with no tag of its own: a tag here would be a mutable
+      # name that the manifest job below has to look up again later, and between
+      # those two moments another run can overwrite it. The digest is the only
+      # thing handed forward.
+      - name: 🐳 Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: images/host
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.HOST_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
+          build-args: ${{ matrix.build_args }}
+
+      # Matrix legs cannot each set a job output - they would overwrite one
+      # another - so the digests travel as one empty file per leg, named after the
+      # digest itself.
+      - name: 📤 Export digest
+        if: github.ref_name == 'master'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: ⬆️ Upload digest
+        if: github.ref_name == 'master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ env.HOST_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  host-manifest:
+    name: host-manifest (${{ matrix.tag }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [prepare, host-build]
+    # See the note in esp-idf.yml: one variant's failure must not withhold another
+    # variant's tags.
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && github.repository_owner == 'jethome-iot'
+      && github.ref_name == 'master' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.manifest) }}
+    steps:
+      - name: 🔐 Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ⬇️ Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digest-${{ env.HOST_IMAGE_NAME }}-${{ matrix.tag }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - name: 🐳 Create and push multi-arch manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.HOST_IMAGE_NAME }}
+          TAG: ${{ matrix.tag }}
+          PRIMARY: ${{ matrix.primary }}
+          EXPECTED_PLATFORMS: ${{ matrix.platform_count }}
+        run: |
+          set -euo pipefail
+          cd /tmp/digests
+          found=$(find . -type f | wc -l | tr -d ' ')
+          if [ "${found}" -ne "${EXPECTED_PLATFORMS}" ]; then
+            echo "::error::expected ${EXPECTED_PLATFORMS} platform digests, found ${found}"
+            exit 1
+          fi
+          # Every source is a digest this run produced, so nothing here can be
+          # resolved to another run's image. Built as an array rather than an
+          # unquoted expansion so the refs survive as separate arguments without
+          # relying on word splitting.
+          refs=()
+          for digest in *; do
+            refs+=("${IMAGE}@sha256:${digest}")
+          done
+          # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
+          # Every variant gets `<version>-sha-<short-commit>`: the version tag itself is
+          # rewritten on every push, so without it a consumer pinned to a
+          # non-primary variant has no name for the build they were running.
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          tags=()
+          if [ "${PRIMARY}" = "true" ]; then
+            tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
+          fi
+          tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
+          tags+=(-t "${IMAGE}:${TAG}")
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
