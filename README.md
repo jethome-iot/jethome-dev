@@ -4,6 +4,7 @@ Docker-based development environment for embedded systems, providing containeriz
 
 [![ESP-IDF Docker Image](https://github.com/jethome-iot/jethome-dev/actions/workflows/esp-idf.yml/badge.svg?branch=master)](https://github.com/jethome-iot/jethome-dev/actions/workflows/esp-idf.yml)
 [![PlatformIO Docker Image](https://github.com/jethome-iot/jethome-dev/actions/workflows/platformio.yml/badge.svg?branch=master)](https://github.com/jethome-iot/jethome-dev/actions/workflows/platformio.yml)
+[![Host Docker Image](https://github.com/jethome-iot/jethome-dev/actions/workflows/host.yml/badge.svg?branch=master)](https://github.com/jethome-iot/jethome-dev/actions/workflows/host.yml)
 
 ## Current Images
 
@@ -11,6 +12,7 @@ Docker-based development environment for embedded systems, providing containeriz
 |-------|-------------|---------------|
 | [esp-idf](./images/esp-idf/) | ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation for some of them | [README](./images/esp-idf/README.md) |
 | [esp-matter](./images/esp-matter/) | ESP-Matter SDK for Matter protocol development on ESP32 | [README](./images/esp-matter/README.md) |
+| [host](./images/host/) | Host (POSIX) builds and QA: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-tidy, ruff, lychee | [README](./images/host/README.md) |
 | [platformio](./images/platformio/) | PlatformIO with ESP32 platform support + ESP-IDF + Unity testing | [README](./images/platformio/README.md) |
 
 ## Quick Start
@@ -29,9 +31,9 @@ docker run -it --rm -v $(pwd):/workspace \
 ```
 
 The build command differs per image (`idf.py` for esp-idf and esp-matter, `pio`
-for platformio). What each image contains, its supported chips, available tags,
-build arguments and ready-to-run examples are documented in the image README
-linked in the table above.
+for platformio, a plain `cmake` invocation for host). What each image contains,
+its supported chips, available tags, build arguments and ready-to-run examples are
+documented in the image README linked in the table above.
 
 ## Local Development
 
@@ -45,7 +47,7 @@ linked in the table above.
 
 # Build specific image (tagged as 'local')
 ./scripts/build.sh esp-idf
-./scripts/build.sh platformio
+./scripts/build.sh host
 
 # Build and run image interactively
 ./scripts/build.sh -r esp-idf
@@ -122,7 +124,8 @@ It never runs on a pull request.
 # change touches that workflow's paths:
 #   esp-idf.yml     -> .github/workflows/esp-idf.yml, images/esp-idf/**, images/esp-matter/**
 #   platformio.yml  -> .github/workflows/platformio.yml, images/platformio/**
-# Both workflows also support workflow_dispatch (Actions tab), which ignores the
+#   host.yml        -> .github/workflows/host.yml, images/host/**
+# Every workflow also supports workflow_dispatch (Actions tab), which ignores the
 # path filters. Images are pushed to GHCR from master only.
 #
 # In a fork nothing runs at all: the build jobs require the jethome-iot owner,
@@ -158,11 +161,11 @@ This works because the **ESP-IDF** build job pushes by digest on every run — i
 the only image another one is built from, so it is the only one that needs to.
 Those pushes carry no tag, and only `master` ever writes `latest` or a version tag.
 The untagged blobs a pull request leaves in GHCR accumulate and want an occasional
-cleanup. PlatformIO, which nothing builds on, still uploads nothing outside
+cleanup. PlatformIO and Host, which nothing builds on, upload nothing outside
 `master`.
 
-Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from both
-workflows' path filters.
+Documentation-only changes trigger nothing: `!images/**/*.md` is excluded from
+every image workflow's path filters.
 
 ### Manual Building
 
@@ -182,6 +185,7 @@ jethome-dev/
 │   └── workflows/           # GitHub Actions workflows
 │       ├── esp-idf.yml      # ESP-IDF and ESP-Matter image workflows
 │       ├── platformio.yml   # PlatformIO image workflow
+│       ├── host.yml         # Host (POSIX) image workflow
 │       ├── lint.yml         # actionlint + shellcheck (gates), hadolint (advisory)
 │       └── runner-smoke.yml # Reports what each runner pool actually is
 ├── images/
@@ -193,6 +197,10 @@ jethome-dev/
 │   │   ├── Dockerfile       # Image definition
 │   │   ├── entrypoint.sh    # Activates ESP-IDF + ESP-Matter env on start
 │   │   └── README.md        # Detailed documentation
+│   ├── host/                # Host (POSIX) build, test and QA image
+│   │   ├── Dockerfile       # Image definition
+│   │   ├── README.md        # Detailed documentation
+│   │   └── smoke/           # CMake project the verification layer builds and runs
 │   └── platformio/          # PlatformIO development image
 │       ├── Dockerfile       # Image definition
 │       ├── README.md        # Detailed documentation
@@ -202,6 +210,7 @@ jethome-dev/
 │   ├── lint.sh              # Runs the same linters as CI, locally
 │   ├── versions-matrix.sh   # Turns versions.json into the CI matrices
 │   ├── check-versions.sh    # Enforces versions.json against the Dockerfiles
+│   ├── check-pins.sh        # Enforces that what the images install is pinned
 │   └── update-matter-ref.sh # Reports/advances the pinned ESP-Matter commits
 ├── CLAUDE.md                # Repository conventions, loaded by Claude Code
 ├── LICENSE

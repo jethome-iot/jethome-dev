@@ -31,7 +31,11 @@
     "survive in GHCR either way, they just stop being rebuilt.",
     "",
     "Not listed here: ARGs that CI never passes (ESP32_PLATFORM_VERSION,",
-    "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile). Their",
+    "NATIVE_PLATFORM_VERSION, UNITY_VERSION in images/platformio/Dockerfile, and",
+    "every tool pin in images/host/Dockerfile - the QA versions, PAHO_VERSION and",
+    "PAHO_REF, LYCHEE_VERSION and its two per-architecture checksums; host passes",
+    "UBUNTU_BASE_TAG and nothing else, because that is the one value its tag can",
+    "name). Their",
     "Dockerfile default is the only source of truth and is bumped there. The package",
     "pins inside a Dockerfile - the esp-idf test harness and esptool - are the same",
     "regime, and they could not live here even if that were desirable: every value in",
@@ -105,6 +109,22 @@
           },
           "pin": {
             "ESP_MATTER_REF": "2e4e0050c0bf6167f6bfc3351086c4e1126a6893"
+          }
+        }
+      ]
+    },
+    "host": {
+      "platforms": {
+        "linux/amd64": "ubuntu-latest-8core",
+        "linux/arm64": "ubuntu-latest-8core-arm"
+      },
+      "timeout_minutes": 60,
+      "builds": [
+        {
+          "tag": "ubuntu-24.04",
+          "primary": true,
+          "args": {
+            "UBUNTU_BASE_TAG": "24.04"
           }
         }
       ]

@@ -4,14 +4,15 @@ This repo ships no application code. It is a home for Docker developer images:
 each image lives in `images/<name>/` and is published as
 `ghcr.io/<owner>/jethome-dev-<image>`. The deliverables are Dockerfiles, GitHub
 Actions workflows and READMEs. `images/` is the roster — today `esp-idf`,
-`esp-matter` and `platformio`, and adding to it is the normal case, not an
+`esp-matter`, `host` and `platformio`, and adding to it is the normal case, not an
 exception. Rules below are written per image; where they name one, it is an
 example.
 
 ## Layout
 
 - One directory per image: `images/<name>/`, holding its `Dockerfile`, `README.md`
-  and any support files (`esp-matter/entrypoint.sh`, `platformio/pio_project/`).
+  and any support files (`esp-matter/entrypoint.sh`, `platformio/pio_project/`,
+  `host/smoke/`).
 - Each workflow sets `context: images/<name>` and `scripts/build.sh` builds the
   same directory, so a Dockerfile can only `COPY` from inside its own directory —
   a shared file at the repo root breaks both CI and local builds.
@@ -20,11 +21,13 @@ example.
 
 ## CI
 
-The authoritative files are `.github/workflows/esp-idf.yml` and
-`.github/workflows/platformio.yml` — read them before changing anything here.
+The authoritative files are `.github/workflows/esp-idf.yml`,
+`.github/workflows/platformio.yml` and `.github/workflows/host.yml` — read them
+before changing anything here.
 
-- One workflow file per image *family*; today there are two — `esp-idf.yml` builds
-  **both** esp-idf and esp-matter, `platformio.yml` builds platformio. A family is:
+- One workflow file per image *family*; today there are three — `esp-idf.yml`
+  builds **both** esp-idf and esp-matter, `platformio.yml` builds platformio,
+  `host.yml` builds host. A family is:
   an image whose Dockerfile is `FROM` another image of this repo joins the base
   image's workflow, adds `images/<name>/**` to its push **and** pull_request
   `paths:` filters, and chains via `needs: <base>-build` — the *build* job, not the
@@ -97,7 +100,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   runtime `runs-on` is invisible to actionlint); every `base_tag` exists among the
   base image's tags; and the base image's `ARG` default names the primary variant's
   base tag. Run it locally with `./scripts/check-versions.sh`.
-- The checker validates the whole file and both workflows gate on it, so a version
+- The checker validates the whole file and every build workflow gates on it, so a version
   file broken for one image blocks publishing for all of them. That is deliberate —
   the data is shared — but it is also why `images/versions.json` sits in every
   `paths:` filter: a bump to one image rebuilds the others. The alternative, a file
@@ -118,7 +121,10 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 - An `ARG` with no matrix entry is a pin CI never passes, so its Dockerfile
   default is the sole source of truth and is bumped there — today
   `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION` and `UNITY_VERSION` in
-  `images/platformio/Dockerfile`.
+  `images/platformio/Dockerfile`, and every tool pin in `images/host/Dockerfile`
+  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, `LYCHEE_VERSION` and its two
+  checksums). host passes one arg and one only, `UBUNTU_BASE_TAG`, because that is
+  the single value its tag can name.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
 - `concurrency` cancels superseded **pull-request** runs and groups nothing else:
@@ -144,9 +150,9 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   - **Whether the image is uploaded** differs per image. `esp-idf-build` pushes by
     digest on *every* run — its GHCR login is unconditional to match — because
     `esp-matter-build` consumes that digest and that is what makes ESP-Matter
-    validatable on a pull request. `platformio-build` and `esp-matter-build` keep
-    `push=${{ github.ref_name == 'master' }}`: nothing consumes them, so a PR
-    builds and throws away.
+    validatable on a pull request. `platformio-build`, `host-build` and
+    `esp-matter-build` keep `push=${{ github.ref_name == 'master' }}`: nothing
+    consumes them, so a PR builds and throws away.
 
   The org literal is hardcoded throughout.
 - **Every image is build-validated on pull requests**, ESP-Matter included, and on
@@ -165,7 +171,7 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   the owner check alone would let a fork-controlled Dockerfile run on this org's
   paid pools. The condition is
   `github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository`.
-- Both workflows exclude `!images/**/*.md` from their `paths:`. Negations come last
+- Every build workflow excludes `!images/**/*.md` from its `paths:`. Negations come last
   and are order-sensitive, and `paths:` cannot be mixed with `paths-ignore:` for one
   event. Without this a documentation-only commit rebuilds and republishes every
   image.
@@ -245,7 +251,14 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
   `/opt/esp/python-packages.txt`, a file rather than a pipe so nothing swallows a
   failure, and **an image that installs on top regenerates it**: esp-matter's
   `install.sh` populates the same venv, so inheriting the base's snapshot would
-  leave the file describing an environment that no longer exists.
+  leave the file describing an environment that no longer exists. host takes the
+  same rule one step further, because a version print cannot reach what it
+  promises: its layer asserts that `clang-format` and `clang-tidy` *report* the
+  numbers pip was told to install (the wrapper and the wheel are two different
+  things), and then configures, builds and `ctest`s `images/host/smoke/` — two
+  files that prove `find_package(GTest)` resolves, that GMock links, and that the
+  paho which loads reports the version pinned beside its commit. Its own freeze
+  goes to `/opt/qa-packages.txt`.
 - **A version an image installs by name is a version this repository chose**, and
   `./scripts/check-pins.sh` enforces that per package manager, because the price of
   a pin differs per manager. `pip` takes `==` on every name — pip here runs with no
@@ -281,13 +294,16 @@ The authoritative files are `.github/workflows/esp-idf.yml` and
 - Docker's default `SHELL` is `/bin/sh`, so an image that sets none must keep its
   `RUN` layers POSIX — check the image's own Dockerfile before reaching for a
   bash-ism. esp-idf and esp-matter set `SHELL ["/bin/bash", "-c"]` because their
-  layers call the bash builtin `source`; platformio does not. A trailing
+  layers call the bash builtin `source`; platformio and host do not — host's
+  multi-line layers are POSIX `sh` on purpose (`set -eu`, `case`, no arrays). A trailing
   `CMD ["/bin/bash"]` sets the interactive shell, not the build shell.
 - Toolchain activation is per-image, not repo-wide. The ESP images source
   `${IDF_PATH}/export.sh` in every `RUN` that needs the toolchain (esp-idf
   additionally needs `export IDF_PATH_FORCE=1` in the same `RUN`; esp-matter also
   sources `${ESP_MATTER_PATH}/export.sh`), while platformio puts `pio` on `PATH`
-  at install time and activates nothing. Either way call tools by name, never by
+  at install time and activates nothing, and host puts its venv (`/opt/qa-venv`)
+  first on `PATH` so `ruff`/`mypy`/`clang-tidy` resolve without activation —
+  Ubuntu 24.04 ships PEP 668, so there is no system interpreter to install into. Either way call tools by name, never by
   absolute path: `/opt/esp/python_env/idf5.4_py3.12_env/bin/python3` was tried and
   reverted — it pins a version-stamped directory that a version bump invalidates.
 - esp-matter activates both environments at runtime through
