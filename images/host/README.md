@@ -15,9 +15,10 @@ machine — a developer gets the CI verdict locally, on their own architecture,
 without waiting for a pull-request run to tell them.
 
 Everything it installs by name is pinned: the Python tools with `==`, the Paho
-client to a commit rather than a tag, and the `lychee` binary to a per-architecture
-SHA-256. The versions are recorded as image labels, so a consumer can assert the
-image agrees with its own pins instead of assuming it (see
+client to a commit rather than a tag, and the `lychee` and `docker` binaries to a
+per-architecture SHA-256. The versions are recorded as image labels, so a
+consumer can assert the image agrees with its own pins instead of assuming it
+(see
 [Verifying the pins](#verifying-the-pins)).
 
 ## What's Inside
@@ -44,6 +45,9 @@ image agrees with its own pins instead of assuming it (see
 - clang-format, clang-tidy — same LLVM line, both pinned
 - ruff, mypy, pytest, jsonschema
 - lychee — offline markdown link checker
+- the Docker **client** — for starting sibling containers through a mounted
+  daemon socket; there is no daemon in this image (see
+  [Starting sibling containers](#starting-sibling-containers))
 - git, curl, jq
 
 ## Quick Start
@@ -155,6 +159,76 @@ than to root. The image is set up for it:
 On Docker Desktop (macOS, Windows) ownership is mapped for you, so the flag
 changes nothing; on Linux it is what keeps `build/` writable afterwards.
 
+## Starting Sibling Containers
+
+The image carries the Docker **client** and no daemon, so a test suite that stands
+its own services up — a broker, a database — talks to the daemon of whoever runs
+the image. The containers it starts are siblings of this one: they are the host's,
+they do not stop when this container does, and a port they publish on `127.0.0.1`
+is the *host's* loopback, not this container's.
+
+Mount the socket:
+
+```bash
+docker run --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-host:latest \
+  docker ps
+```
+
+**Mounting that socket is granting root on the host.** Anything that can talk to
+the daemon can start a container with `--privileged` and the host's `/` mounted,
+which is a complete takeover of the machine running the daemon — the container
+boundary buys nothing here. Two consequences worth stating plainly:
+
+- **Never mount it in a job that runs untrusted code.** A workflow triggered by
+  `pull_request` from a fork runs the fork's code; a socket in that job hands the
+  fork the runner. Keep it to jobs whose code is already trusted.
+- **`--group-add` below is not a downgrade.** It restores exactly the access root
+  had; the unprivileged uid is about file ownership in `/workspace`, not about the
+  daemon.
+
+**Permissions on that socket are yours to arrange, not the image's.** Running as
+root — which is what a CI job `container:` does — the mounted socket just works.
+Running as yourself it does not: the socket is `srw-rw----`, so an unprivileged
+uid needs the group that owns it.
+
+Take that gid from *inside* a container, not from the host. On Linux the two
+agree (the host's `docker` group); on Docker Desktop they do not — the socket is
+proxied into the VM and arrives owned by `0:0`, so a gid read on the Mac would be
+the wrong number:
+
+```bash
+IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
+SOCK_GID=$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$IMAGE" \
+             stat -c '%g' /var/run/docker.sock)
+
+docker run --rm \
+  -u $(id -u):$(id -g) \
+  --group-add "$SOCK_GID" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(pwd):/workspace \
+  "$IMAGE" \
+  docker ps
+```
+
+**Paths in a sibling's `-v` are resolved by the daemon, on the host.** They are
+not paths in this container. `docker run -v /workspace/fixtures:/etc/mosquitto`
+from in here asks the *host* for `/workspace/fixtures`, which usually does not
+exist — and the daemon then creates it empty rather than failing, so the service
+starts with defaults and the test fails somewhere else entirely. Pass the host
+path (the one you mounted at `/workspace`), or hand the sibling its data another
+way.
+
+**Reaching a service the sibling publishes.** From inside this container,
+`127.0.0.1` is this container — so a broker the sibling published on the *host's*
+loopback is not there. `host.docker.internal` is the address that reaches it:
+Docker Desktop resolves it with no extra flag, and on Linux it takes
+`--add-host=host.docker.internal:host-gateway` on this container plus a service
+published on `0.0.0.0` rather than on loopback. Whichever the consuming project
+picks, the address it hands its tests has to resolve *in here*.
+
 ## Verifying the Pins
 
 The image records what it was built with as OCI labels, so a project that pins the
@@ -169,7 +243,7 @@ docker inspect --format '{{json .Config.Labels}}' \
 dev.jethome.paho.version, dev.jethome.paho.ref        # tag and the exact commit
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
-dev.jethome.lychee.version
+dev.jethome.lychee.version, …docker-cli.version
 ```
 
 The Python environment carries its own snapshot at `/opt/qa-packages.txt`
@@ -178,9 +252,14 @@ labels do not name.
 
 ## What It Does Not Carry
 
-- **No Docker client or daemon.** A test suite that stands up containers of its
-  own — a broker, a database — cannot do it from inside this image; run those legs
-  on the host, or give the container a socket and a client yourself.
+- **No Docker daemon.** The client is present, but it needs a daemon to talk to:
+  mount the host's socket and the containers it starts are siblings of this one,
+  never children of it ([Starting sibling containers](#starting-sibling-containers)).
+- **No CLI plugins at all** — no `compose`, and no `buildx` either: the client is
+  extracted from Docker's static release, which ships none. A service record
+  spelled as `docker run` needs nothing else; one spelled as a compose file does.
+  `docker build` still works, because the daemon builds — it falls back to the
+  classic builder, so BuildKit-only Dockerfile features are out.
 - **No cross-compilers and no target SDKs.** Firmware targets are the job of the
   other images in [the repository index](../../README.md#current-images).
 - **No TLS in the MQTT client.** Paho is built with `PAHO_WITH_SSL=FALSE`, so
@@ -224,6 +303,17 @@ jobs:
         run: |
           ruff check .
           mypy
+```
+
+A job that also needs the daemon — one that stands a service up as a sibling
+container — asks for the socket through `container.options`, and only on a
+trigger whose code is trusted (see the warning in
+[Starting sibling containers](#starting-sibling-containers)):
+
+```yaml
+    container:
+      image: ghcr.io/jethome-iot/jethome-dev-host:latest
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
 ```
 
 **GitLab CI:**
@@ -296,10 +386,15 @@ Available build arguments (defaults: see the Dockerfile):
 - `LYCHEE_VERSION`, `LYCHEE_SHA256_AMD64`, `LYCHEE_SHA256_ARM64` — the link
   checker's release and its per-architecture checksums; a version bump edits all
   three
+- `DOCKER_VERSION`, `DOCKER_SHA256_AMD64`, `DOCKER_SHA256_ARM64` — the Docker
+  client, taken from Docker's static release and verified the same way. Docker
+  publishes no `.sha256` beside those tarballs, so both sums are literals here and
+  a bump recomputes them
 
 The last layer of the build is a verification step, and it asserts rather than
-lists: it prints every tool's version, requires the two clang tools to report the
-pinned numbers and `jsonschema` to appear at its pinned version in the freeze,
+lists: it prints every tool's version, requires the two clang tools and the Docker
+client to report the pinned numbers and `jsonschema` to appear at its pinned
+version in the freeze,
 then configures, builds and `ctest`s the small CMake project in
 [`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
 links, that CMake took the ccache launcher, and that the Paho library loaded

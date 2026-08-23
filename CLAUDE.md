@@ -122,9 +122,9 @@ before changing anything here.
   default is the sole source of truth and is bumped there — today
   `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION` and `UNITY_VERSION` in
   `images/platformio/Dockerfile`, and every tool pin in `images/host/Dockerfile`
-  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, `LYCHEE_VERSION` and its two
-  checksums). host passes one arg and one only, `UBUNTU_BASE_TAG`, because that is
-  the single value its tag can name.
+  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, and `LYCHEE_VERSION` and
+  `DOCKER_VERSION` with their per-architecture checksums). host passes one arg and
+  one only, `UBUNTU_BASE_TAG`, because that is the single value its tag can name.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
 - `concurrency` cancels superseded **pull-request** runs and groups nothing else:

@@ -2,7 +2,9 @@
 #
 # Builds and tests the POSIX target of a C++ firmware project on the machine it
 # runs on, and carries the QA gates that project runs beside the build: ruff,
-# mypy, pytest, clang-format, clang-tidy and lychee.
+# mypy, pytest, clang-format, clang-tidy and lychee. It also carries the Docker
+# client — no daemon — so a suite that stands its own services up can do it
+# through a socket the caller mounts.
 #
 # Why an image rather than a list of `apt-get install` lines in a CI job: a static
 # analyzer reads the *host's* standard library, not the project's. libc++ (macOS)
@@ -144,14 +146,55 @@ RUN set -eu; \
       *) echo "no lychee release for $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac; \
     art="lychee-${triple}.tar.gz"; \
-    curl -sfL "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${art}" -o "$art"; \
-# The one pipe in this file, and a safe one: echo cannot fail, so the pipeline's
-# status is sha256sum's - which is what dash gives without `set -o pipefail`, an
-# option it does not have.
+    curl -sfL --proto '=https' --proto-redir '=https' \
+      "https://github.com/lycheeverse/lychee/releases/download/lychee-${LYCHEE_VERSION}/${art}" -o "$art"; \
+# A pipe, and a safe one: echo cannot fail, so the pipeline's status is
+# sha256sum's - which is what dash gives without `set -o pipefail`, an option it
+# does not have. That is the only shape a pipe may take in this file; anything
+# whose left-hand side can fail (`curl … | tar -xz`, say) would go green on a
+# failed download. The docker layer below carries the same pipe for the same
+# reason.
     echo "${sha}  ${art}" | sha256sum -c; \
     tar -xz --strip-components=1 -f "$art" "lychee-${triple}/lychee"; \
     install -m 0755 lychee /usr/local/bin/lychee; \
     rm -f "$art" lychee
+
+# ── the docker CLI, client only ───────────────────────────────────────────────
+#
+# A test suite that stands its own services up - a broker, a database - starts
+# them as *sibling* containers through the host's daemon socket, mounted in by
+# whoever runs this image. So the client is all that is needed here, and the
+# daemon would be actively wrong: nothing in this image should be able to run one.
+#
+# Which is why this comes from Docker's static release rather than from apt.
+# Ubuntu 24.04 has no client-only package at all (`docker-cli` does not exist;
+# `docker.io` pulls in the daemon, containerd and runc), and Docker's own apt
+# repository would put a third-party source and a signing key into the image
+# without buying automatic updates - the label below has to name an exact version,
+# so the package would be pinned there too. The static tarball carries the whole
+# engine and exactly one member of it is extracted.
+#
+# Same shape as lychee above: a literal checksum per architecture, verified before
+# anything is unpacked, and a version bump edits all three values by hand.
+ARG DOCKER_VERSION=29.7.2
+ARG DOCKER_SHA256_AMD64=803d433f226db4776e1768fd319fc6c6e4935a456acf84fcc0080818b854bc8f
+ARG DOCKER_SHA256_ARM64=43d143448adf2c2787704e7d7704fd6d62d367a54c5edaef0a3f75509cb0938d
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) arch=x86_64; sha="${DOCKER_SHA256_AMD64}" ;; \
+      arm64) arch=aarch64; sha="${DOCKER_SHA256_ARM64}" ;; \
+      *) echo "no docker static build for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    art="docker-${DOCKER_VERSION}.tgz"; \
+    curl -sfL --proto '=https' --proto-redir '=https' \
+      "https://download.docker.com/linux/static/stable/${arch}/${art}" -o "$art"; \
+    echo "${sha}  ${art}" | sha256sum -c; \
+# One member, named explicitly: the tarball also carries dockerd, containerd and
+# runc, and an unqualified extraction would install a daemon this image has no
+# business carrying.
+    tar -xz --strip-components=1 -f "$art" docker/docker; \
+    install -m 0755 docker /usr/local/bin/docker; \
+    rm -f "$art" docker
 
 # ── running as the invoking user ──────────────────────────────────────────────
 #
@@ -199,7 +242,7 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 # a named test failure rather than as a gate that quietly started meaning
 # something else.
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
       dev.jethome.paho.version="${PAHO_VERSION}" \
       dev.jethome.paho.ref="${PAHO_REF}" \
       dev.jethome.clang-tidy.version="${CLANG_TIDY_VERSION}" \
@@ -208,7 +251,8 @@ LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-de
       dev.jethome.mypy.version="${MYPY_VERSION}" \
       dev.jethome.pytest.version="${PYTEST_VERSION}" \
       dev.jethome.jsonschema.version="${JSONSCHEMA_VERSION}" \
-      dev.jethome.lychee.version="${LYCHEE_VERSION}"
+      dev.jethome.lychee.version="${LYCHEE_VERSION}" \
+      dev.jethome.docker-cli.version="${DOCKER_VERSION}"
 
 WORKDIR /workspace
 
@@ -229,7 +273,10 @@ WORKDIR /workspace
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
-# clang-tidy" is precisely the state this image exists to rule out. clang-tidy is
+# clang-tidy" is precisely the state this image exists to rule out. The docker
+# client asserts for a different reason: its version is a label a consumer tests
+# its own tree against, so a binary disagreeing with the label has to fail here
+# rather than downstream. clang-tidy is
 # then *run*, over smoke.cpp and the compile database the build just wrote,
 # because a wheel whose binary cannot find its own resource directory answers
 # `--version` perfectly and then fails on the first real file - the same "some
@@ -267,6 +314,33 @@ RUN set -eu; \
     mypy --version; \
     pytest --version; \
     lychee --version; \
+    docker --version; \
+# Compared for equality, not for a substring: `*29.7.2*` also accepts 29.7.21.
+# `docker version --format` prints the client's own version before it goes on to
+# ask a daemon that is not here, so its non-zero exit is expected and the value is
+# what matters - and an empty value (a broken binary) fails the comparison, which
+# is the direction this has to fail in.
+    docker_reported="$(docker version --format '{{.Client.Version}}' \
+                        2>/dev/null || true)"; \
+    [ "${docker_reported}" = "${DOCKER_VERSION}" ] \
+      || { echo "docker reports '${docker_reported}', want ${DOCKER_VERSION}" >&2; \
+           exit 1; }; \
+# The promise this image makes is that it cannot run a daemon, and one member of
+# that tarball is all that stands between the two. A bump reaching for a plugin
+# could widen the extraction without anyone noticing, so the absence is asserted
+# rather than assumed - and asserted over the filesystem rather than over PATH.
+# `command -v` would answer for the search path only, while the extraction runs
+# with / as its working directory: a widened `tar` drops `/dockerd`, which is not
+# on PATH and would sail past the very check written to catch it. Every name the
+# tarball carries is listed, not just the daemon. `-xdev` keeps the walk inside
+# the image, and it costs under a second.
+    for forbidden in dockerd containerd runc docker-proxy \
+                     containerd-shim-runc-v2 ctr docker-init; do \
+      found="$(find / -xdev -name "${forbidden}" -print -quit 2>/dev/null || true)"; \
+      [ -z "${found}" ] \
+        || { echo "${found} is in this image - it must carry the client only" >&2; \
+             exit 1; }; \
+    done; \
     clang_format_reported="$(clang-format --version)"; \
     clang_tidy_reported="$(clang-tidy --version)"; \
     echo "${clang_format_reported}"; \
