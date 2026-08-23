@@ -328,11 +328,18 @@ RUN set -eu; \
 # The promise this image makes is that it cannot run a daemon, and one member of
 # that tarball is all that stands between the two. A bump reaching for a plugin
 # could widen the extraction without anyone noticing, so the absence is asserted
-# rather than assumed.
-    for forbidden in dockerd containerd runc docker-proxy; do \
-      command -v "${forbidden}" >/dev/null 2>&1 \
-        && { echo "${forbidden} is in this image - it must carry the client only" >&2; exit 1; }; \
-      true; \
+# rather than assumed - and asserted over the filesystem rather than over PATH.
+# `command -v` would answer for the search path only, while the extraction runs
+# with / as its working directory: a widened `tar` drops `/dockerd`, which is not
+# on PATH and would sail past the very check written to catch it. Every name the
+# tarball carries is listed, not just the daemon. `-xdev` keeps the walk inside
+# the image, and it costs under a second.
+    for forbidden in dockerd containerd runc docker-proxy \
+                     containerd-shim-runc-v2 ctr docker-init; do \
+      found="$(find / -xdev -name "${forbidden}" -print -quit 2>/dev/null || true)"; \
+      [ -z "${found}" ] \
+        || { echo "${found} is in this image - it must carry the client only" >&2; \
+             exit 1; }; \
     done; \
     clang_format_reported="$(clang-format --version)"; \
     clang_tidy_reported="$(clang-tidy --version)"; \
