@@ -104,13 +104,13 @@ RUN export IDF_PATH_FORCE=1 && \
     jq --version && \
     idf_reported="$(idf.py --version)" && \
     echo "${idf_reported}" && \
-    { case "${IDF_BASE_TAG}" in \
-        v[0-9]*.[0-9]*.[0-9]*) \
-          [ "${idf_reported}" = "ESP-IDF ${IDF_BASE_TAG}" ] \
-            || { echo "expected 'ESP-IDF ${IDF_BASE_TAG}', got '${idf_reported}'" >&2; \
-                 exit 1; } ;; \
-        *) echo "IDF_BASE_TAG '${IDF_BASE_TAG}' is not an exact version - label not asserted" ;; \
-      esac; } && \
+    { if [[ "${IDF_BASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then \
+        [ "${idf_reported}" = "ESP-IDF ${IDF_BASE_TAG}" ] \
+          || { echo "expected 'ESP-IDF ${IDF_BASE_TAG}', got '${idf_reported}'" >&2; \
+               exit 1; }; \
+      else \
+        echo "IDF_BASE_TAG '${IDF_BASE_TAG}' is not an exact version - label not asserted"; \
+      fi; } && \
     echo "ESP-IDF installation verified successfully"
 
 CMD ["/bin/bash"]

@@ -295,9 +295,9 @@ docker build -t jethome-dev-esp-matter:local .
 
 ```bash
 docker build \
-  --build-arg BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version> \
-  --build-arg IDF_VERSION=v<version> \
-  --build-arg ESP_MATTER_VERSION=v<version> \
+  --build-arg BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<idf-version> \
+  --build-arg IDF_VERSION=v<idf-version> \
+  --build-arg ESP_MATTER_VERSION=v<matter-version> \
   -t jethome-dev-esp-matter:local .
 ```
 
@@ -310,7 +310,9 @@ Available build arguments:
   exact base its own run produced. It also lets a fork build against its own base
   instead of this repository's.
 - `IDF_VERSION` - the ESP-IDF version that base carries, for the
-  `dev.jethome.idf.version` label. **Pass it whenever `BASE_IMAGE` is not the
+  `dev.jethome.idf.version` label. Same spelling the SDK itself reports, leading
+  `v` included (`v5.5.5`), and distinct from `ESP_MATTER_VERSION` — the two are
+  different versions and the placeholders above keep them apart. **Pass it whenever `BASE_IMAGE` is not the
   default**: it does not follow the base, so a build on `idf-v<other>` would
   otherwise assert the default version and fail — after the SDK install, which is
   the expensive half of the build. It is passed rather than derived because
@@ -326,7 +328,7 @@ To build on an ESP-IDF image you built yourself:
 ./scripts/build.sh esp-idf
 docker build \
   --build-arg BASE_IMAGE=jethome-dev-esp-idf:local \
-  --build-arg IDF_VERSION=v<version> \
+  --build-arg IDF_VERSION=v<idf-version> \
   -t jethome-dev-esp-matter:local images/esp-matter
 ```
 

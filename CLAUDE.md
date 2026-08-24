@@ -366,7 +366,8 @@ Four places, none of them checked automatically:
   `esp-matter` this way pulls its base from GHCR — to build it on an esp-idf you
   just built, pass the base explicitly:
   `docker build --build-arg BASE_IMAGE=jethome-dev-esp-idf:local --build-arg
-  IDF_VERSION=<version> images/esp-matter` — the second arg because the version is
+  IDF_VERSION=v<idf-version> images/esp-matter` (the leading `v`, as the SDK
+  reports it — the assertion compares the two literally) — the second arg because the version is
   asserted against the base, and its default belongs to the *published* base
   rather than to whatever you just built.
   Note that a version-bump branch cannot use the Dockerfile default at all: it
