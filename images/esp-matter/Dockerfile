@@ -161,9 +161,13 @@ RUN source ${IDF_PATH}/export.sh && \
 # future espressif/idf - adding `safe.directory = *` would leave every repository
 # trusted while this file and the README claim otherwise. Today's upstream adds
 # `$IDF_PATH` alone (checked), so this asserts a property rather than guessing one.
-    { git config --system --get-all safe.directory | grep -qFx '*' \
-      && { echo "a blanket safe.directory '*' is set - this image claims path scoping" >&2; \
-           exit 1; } || true; } && \
+# `if`, not `grep && { … } || true`: that form is correct (a brace group is not a
+# subshell, so `exit` leaves the layer rather than being caught by `||`) but reads
+# as though the `|| true` neutralised it. Same behaviour, one obvious reading.
+    { if git config --system --get-all safe.directory | grep -qFx '*'; then \
+        echo "a blanket safe.directory '*' is set - this image claims path scoping" >&2; \
+        exit 1; \
+      fi; } && \
 # Then the effect, from a uid that does not own the tree. setpriv's own failures
 # are separated from git's first: without CAP_SETGID `--clear-groups` fails, and
 # blaming safe.directory for that would send the next reader to the wrong place.
