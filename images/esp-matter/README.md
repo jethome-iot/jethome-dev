@@ -78,6 +78,25 @@ Two things worth knowing before pinning:
   docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
   ```
 
+  The ESP-IDF underneath is readable the same way, on an image already pulled:
+
+  ```bash
+  docker image inspect --format '{{index .Config.Labels "dev.jethome.idf.version"}}' <image>
+  ```
+
+  And from the registry, with nothing pulled at all — the platform key is
+  required, because these tags are multi-arch indexes and `imagetools` then hands
+  the template one image per platform rather than a single one:
+
+  ```bash
+  docker buildx imagetools inspect ghcr.io/jethome-iot/jethome-dev-esp-matter@sha256:<digest> \
+    --format '{{ index (index .Image "linux/amd64").Config.Labels "dev.jethome.idf.version" }}'
+  ```
+
+  That one is checked rather than declared: the build fails unless `idf.py
+  --version` in the finished image reports exactly the labelled version, so it
+  cannot drift from the base the image was actually built on.
+
 ### Pull Image
 
 ```bash
@@ -277,6 +296,7 @@ docker build -t jethome-dev-esp-matter:local .
 ```bash
 docker build \
   --build-arg BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version> \
+  --build-arg IDF_VERSION=v<version> \
   --build-arg ESP_MATTER_VERSION=v<version> \
   -t jethome-dev-esp-matter:local .
 ```
@@ -289,6 +309,14 @@ Available build arguments:
   digest fits: `…/jethome-dev-esp-idf@sha256:…`, which is what CI passes to pin the
   exact base its own run produced. It also lets a fork build against its own base
   instead of this repository's.
+- `IDF_VERSION` - the ESP-IDF version that base carries, for the
+  `dev.jethome.idf.version` label. **Pass it whenever `BASE_IMAGE` is not the
+  default**: it does not follow the base, so a build on `idf-v<other>` would
+  otherwise assert the default version and fail — after the SDK install, which is
+  the expensive half of the build. It is passed rather than derived because
+  `BASE_IMAGE` is a digest and a digest names no version; the build asserts the
+  value against what `idf.py --version` reports, so passing the wrong one fails
+  the build instead of publishing a label that lies.
 - `ESP_MATTER_VERSION` - the Matter specification this image carries, used for the
   image label and the verification line (default: see Dockerfile)
 
@@ -298,6 +326,7 @@ To build on an ESP-IDF image you built yourself:
 ./scripts/build.sh esp-idf
 docker build \
   --build-arg BASE_IMAGE=jethome-dev-esp-idf:local \
+  --build-arg IDF_VERSION=v<version> \
   -t jethome-dev-esp-matter:local images/esp-matter
 ```
 

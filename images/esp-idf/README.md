@@ -59,6 +59,43 @@ tag itself is rewritten on every rebuild.
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
 - **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
 
+### Reading the ESP-IDF version without pulling the image
+
+A consumer that pins by digest — the only pin nothing can move underneath it —
+does not keep the tag, so the tag is the one place it cannot read the version
+from. The image carries it as a label instead, readable straight from the
+registry:
+
+```bash
+docker buildx imagetools inspect \
+  ghcr.io/jethome-iot/jethome-dev-esp-idf@sha256:<digest> \
+  --format '{{ index (index .Image "linux/amd64").Config.Labels "dev.jethome.idf.version" }}'
+```
+
+The platform key is not decoration: these tags are multi-arch indexes, so
+`imagetools` hands the template a map of one image per platform rather than a
+single image, and `.Image.Config` on an index is a template error rather than an
+answer. Both platforms carry the same label; pick either.
+
+Locally, on an image **already pulled** (this one reads the local daemon, not the
+registry):
+
+```bash
+docker image inspect \
+  --format '{{index .Config.Labels "dev.jethome.idf.version"}}' <image>
+```
+
+The label is not a claim the image makes about itself: its build fails unless
+`idf.py --version` inside the image reports exactly that version, so the cheap
+answer above and the expensive one (`docker run … idf.py --version`) cannot
+disagree.
+
+That holds for every published image, since CI builds each one from an exact
+version. A local build given an alias — `IDF_BASE_TAG=latest`, or a minor-line
+tag like `v5.3` — cannot be checked that way (an alias never equals the release
+it resolves to), so the build says the assertion was skipped and the label
+repeats the alias. Publish exact versions; aliases are a local convenience.
+
 ### Pull Image
 
 ```bash
