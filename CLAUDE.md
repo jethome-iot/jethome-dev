@@ -78,7 +78,12 @@ before changing anything here.
   its own tag, so base and advertised version cannot drift apart. It reaches the
   Dockerfile through a single `BASE_IMAGE` build-arg — one argument rather than
   repo + tag, because a digest needs `@` where a tag needs `:`, and because it makes
-  the base repository overridable for a fork or a local build.
+  the base repository overridable for a fork or a local build. A digest names no
+  version, so the ESP-IDF version travels separately as `IDF_VERSION` in `args`,
+  taken from the same `base_tag`; both ESP images label it as
+  `dev.jethome.idf.version` and both assert it against `idf.py --version`, which is
+  what keeps a label a consumer reads from the registry from outliving the base it
+  describes.
 - **`images/versions.json` is the single source of truth for what CI builds.** A
   `prepare` job runs `scripts/check-versions.sh`, then `scripts/versions-matrix.sh
   <image> build|manifest`, and every other job takes its matrix from
@@ -360,7 +365,11 @@ Four places, none of them checked automatically:
   the image afterwards and only applies to a single named image. Building
   `esp-matter` this way pulls its base from GHCR — to build it on an esp-idf you
   just built, pass the base explicitly:
-  `docker build --build-arg BASE_IMAGE=jethome-dev-esp-idf:local images/esp-matter`.
+  `docker build --build-arg BASE_IMAGE=jethome-dev-esp-idf:local --build-arg
+  IDF_VERSION=v<idf-version> images/esp-matter` (the leading `v`, as the SDK
+  reports it — the assertion compares the two literally) — the second arg because the version is
+  asserted against the base, and its default belongs to the *published* base
+  rather than to whatever you just built.
   Note that a version-bump branch cannot use the Dockerfile default at all: it
   names a tag that only exists once the branch lands.
 - There is no local workflow runner. Workflow changes are validated by pushing the

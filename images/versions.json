@@ -81,7 +81,8 @@
           "base_tag": "idf-v5.5.5",
           "upstream_branch": "release/v1.6",
           "args": {
-            "ESP_MATTER_VERSION": "v1.6"
+            "ESP_MATTER_VERSION": "v1.6",
+            "IDF_VERSION": "v5.5.5"
           },
           "pin": {
             "ESP_MATTER_REF": "2c125619610b9a16bb8e92f5ebbf55111638615e"
@@ -93,7 +94,8 @@
           "base_tag": "idf-v5.5.5",
           "upstream_branch": "release/v1.5",
           "args": {
-            "ESP_MATTER_VERSION": "v1.5.1"
+            "ESP_MATTER_VERSION": "v1.5.1",
+            "IDF_VERSION": "v5.5.5"
           },
           "pin": {
             "ESP_MATTER_REF": "44dfffd046f04552a87fa5ff7cf9695be486f177"
@@ -105,7 +107,8 @@
           "base_tag": "idf-v5.4.1",
           "upstream_branch": "release/v1.4.2",
           "args": {
-            "ESP_MATTER_VERSION": "v1.4.2"
+            "ESP_MATTER_VERSION": "v1.4.2",
+            "IDF_VERSION": "v5.4.1"
           },
           "pin": {
             "ESP_MATTER_REF": "2e4e0050c0bf6167f6bfc3351086c4e1126a6893"

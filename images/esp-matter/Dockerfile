@@ -17,12 +17,23 @@ ARG ESP_MATTER_VERSION=v1.6
 # rebuild reproduce the same tree instead of picking up whatever landed upstream.
 # Update with ./scripts/update-matter-ref.sh.
 ARG ESP_MATTER_REF=2c125619610b9a16bb8e92f5ebbf55111638615e
+# The ESP-IDF version underneath, for the label and - the actual reason it is an
+# arg - for the assertion. The label alone would need nothing: Docker inherits a
+# base image's LABELs, so building on this repository's esp-idf already carries
+# `dev.jethome.idf.version` down. What inheritance cannot do is *check* it, and it
+# carries nothing at all when BASE_IMAGE points at some other image. Since CI
+# passes that base as a digest, and a digest names no version, the value comes
+# from images/versions.json instead - taken there from the same `base_tag` the
+# digest was resolved from, with the checker refusing a value the variant's own
+# tag does not name.
+ARG IDF_VERSION=v5.5.5
 
 FROM ${BASE_IMAGE}
 
 # Re-declare build arguments after FROM
 ARG ESP_MATTER_VERSION
 ARG ESP_MATTER_REF
+ARG IDF_VERSION
 
 # Use bash for all RUN commands: the layers below call the bash builtin `source`,
 # which /bin/sh does not have. (This once said "needed for QEMU emulation
@@ -63,7 +74,8 @@ RUN git init esp-matter && \
 
 # Answers "what is actually in here" without starting the container.
 LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
-      org.opencontainers.image.version="${ESP_MATTER_VERSION}"
+      org.opencontainers.image.version="${ESP_MATTER_VERSION}" \
+      dev.jethome.idf.version="${IDF_VERSION}"
 
 # Install ESP-Matter (without host tools to reduce image size)
 # Source ESP-IDF environment first to activate Python venv with pip
@@ -104,7 +116,14 @@ RUN source ${IDF_PATH}/export.sh && \
     { [ -z "${base_esptool}" ] && echo "no base snapshot - esptool not asserted" \
       || grep -qx "${base_esptool}" /opt/esp/python-packages.txt; } && \
     grep -E '^(pytest|esptool)' /opt/esp/python-packages.txt && \
-    idf.py --version && \
+    idf_reported="$(idf.py --version)" && \
+    echo "${idf_reported}" && \
+# The inherited SDK, held to the version this image labels. IDF_VERSION arrives as
+# a build arg because BASE_IMAGE is a digest and says nothing about the version -
+# so without this the label would be the one thing here nobody checks.
+    { [ "${idf_reported}" = "ESP-IDF ${IDF_VERSION}" ] \
+      || { echo "expected 'ESP-IDF ${IDF_VERSION}', got '${idf_reported}'" >&2; \
+           exit 1; }; } && \
     echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"
 
 # Use custom entrypoint to activate environments (like entrypoint.sh in esp-idf image)
