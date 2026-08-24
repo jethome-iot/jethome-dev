@@ -250,6 +250,43 @@ services:
     command: idf.py build
 ```
 
+## Reading the Image's Git Trees as Another User
+
+Passing `-u $(id -u):$(id -g)` keeps build output in a mounted workspace owned by
+you rather than by root. This section covers **git** under that flag, which is what
+the image provisions for; a full firmware build as a non-root uid additionally
+wants a writable `HOME` and cache directories, which this image does not set up
+(the [host image](../host/README.md#running-as-the-invoking-user) does).
+
+- **`$ESP_MATTER_PATH` is marked safe, so git works there.** The checkout belongs
+  to root — the build created it — while the process is your uid, and git refuses
+  that as *dubious ownership* unless told otherwise. The image adds
+  `safe.directory /opt/esp-matter` to its system config, matching what the ESP-IDF
+  base already does for `$IDF_PATH`:
+
+  ```bash
+  docker run --rm -u $(id -u):$(id -g) <image> git -C /opt/esp-matter rev-parse HEAD
+  ```
+
+- **Its submodules are covered only on a new enough git.** Git checks ownership per
+  repository, so each submodule is a separate decision, and connectedhomeip brings
+  dozens of nested ones — far too many to name. The image therefore also adds
+  `safe.directory /opt/esp-matter/*`, which covers subdirectories on git 2.47 and
+  is ignored by the 2.43 the current base ships. Until the base moves, read a
+  submodule with a per-invocation exception, which also keeps the trust decision
+  with whoever makes it:
+
+  ```bash
+  docker run --rm -u $(id -u):$(id -g) <image> \
+    git -c safe.directory=/opt/esp-matter/connectedhomeip/connectedhomeip \
+        -C /opt/esp-matter/connectedhomeip/connectedhomeip rev-parse HEAD
+  ```
+
+Both entries name paths rather than `*`. That is not a provenance check — git
+matches the path, not the owner, so a repository you bind-mount over
+`/opt/esp-matter` would be trusted too. What it does keep is the ownership check
+everywhere else in the container, which `*` would switch off wholesale.
+
 ## Environment Variables
 
 The image sets the following Matter-specific variables:
