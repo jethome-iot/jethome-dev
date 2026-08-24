@@ -72,6 +72,32 @@ RUN git init esp-matter && \
     cd connectedhomeip/connectedhomeip && \
     ./scripts/checkout_submodules.py --platform esp32 linux --shallow
 
+# The checkout above belongs to root, because the build created it, while the
+# documented invocation runs this image as the caller's uid (`-u $(id -u):$(id -g)`,
+# which is how build output in a bind-mounted workspace stays owned by the caller).
+# Git then refuses the repository as "dubious ownership" - inside the container
+# only, on a tree the image built itself. The base image already marks $IDF_PATH
+# the same way, which is why ESP-IDF and ESP-Matter answered differently to the
+# same `git -C … rev-parse HEAD`; this closes that asymmetry.
+#
+# Named paths rather than `*`, as upstream does. Be precise about what that buys:
+# `safe.directory` matches a *path*, with no notion of who owns it, so this does
+# not verify provenance - a caller who bind-mounts their own repository over
+# /opt/esp-matter gets it trusted too. What the choice does buy is that everything
+# *else* in the container stays subject to the ownership check, which `*` would
+# switch off wholesale. The caller is the trust boundary either way.
+#
+# Two entries, because git checks ownership per repository and a submodule is its
+# own: connectedhomeip brings dozens of nested ones, far too many to list. The
+# `/*` suffix covers exactly those, and it is version-dependent - verified as
+# ignored by git 2.43 (which this base ships) and honoured by 2.47, where it
+# matches subdirectories but not the parent, hence both lines. On today's base the
+# second line is inert and harmless; it starts working when the base's git catches
+# up, and until then a reader that needs a submodule passes
+# `-c safe.directory=<path>` for it.
+RUN git config --system --add safe.directory /opt/esp-matter && \
+    git config --system --add safe.directory '/opt/esp-matter/*'
+
 # Answers "what is actually in here" without starting the container.
 LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
       org.opencontainers.image.version="${ESP_MATTER_VERSION}" \
@@ -124,6 +150,46 @@ RUN source ${IDF_PATH}/export.sh && \
     { [ "${idf_reported}" = "ESP-IDF ${IDF_VERSION}" ] \
       || { echo "expected 'ESP-IDF ${IDF_VERSION}', got '${idf_reported}'" >&2; \
            exit 1; }; } && \
+# The safe.directory entries, asserted rather than assumed: the build runs as root,
+# so nothing else here would notice their absence - which is exactly how the gap in
+# this image survived until a consumer running under `-u` hit it. Each grep is
+# fail-closed (an empty `git config` output fails it).
+    git config --system --get-all safe.directory | grep -qx /opt/esp-matter && \
+    git config --system --get-all safe.directory | grep -qFx '/opt/esp-matter/*' && \
+# And the *absence* of a blanket entry, which is the half a positive check cannot
+# see: the base image is overridable and pinned by digest, so a fork's base - or a
+# future espressif/idf - adding `safe.directory = *` would leave every repository
+# trusted while this file and the README claim otherwise. Today's upstream adds
+# `$IDF_PATH` alone (checked), so this asserts a property rather than guessing one.
+# `if`, not `grep && { … } || true`: that form is correct (a brace group is not a
+# subshell, so `exit` leaves the layer rather than being caught by `||`) but reads
+# as though the `|| true` neutralised it. Same behaviour, one obvious reading.
+    { if git config --system --get-all safe.directory | grep -qFx '*'; then \
+        echo "a blanket safe.directory '*' is set - this image claims path scoping" >&2; \
+        exit 1; \
+      fi; } && \
+# Then the effect, from a uid that does not own the tree. setpriv's own failures
+# are separated from git's first: without CAP_SETGID `--clear-groups` fails, and
+# blaming safe.directory for that would send the next reader to the wrong place.
+    { if ! command -v setpriv >/dev/null 2>&1; then \
+        echo "setpriv unavailable - safe.directory asserted by configuration only"; \
+      elif ! setpriv --reuid=65534 --regid=65534 --clear-groups true 2>/dev/null; then \
+        echo "setpriv cannot drop privileges here - asserted by configuration only"; \
+      else \
+        setpriv --reuid=65534 --regid=65534 --clear-groups \
+          git -C /opt/esp-matter rev-parse HEAD >/dev/null \
+          || { echo "git still refuses /opt/esp-matter from an unprivileged uid" >&2; \
+               exit 1; }; \
+# The documented invocation goes through the entrypoint, which runs `set -e` and
+# sources both export.sh scripts before the command - so the command working is
+# not the same as the recipe in the README working. This runs that path, as the
+# same unprivileged uid.
+        setpriv --reuid=65534 --regid=65534 --clear-groups \
+          /opt/esp/esp_matter_entrypoint.sh git -C /opt/esp-matter rev-parse HEAD >/dev/null \
+          || { echo "the documented entrypoint path fails for an unprivileged uid" >&2; \
+               exit 1; }; \
+        echo "safe.directory verified from an unprivileged uid, entrypoint included"; \
+      fi; } && \
     echo "ESP-Matter ${ESP_MATTER_VERSION} installation verified successfully"
 
 # Use custom entrypoint to activate environments (like entrypoint.sh in esp-idf image)

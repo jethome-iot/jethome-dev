@@ -311,6 +311,20 @@ before changing anything here.
   Ubuntu 24.04 ships PEP 668, so there is no system interpreter to install into. Either way call tools by name, never by
   absolute path: `/opt/esp/python_env/idf5.4_py3.12_env/bin/python3` was tried and
   reverted — it pins a version-stamped directory that a version bump invalidates.
+- **A repository the image built is owned by root, and the documented invocation
+  runs as the caller's uid**, so git refuses it as "dubious ownership" — in the
+  container only. Every image whose git matters marks its own trees:
+  `espressif/idf` does `$IDF_PATH`, esp-matter does `/opt/esp-matter`, and host
+  does `'*'`. The scope differs on purpose: the ESP images mark directories they
+  created, while host exists to run against a checkout mounted at a path it cannot
+  know (a job `container:` gets `/__w/<repo>/<repo>`). A path entry is not a
+  provenance check either — git matches the path and not the owner — so what the
+  narrow form buys is that the ownership check still applies everywhere else.
+  Submodules are separate repositories, so esp-matter adds `/opt/esp-matter/*`
+  beside the plain path: that suffix covers subdirectories on git 2.47 and is
+  ignored by the 2.43 its base ships, so until the base moves a submodule wants a
+  per-invocation `-c safe.directory=<path>`. Measure before restating either
+  behaviour; both were established by running the two versions.
 - esp-matter activates both environments at runtime through
   `ENTRYPOINT ["/opt/esp/esp_matter_entrypoint.sh"]`; overriding that entrypoint in
   a derived image silently breaks the "no sourcing needed" promise in its README.
