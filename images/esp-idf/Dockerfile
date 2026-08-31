@@ -47,7 +47,7 @@ RUN export IDF_PATH_FORCE=1 && \
     #
     # pytest-embedded-serial is transitive (via -serial-esp) and named here so it
     # cannot float on its own. esptool is pinned even though ESP-IDF installs it:
-    # pytest-embedded-serial-esp 2.8.1 requires esptool<6,>=5.2 and pip overwrites
+    # pytest-embedded-serial-esp 2.9.3 requires esptool<6,>=5.2 and pip overwrites
     # the SDK's copy, so this image runs esptool 5.3.1 against ESP-IDF 5.5's
     # constraint esptool~=4.12. That divergence is deliberate and verified. Do NOT
     # "fix" it by editing espidf.constraints.*.txt (a cache with a 1-day TTL), by
@@ -56,11 +56,11 @@ RUN export IDF_PATH_FORCE=1 && \
     # It collapses on its own at ESP-IDF 6.0, whose constraints already pair
     # esptool 5.x with pytest-embedded 2.x. Never relax the <6 bound while on 5.5.
     pytest==9.1.1 \
-    pytest-embedded==2.8.1 \
-    pytest-embedded-serial==2.8.1 \
-    pytest-embedded-serial-esp==2.8.1 \
-    pytest-embedded-idf==2.8.1 \
-    pytest-embedded-qemu==2.8.1 \
+    pytest-embedded==2.9.3 \
+    pytest-embedded-serial==2.9.3 \
+    pytest-embedded-serial-esp==2.9.3 \
+    pytest-embedded-idf==2.9.3 \
+    pytest-embedded-qemu==2.9.3 \
     pytest-timeout==2.4.0 \
     pytest-cov==7.1.0 \
     esptool==5.3.1 \
