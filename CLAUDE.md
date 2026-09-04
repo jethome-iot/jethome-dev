@@ -355,9 +355,15 @@ before changing anything here.
   well-known protos is a working binary that fails only later, in someone else's
   pw_rpc build. Deleting rather than not installing is the point: `install.sh` runs
   exactly as upstream wrote it, and the environment comes back by removing
-  `.environment` and re-running `install.sh` — not by re-running `bootstrap.sh`,
-  which has to be sourced and leaves CIPD reconciling against its own record rather
-  than the files on disk. Together 17.9 GB → 10.8 GB unpacked, the install layer
+  `.environment` and re-running `install.sh --no-host-tool` — the flag included,
+  since the default builds chip-tool against a `linux` submodule the checkout no
+  longer takes — and not by re-running `bootstrap.sh`, which has to be sourced and
+  leaves CIPD reconciling against its own record rather than the files on disk. The
+  protoc probe spells its path out of `ESP_MATTER_PATH` and not the tidier
+  `_PW_ACTUAL_ENVIRONMENT_ROOT`, which esp-matter's `export.sh` exports only from
+  v1.5.1 on: this Dockerfile also builds the pinned v1.4.2 variant, and there the
+  tidier form collapses to an absolute path that does not exist — failing one CI
+  leg that no local build of the primary tag reaches. Together 17.9 GB → 10.8 GB unpacked, the install layer
   6.9 GB → ~1.0 GB; verified by building `examples/light` for esp32 in the
   resulting image. Re-measure before restating any of it.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)

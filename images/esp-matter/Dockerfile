@@ -173,11 +173,14 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 #
 # Deleting rather than not installing is deliberate - install.sh then runs exactly
 # as upstream wrote it. To get the full environment back inside a container, remove
-# .environment and re-run ./install.sh, which bootstraps from scratch the way this
-# layer did; re-running bootstrap.sh over the pruned tree is not the same thing (it
-# has to be sourced, and cipd reconciles against its own record of what it deployed
-# rather than against the files on disk). Verified by building examples/light for
-# esp32 in the resulting image, and light.bin still links.
+# .environment and re-run `./install.sh --no-host-tool`, which bootstraps from
+# scratch the way this layer did. The flag is not optional there: install.sh
+# defaults to building chip-tool, which needs third_party/libwebsockets, one of the
+# linux-platform submodules the checkout above no longer takes. Re-running
+# bootstrap.sh over the pruned tree is not the same thing either (it has to be
+# sourced, and cipd reconciles against its own record of what it deployed rather
+# than against the files on disk). Verified by building examples/light for esp32 in
+# the resulting image, and light.bin still links.
 WORKDIR /opt/esp-matter
 RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-cache && \
     source ${IDF_PATH}/export.sh && \
@@ -232,9 +235,13 @@ WORKDIR /workspace
 # protoc is checked by running it, not by printing a version: it needs the
 # well-known protos beside it, and `bin/protoc` surviving while `include/google`
 # did not is a working binary that fails only later, in a pw_rpc build in another
-# repository. It is addressed absolutely because only the package root, not its
-# `bin`, is on PATH under this entrypoint - `_PW_ACTUAL_ENVIRONMENT_ROOT` is what
-# esp-matter's export.sh exports for exactly this kind of reach.
+# repository. It is addressed absolutely, because only the package root and not its
+# `bin` is on PATH under this entrypoint - and spelled out of `ESP_MATTER_PATH`
+# rather than the `_PW_ACTUAL_ENVIRONMENT_ROOT` that would read better: that
+# variable is exported by esp-matter's export.sh only from v1.5.1 on, and this one
+# Dockerfile also builds the pinned v1.4.2 variant, where it is empty. The path
+# would have collapsed to /cipd/packages/pigweed/bin/protoc and failed that leg
+# alone - in CI, on a variant no local build of the primary tag exercises.
 #
 # Both probes are given a scratch HOME and XDG_CACHE_HOME: zap is an Electron
 # application and writes ~4.5 MB of cache on any invocation, `--version` included,
@@ -246,7 +253,7 @@ RUN source ${IDF_PATH}/export.sh && \
     gn --version && \
     XDG_CACHE_HOME=/tmp/probe HOME=/tmp/probe \
       "${ZAP_INSTALL_PATH}/zap-cli" --version && \
-    pw_pkg="${_PW_ACTUAL_ENVIRONMENT_ROOT}/cipd/packages/pigweed" && \
+    pw_pkg="${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip/.environment/cipd/packages/pigweed" && \
     "${pw_pkg}/bin/protoc" --version && \
     printf 'syntax = "proto3";\nimport "google/protobuf/descriptor.proto";\n' \
       > /tmp/probe.proto && \

@@ -52,10 +52,15 @@ this image resolves to ESP-IDF's `openocd-esp32`.
 stay, so a `CONFIG_ENABLE_PW_RPC` build still compiles. To get the full pigweed
 environment back inside a container, remove
 `$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment` and re-run
-`$ESP_MATTER_PATH/install.sh`, which bootstraps it from scratch the way the image
-build does. Re-running `bootstrap.sh` over the pruned tree is not equivalent — it
-has to be sourced, and CIPD reconciles against its own record of what it deployed
-rather than against the files on disk.
+`$ESP_MATTER_PATH/install.sh --no-host-tool`, which bootstraps it from scratch the
+way the image build does. Keep the flag: without it `install.sh` also builds
+chip-tool, which needs `third_party/libwebsockets` — one of the `linux`-platform
+submodules this image does not check out, so it would fail. Building the host tools
+here means checking those submodules out first
+(`./scripts/checkout_submodules.py --platform esp32 linux --shallow` from
+`connectedhomeip/connectedhomeip`). Re-running `bootstrap.sh` over the pruned tree
+is not equivalent either — it has to be sourced, and CIPD reconciles against its
+own record of what it deployed rather than against the files on disk.
 
 ## Quick Start
 
