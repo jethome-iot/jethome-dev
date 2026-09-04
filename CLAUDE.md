@@ -198,8 +198,9 @@ before changing anything here.
   a manifest, 5 for `prepare` — because the manifest matrix carries no such field;
   changing `timeout_minutes` will not move them. All of them are a ceiling on a
   wedged job, not a target.
-- The slowest image is esp-matter, whose legs land at **8–11 minutes on both
-  architectures**, so 60 is a five- to sevenfold margin. Do not tighten it towards
+- The slowest image is esp-matter, whose legs land at **5.5–8 minutes on both
+  architectures** — they were 8–11 before the checkout stopped taking the `linux`
+  submodules — so 60 is a sevenfold margin at least. Do not tighten it towards
   the observed number: the failure is quiet, not loud — the leg is killed, its
   manifest is skipped with it, and the other platform's image sits in GHCR
   unreferenced while the published tags stay on the previous build. Re-measure

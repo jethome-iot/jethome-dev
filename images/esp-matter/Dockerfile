@@ -260,6 +260,15 @@ WORKDIR /workspace
 # would have collapsed to /cipd/packages/pigweed/bin/protoc and failed that leg
 # alone - in CI, on a variant no local build of the primary tag exercises.
 #
+# The compile is preceded by a plain existence test on the .proto it imports, and
+# the two are not redundant. The compile is the behavioural half: it resolves the
+# import the way a pw_rpc build does, through protoc's own implicit `../include`,
+# and it was measured to fail (`File not found`) with include/google moved aside.
+# Passing `--proto_path` at that directory would take the implicit lookup out of the
+# test rather than strengthen it. What the file test adds is the one case the
+# compile cannot see - a future protoc that carries the well-known protos inside
+# itself would compile this happily with the directory gone.
+#
 # Both probes are given a scratch HOME and XDG_CACHE_HOME: zap is an Electron
 # application and writes ~4.5 MB of cache on any invocation, `--version` included,
 # which would otherwise be this layer's whole content.
@@ -280,6 +289,7 @@ RUN source ${IDF_PATH}/export.sh && \
       "${ZAP_INSTALL_PATH}/zap-cli" --version && \
     pw_pkg="${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip/.environment/cipd/packages/pigweed" && \
     "${pw_pkg}/bin/protoc" --version && \
+    [ -f "${pw_pkg}/include/google/protobuf/descriptor.proto" ] && \
     printf 'syntax = "proto3";\nimport "google/protobuf/descriptor.proto";\n' \
       > /tmp/probe.proto && \
     "${pw_pkg}/bin/protoc" --proto_path=/tmp --descriptor_set_out=/dev/null \

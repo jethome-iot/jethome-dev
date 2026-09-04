@@ -38,8 +38,9 @@ built**. For Matter commissioning and testing, use:
   inside this image, whose checkout omits the `linux`-platform submodules
   `scripts/build_python.sh` needs
 
-**ZAP is included**, at `$ZAP_INSTALL_PATH` — the entrypoint exports that variable
-but does not put the directory on `PATH`, so call the binary by path
+**ZAP is included**, at `$ZAP_INSTALL_PATH` — `export.sh`, which the entrypoint
+sources, sets that variable but does not put the directory on `PATH`, so call the
+binary by path
 (`"$ZAP_INSTALL_PATH/zap-cli"`). It is what regenerates the Matter data model.
 Regeneration also wants `clang-format`, which ZAP looks up on `PATH` and does not
 ship; the copy kept for it lives in pigweed's `bin`, which `export.sh` does not add
