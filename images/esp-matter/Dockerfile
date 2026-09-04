@@ -62,6 +62,18 @@ RUN apt-get update && \
 # fetch of an arbitrary SHA, so this stays as cheap as `clone --depth 1` while
 # being reproducible. Submodules need no pinning of their own: their commits are
 # recorded in this tree, so fixing the superproject fixes all of it.
+#
+# `--platform esp32`, without the `linux` upstream documents beside it. That pair
+# is the recipe for a host-tools build - "the modules for platform linux or darwin
+# are required for the host tools building" (esp-matter docs/en/developing.rst) -
+# and this image installs with `--no-host-tool`. Asking for `linux` here checks out
+# eleven submodules nothing in this image can build against (perfetto, ot-br-posix,
+# abseil-cpp, fuzztest, googletest, libdatachannel, libwebsockets, imgui, cirque,
+# ot-commissioner, imx-secure-enclave) and drags in three more that connectedhomeip's
+# own .gitmodules marks `excluded-platforms = esp32` (mbedtls, boringssl, lwip):
+# 1.9 GB of tree and .git against 649 MB for esp32 alone. The platform names are
+# upstream metadata, not a guess - checkout_submodules.py reads them from
+# .gitmodules and validates them against ALL_PLATFORMS.
 WORKDIR /opt
 RUN git init esp-matter && \
     cd esp-matter && \
@@ -70,7 +82,7 @@ RUN git init esp-matter && \
     git checkout FETCH_HEAD && \
     git submodule update --init --depth 1 && \
     cd connectedhomeip/connectedhomeip && \
-    ./scripts/checkout_submodules.py --platform esp32 linux --shallow
+    ./scripts/checkout_submodules.py --platform esp32 --shallow
 
 # The checkout above belongs to root, because the build created it, while the
 # documented invocation runs this image as the caller's uid (`-u $(id -u):$(id -g)`,
@@ -106,9 +118,105 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # Install ESP-Matter (without host tools to reduce image size)
 # Source ESP-IDF environment first to activate Python venv with pip
 # TODO: Consider enabling host tools (chip-tool, chip-cert) in future if needed
+#
+# Two environment variables and a deletion list, because `install.sh` provisions a
+# pigweed environment for *host* development of connectedhomeip and this image only
+# ever cross-compiles for ESP32. Measured on the published idf-v5.4.1-matter-v1.4.2
+# image: this layer was 6.63 GB unpacked, 3.1 GB as a blob - the single layer a
+# `docker pull` stalls on.
+#
+# PW_NO_CIPD_CACHE_DIR: pigweed keeps every CIPD package twice - unpacked under
+# .environment/cipd/packages/ and, as downloaded, in CIPD_CACHE_DIR, which defaults
+# to ~/.cipd-cache-dir (pw_env_setup/py/pw_env_setup/env_setup.py). One RUN writes
+# both, so both land in the layer: 1.4 GB of exact duplicate. The variable is
+# upstream's own off switch, but it is not the guarantee - a renamed variable would
+# fail silently, and what keeps the duplicate out of the image either way is the
+# `rm -rf /root/.cipd-cache-dir` at the end of this RUN. Do not drop it as redundant;
+# the variable only saves the disk during the build. PIP_NO_CACHE_DIR does the same
+# for ~/.cache/pip.
+#
+# XDG_CACHE_HOME points the rest of the build's caches - pip-tools' wheel cache and
+# zap's package cache, 24 MB between them - somewhere this RUN can delete wholesale,
+# instead of leaving them under /root where a literal deletion list would have to
+# name them and would go stale the moment a tool adds another one.
+#
+# The deletions run in this RUN so the bytes never enter the layer at all; a later
+# layer removing them would only add a whiteout. What a firmware build takes out of
+# this environment is `gn`, which the chip component resolves with
+# `find_program(GN_EXECUTABLE gn)`; `ninja` comes from the base's apt package,
+# which sits earlier on PATH than the copies kept here, and the compiler comes from
+# ESP-IDF, since config/esp32/components/chip/CMakeLists.txt passes
+# esp32_cc=${CMAKE_C_COMPILER}, i.e. xtensa-gcc. What goes, and why it is not
+# load-bearing:
+#   cipd/packages/arm       1.2 GB  arm-none-eabi-gcc 12.2, plus a cipd cpython3 that
+#                                   nothing uses - pigweed-venv/pyvenv.cfg records
+#                                   ESP-IDF's own interpreter as the venv's base
+#   packages/pigweed/lib    985 MB  clang runtime and fuchsia sysroots
+#   packages/pigweed/bin    849 MB  clang/llvm/lld (692 MB) and qemu (157 MB)
+#   .../clang_sysroot       418 MB  bionic, for Android host builds
+#   .../share               317 MB  qemu firmware blobs
+#   gn_out                  244 MB  the venv bootstrap's own gn build output
+#   .../include              22 MB  clang and libc++ headers - all but include/google
+#   .../openocd, bin/openocd 8.6 MB an ARM/Fuchsia openocd that cannot reach an ESP32
+#                                   and is shadowed anyway: `command -v openocd` in
+#                                   this image answers ESP-IDF's openocd-esp32
+#   .../libexec, .../distro-info    clang's scan-build helpers, and lsb release data
+#
+# Kept: `gn` and `ninja` at the package root, `bin/ninja`, `bin/protoc` together with
+# `include/google` - 172 KB of well-known protos that protoc's own imports resolve
+# against, so a CONFIG_ENABLE_PW_RPC build whose .proto files `import
+# "google/protobuf/descriptor.proto"` still compiles - plus packages/zap and
+# pigweed-venv.
+#
+# `bin/clang-format` stays with them, at 4.2 MB, because ZAP shells out to a
+# clang-format on PATH when it regenerates C/C++ and carries no copy of its own -
+# and this one is standalone rather than a front end for the toolchain deleted
+# around it (`ldd` names only libc, libm, libpthread, librt and libdl). Note what
+# keeping it does *not* do: `export.sh` puts the package root on PATH and not its
+# `bin`, so nothing here answers to `clang-format` until a caller sources
+# .environment/activate.sh, which prepends both. Keeping the binary is what makes
+# that one step enough.
+#
+# The five paths worth hundreds of MB are asserted before they are removed. `rm -rf`
+# on a path that is not there exits 0, and these are literal paths in a tree upstream
+# rearranges at will: a renamed directory would leave the image quietly hundreds of MB
+# heavier with every check still green. The assertion is a size guard and is scoped
+# like one - libexec, distro-info and openocd are a few MB each and go unasserted,
+# because which CIPD packages land in this prefix varies by platform manifest and a
+# per-file inventory taken on one architecture must not fail the build on the other.
+# The two `find` calls are fail-closed for their own directories - find exits non-zero
+# on a missing starting point - and `find ... -exec rm -rf {} +` rather than
+# `ls | grep | xargs` survives a filename hadolint's SC2010 is warning about.
+#
+# Deleting rather than not installing is deliberate - install.sh then runs exactly
+# as upstream wrote it. To get the full environment back inside a container, remove
+# .environment and re-run `./install.sh --no-host-tool`, which bootstraps from
+# scratch the way this layer did. The flag is not optional there: install.sh
+# defaults to building chip-tool, which needs third_party/libwebsockets, one of the
+# linux-platform submodules the checkout above no longer takes. Re-running
+# bootstrap.sh over the pruned tree is not the same thing either (it has to be
+# sourced, and cipd reconciles against its own record of what it deployed rather
+# than against the files on disk). Verified by building examples/light for esp32 in
+# the resulting image, and light.bin still links.
 WORKDIR /opt/esp-matter
-RUN source ${IDF_PATH}/export.sh && \
-    ./install.sh --no-host-tool
+RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-cache && \
+    source ${IDF_PATH}/export.sh && \
+    ./install.sh --no-host-tool && \
+    CHIP_ENV=/opt/esp-matter/connectedhomeip/connectedhomeip/.environment && \
+    PW_PKG="${CHIP_ENV}/cipd/packages/pigweed" && \
+    for stale in "${CHIP_ENV}/gn_out" "${CHIP_ENV}/cipd/packages/arm" \
+                 "${PW_PKG}/lib" "${PW_PKG}/share" "${PW_PKG}/clang_sysroot"; do \
+      [ -e "${stale}" ] \
+        || { echo "nothing at ${stale} - upstream moved it, and this layer would keep it" >&2; \
+             exit 1; }; \
+      rm -rf "${stale}"; \
+    done && \
+    rm -rf "${PW_PKG}/libexec" "${PW_PKG}/distro-info" "${PW_PKG}/openocd" && \
+    find "${PW_PKG}/bin" -mindepth 1 -maxdepth 1 \
+         ! -name protoc ! -name ninja ! -name clang-format -exec rm -rf {} + && \
+    find "${PW_PKG}/include" -mindepth 1 -maxdepth 1 \
+         ! -name google -exec rm -rf {} + && \
+    rm -rf /root/.cipd-cache-dir /tmp/build-cache
 
 # Set ESP-Matter environment variables
 ENV ESP_MATTER_PATH=/opt/esp-matter
@@ -133,10 +241,60 @@ WORKDIR /workspace
 # "install.sh did not move esptool" without repeating a version number the base
 # already owns. A base with no snapshot (a fork, or an older esp-idf) skips the
 # assertion rather than failing on it.
+#
+# The survivors of the pruning above are asserted here. The deletion list is a set
+# of literal paths that upstream is free to rearrange: a renamed subdirectory would
+# silently take a needed binary with it, and nothing else in this build would
+# notice - a firmware build is the consumer, and it happens in someone else's CI.
+# `gn` and `zap-cli` resolve through PATH and ZAP_INSTALL_PATH, so this checks what
+# a caller actually gets rather than that a file exists somewhere.
+#
+# protoc is checked by running it, not by printing a version: it needs the
+# well-known protos beside it, and `bin/protoc` surviving while `include/google`
+# did not is a working binary that fails only later, in a pw_rpc build in another
+# repository. It is addressed absolutely, because only the package root and not its
+# `bin` is on PATH under this entrypoint - and spelled out of `ESP_MATTER_PATH`
+# rather than the `_PW_ACTUAL_ENVIRONMENT_ROOT` that would read better: that
+# variable is exported by esp-matter's export.sh only from v1.5.1 on, and this one
+# Dockerfile also builds the pinned v1.4.2 variant, where it is empty. The path
+# would have collapsed to /cipd/packages/pigweed/bin/protoc and failed that leg
+# alone - in CI, on a variant no local build of the primary tag exercises.
+#
+# The compile is preceded by a plain existence test on the .proto it imports, and
+# the two are not redundant. The compile is the behavioural half: it resolves the
+# import the way a pw_rpc build does, through protoc's own implicit `../include`,
+# and it was measured to fail (`File not found`) with include/google moved aside.
+# Passing `--proto_path` at that directory would take the implicit lookup out of the
+# test rather than strengthen it. What the file test adds is the one case the
+# compile cannot see - a future protoc that carries the well-known protos inside
+# itself would compile this happily with the directory gone.
+#
+# Both probes are given a scratch HOME and XDG_CACHE_HOME: zap is an Electron
+# application and writes ~4.5 MB of cache on any invocation, `--version` included,
+# which would otherwise be this layer's whole content.
+#
+# ZAP_INSTALL_PATH is checked for emptiness first. It comes out of the same upstream
+# export.sh that turned out not to export _PW_ACTUAL_ENVIRONMENT_ROOT on the v1.4.2
+# pin; every variant published today does set this one, but unset it would collapse
+# to `/zap-cli` and fail a CI leg with "No such file or directory" naming a path in
+# the root - a message that sends the reader looking for the wrong thing.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
     esptool version && \
+    gn --version && \
+    { [ -n "${ZAP_INSTALL_PATH}" ] \
+      || { echo "export.sh did not set ZAP_INSTALL_PATH" >&2; exit 1; }; } && \
+    XDG_CACHE_HOME=/tmp/probe HOME=/tmp/probe \
+      "${ZAP_INSTALL_PATH}/zap-cli" --version && \
+    pw_pkg="${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip/.environment/cipd/packages/pigweed" && \
+    "${pw_pkg}/bin/protoc" --version && \
+    [ -f "${pw_pkg}/include/google/protobuf/descriptor.proto" ] && \
+    printf 'syntax = "proto3";\nimport "google/protobuf/descriptor.proto";\n' \
+      > /tmp/probe.proto && \
+    "${pw_pkg}/bin/protoc" --proto_path=/tmp --descriptor_set_out=/dev/null \
+      /tmp/probe.proto && \
+    rm -rf /tmp/probe /tmp/probe.proto && \
     base_esptool="$(grep -m1 '^esptool==' /opt/esp/python-packages.txt || true)" && \
     pip freeze > /opt/esp/python-packages.txt && \
     { [ -z "${base_esptool}" ] && echo "no base snapshot - esptool not asserted" \

@@ -30,10 +30,56 @@ This image extends the `jethome-dev-esp-idf` image with Espressif's ESP-Matter S
 - libavahi-client-dev
 
 **Note on Host Tools:**
-Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to keep size minimal. For Matter commissioning and testing, use:
+The image installs with `--no-host-tool`, so **chip-tool and chip-cert are not
+built**. For Matter commissioning and testing, use:
 - Separate chip-tool installation on host
 - Matter controllers (Apple Home, Google Home, etc.)
-- Python controller from connectedhomeip
+- connectedhomeip's Python controller, built on the host — it is not buildable
+  inside this image, whose checkout omits the `linux`-platform submodules
+  `scripts/build_python.sh` needs
+
+**ZAP is included**, at `$ZAP_INSTALL_PATH` — `export.sh`, which the entrypoint
+sources, sets that variable but does not put the directory on `PATH`, so call the
+binary by path
+(`"$ZAP_INSTALL_PATH/zap-cli"`). It is what regenerates the Matter data model.
+Regeneration also wants `clang-format`, which ZAP looks up on `PATH` and does not
+ship; the copy kept for it lives in pigweed's `bin`, which `export.sh` does not add
+— source
+`$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment/activate.sh` first,
+and both that directory and the package root are on `PATH`.
+
+`zap-cli` is an Electron application and writes a cache on every invocation,
+`--version` included, so under the documented `-u $(id -u):$(id -g)` it needs a
+`HOME` it can write to — otherwise it aborts inside Node before printing anything:
+
+```bash
+docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -e XDG_CACHE_HOME=/tmp \
+  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest \
+  sh -c '"$ZAP_INSTALL_PATH/zap-cli" --version'
+```
+
+What is *not* here is the rest of the pigweed host environment that
+`install.sh` provisions: clang/LLVM, qemu, the bionic sysroot and
+arm-none-eabi-gcc are removed in the same layer that installs them. An ESP32
+firmware build never opens them — the compiler comes from ESP-IDF — and keeping
+them tripled the size of this image's largest layer. Also gone is pigweed's
+own OpenOCD, which cannot talk to an ESP32 and is shadowed anyway: `openocd` in
+this image resolves to ESP-IDF's `openocd-esp32`.
+
+`gn`, `ninja`, `protoc` and the well-known protos it imports (`include/google`)
+stay, so a `CONFIG_ENABLE_PW_RPC` build still compiles. To get the full pigweed
+environment back inside a container, remove
+`$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment` and re-run
+`$ESP_MATTER_PATH/install.sh --no-host-tool`, which bootstraps it from scratch the
+way the image build does — as root, since the tree belongs to root, and with
+network access, because it re-fetches the CIPD packages. Keep the flag: without it `install.sh` also builds
+chip-tool, which needs `third_party/libwebsockets` — one of the `linux`-platform
+submodules this image does not check out, so it would fail. Building the host tools
+here means checking those submodules out first
+(`./scripts/checkout_submodules.py --platform esp32 linux --shallow` from
+`connectedhomeip/connectedhomeip`). Re-running `bootstrap.sh` over the pruned tree
+is not equivalent either — it has to be sourced, and CIPD reconciles against its
+own record of what it deployed rather than against the files on disk.
 
 ## Quick Start
 
@@ -294,6 +340,10 @@ The image sets the following Matter-specific variables:
 ```bash
 ESP_MATTER_PATH=/opt/esp-matter
 ```
+
+`ZAP_INSTALL_PATH` is set by `export.sh` at container start rather than baked in as
+an `ENV`, so it is present in a shell the entrypoint opened and absent under a
+`--entrypoint` override.
 
 **Inherited from ESP-IDF base image:**
 ```bash

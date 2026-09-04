@@ -198,8 +198,9 @@ before changing anything here.
   a manifest, 5 for `prepare` — because the manifest matrix carries no such field;
   changing `timeout_minutes` will not move them. All of them are a ceiling on a
   wedged job, not a target.
-- The slowest image is esp-matter, whose legs land at **8–11 minutes on both
-  architectures**, so 60 is a five- to sevenfold margin. Do not tighten it towards
+- The slowest image is esp-matter, whose legs land at **5.5–8 minutes on both
+  architectures** — they were 8–11 before the checkout stopped taking the `linux`
+  submodules — so 60 is a sevenfold margin at least. Do not tighten it towards
   the observed number: the failure is quiet, not loud — the leg is killed, its
   manifest is skipped with it, and the other platform's image sits in GHCR
   unreferenced while the published tags stay on the previous build. Re-measure
@@ -213,7 +214,9 @@ before changing anything here.
 - The pool choice for `esp-matter-build` is about disk, not cores: the
   connectedhomeip tree needs ~50 GB, and the 8-core pools measured 372 GB (amd64)
   and 393 GB (arm64) free under Docker against 88 GB on 4-core. Re-measure with
-  `runner-smoke.yml` before moving that job to a smaller pool.
+  `runner-smoke.yml` before moving that job to a smaller pool. The thinning below
+  shrinks the *published* image, not this requirement: what it deletes is still
+  downloaded and unpacked first, inside the same layer.
 - **No build cache**, by measurement: zero `cache-from`/`cache-to` hits across every
   master run, against 21.6 minutes per run spent writing the cache — for esp-idf,
   390 s of export on a 72 s build. `mode=max` wrote about 3.9 GiB per leg into a
@@ -332,6 +335,43 @@ before changing anything here.
   chip-tool/chip-cert) and platformio's `pio run`/`pio test` pre-warm block is
   commented out as a "VERY LONG step". Toolchains are meant to download on first
   build. Do not "optimize" these back on.
+- **esp-matter is thinned twice more, and both cuts are measured.** Its checkout
+  asks `checkout_submodules.py` for `--platform esp32` alone, not the
+  `esp32 linux` upstream documents — `linux` is there for the host tools this image
+  does not build, and it costs eleven submodules plus three that connectedhomeip's
+  own `.gitmodules` marks `excluded-platforms = esp32` (1.9 GB of tree against
+  649 MB). Its install layer then sets `PW_NO_CIPD_CACHE_DIR=1` (pigweed otherwise
+  keeps every CIPD package twice — unpacked, and again in `~/.cipd-cache-dir`, both
+  written by the same `RUN`, 1.4 GB of duplicate) and deletes what a
+  cross-compile never opens: `cipd/packages/arm` (arm-none-eabi-gcc, and a cipd
+  cpython3 the venv does not use — `pigweed-venv/pyvenv.cfg` names ESP-IDF's own
+  interpreter), pigweed's clang/qemu/bionic-sysroot subtrees, its OpenOCD (which
+  cannot reach an ESP32 and is shadowed by ESP-IDF's `openocd-esp32` anyway), and
+  `gn_out`. `gn`, `ninja`, `bin/protoc` **with `include/google` beside it**,
+  `packages/zap`, `bin/clang-format` (ZAP shells out to it and carries no copy) and
+  `pigweed-venv` stay. The deleted paths worth hundreds of MB are asserted to exist
+  before they are removed, because `rm -rf` on a missing path exits 0 and the list is
+  literal paths in a tree upstream rearranges; the verification layer then asserts
+  the survivors — `gn` and `zap-cli` through PATH, and protoc by *compiling* a
+  proto that imports `google/protobuf/descriptor.proto`, since a protoc without its
+  well-known protos is a working binary that fails only later, in someone else's
+  pw_rpc build. Deleting rather than not installing is the point: `install.sh` runs
+  exactly as upstream wrote it, and the environment comes back by removing
+  `.environment` and re-running `install.sh --no-host-tool` — the flag included,
+  since the default builds chip-tool against a `linux` submodule the checkout no
+  longer takes — and not by re-running `bootstrap.sh`, which has to be sourced and
+  leaves CIPD reconciling against its own record rather than the files on disk. The
+  protoc probe spells its path out of `ESP_MATTER_PATH` and not the tidier
+  `_PW_ACTUAL_ENVIRONMENT_ROOT`, which esp-matter's `export.sh` exports only from
+  v1.5.1 on: this Dockerfile also builds the pinned v1.4.2 variant, and there the
+  tidier form collapses to an absolute path that does not exist — failing one CI
+  leg that no local build of the primary tag reaches. The assertion is scoped to the
+  large paths for the same class of reason: which CIPD packages land in that prefix
+  varies by platform manifest, and an inventory taken on one architecture must not
+  fail the build on the other. Together 17.9 GB → 10.8 GB
+  unpacked, the install layer 6.9 GB → ~1.0 GB; verified by building
+  `examples/light` for esp32 in the resulting image. Re-measure before restating any
+  of it.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)
   without the ESP32 cross-toolchains — those arrive on the user's first build. The
   host compiler is present (`build-essential`, and the verification layer runs
