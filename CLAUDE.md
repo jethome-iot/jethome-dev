@@ -347,8 +347,9 @@ before changing anything here.
   interpreter), pigweed's clang/qemu/bionic-sysroot subtrees, its OpenOCD (which
   cannot reach an ESP32 and is shadowed by ESP-IDF's `openocd-esp32` anyway), and
   `gn_out`. `gn`, `ninja`, `bin/protoc` **with `include/google` beside it**,
-  `packages/zap` and `pigweed-venv` stay. Every deleted path is asserted to exist
-  before it is removed, because `rm -rf` on a missing path exits 0 and the list is
+  `packages/zap`, `bin/clang-format` (ZAP shells out to it and carries no copy) and
+  `pigweed-venv` stay. The deleted paths worth hundreds of MB are asserted to exist
+  before they are removed, because `rm -rf` on a missing path exits 0 and the list is
   literal paths in a tree upstream rearranges; the verification layer then asserts
   the survivors — `gn` and `zap-cli` through PATH, and protoc by *compiling* a
   proto that imports `google/protobuf/descriptor.proto`, since a protoc without its
@@ -363,10 +364,10 @@ before changing anything here.
   `_PW_ACTUAL_ENVIRONMENT_ROOT`, which esp-matter's `export.sh` exports only from
   v1.5.1 on: this Dockerfile also builds the pinned v1.4.2 variant, and there the
   tidier form collapses to an absolute path that does not exist — failing one CI
-  leg that no local build of the primary tag reaches. The existence assertion covers
-  the five paths worth hundreds of MB and not the few-MB ones, because which CIPD
-  packages land in that prefix varies by platform manifest and an inventory taken on
-  one architecture must not fail the build on the other. Together 17.9 GB → 10.8 GB
+  leg that no local build of the primary tag reaches. The assertion is scoped to the
+  large paths for the same class of reason: which CIPD packages land in that prefix
+  varies by platform manifest, and an inventory taken on one architecture must not
+  fail the build on the other. Together 17.9 GB → 10.8 GB
   unpacked, the install layer 6.9 GB → ~1.0 GB; verified by building
   `examples/light` for esp32 in the resulting image. Re-measure before restating any
   of it.

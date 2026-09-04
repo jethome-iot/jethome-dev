@@ -41,6 +41,11 @@ built**. For Matter commissioning and testing, use:
 **ZAP is included**, at `$ZAP_INSTALL_PATH` — the entrypoint exports that variable
 but does not put the directory on `PATH`, so call the binary by path
 (`"$ZAP_INSTALL_PATH/zap-cli"`). It is what regenerates the Matter data model.
+Regeneration also wants `clang-format`, which ZAP looks up on `PATH` and does not
+ship; the copy kept for it lives in pigweed's `bin`, which `export.sh` does not add
+— source
+`$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment/activate.sh` first,
+and both that directory and the package root are on `PATH`.
 
 `zap-cli` is an Electron application and writes a cache on every invocation,
 `--version` included, so under the documented `-u $(id -u):$(id -g)` it needs a

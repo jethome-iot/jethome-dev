@@ -168,6 +168,15 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # "google/protobuf/descriptor.proto"` still compiles - plus packages/zap and
 # pigweed-venv.
 #
+# `bin/clang-format` stays with them, at 4.2 MB, because ZAP shells out to a
+# clang-format on PATH when it regenerates C/C++ and carries no copy of its own -
+# and this one is standalone rather than a front end for the toolchain deleted
+# around it (`ldd` names only libc, libm, libpthread, librt and libdl). Note what
+# keeping it does *not* do: `export.sh` puts the package root on PATH and not its
+# `bin`, so nothing here answers to `clang-format` until a caller sources
+# .environment/activate.sh, which prepends both. Keeping the binary is what makes
+# that one step enough.
+#
 # The five paths worth hundreds of MB are asserted before they are removed. `rm -rf`
 # on a path that is not there exits 0, and these are literal paths in a tree upstream
 # rearranges at will: a renamed directory would leave the image quietly hundreds of MB
@@ -204,7 +213,7 @@ RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-c
     done && \
     rm -rf "${PW_PKG}/libexec" "${PW_PKG}/distro-info" "${PW_PKG}/openocd" && \
     find "${PW_PKG}/bin" -mindepth 1 -maxdepth 1 \
-         ! -name protoc ! -name ninja -exec rm -rf {} + && \
+         ! -name protoc ! -name ninja ! -name clang-format -exec rm -rf {} + && \
     find "${PW_PKG}/include" -mindepth 1 -maxdepth 1 \
          ! -name google -exec rm -rf {} + && \
     rm -rf /root/.cipd-cache-dir /tmp/build-cache
@@ -254,11 +263,19 @@ WORKDIR /workspace
 # Both probes are given a scratch HOME and XDG_CACHE_HOME: zap is an Electron
 # application and writes ~4.5 MB of cache on any invocation, `--version` included,
 # which would otherwise be this layer's whole content.
+#
+# ZAP_INSTALL_PATH is checked for emptiness first. It comes out of the same upstream
+# export.sh that turned out not to export _PW_ACTUAL_ENVIRONMENT_ROOT on the v1.4.2
+# pin; every variant published today does set this one, but unset it would collapse
+# to `/zap-cli` and fail a CI leg with "No such file or directory" naming a path in
+# the root - a message that sends the reader looking for the wrong thing.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
     esptool version && \
     gn --version && \
+    { [ -n "${ZAP_INSTALL_PATH}" ] \
+      || { echo "export.sh did not set ZAP_INSTALL_PATH" >&2; exit 1; }; } && \
     XDG_CACHE_HOME=/tmp/probe HOME=/tmp/probe \
       "${ZAP_INSTALL_PATH}/zap-cli" --version && \
     pw_pkg="${ESP_MATTER_PATH}/connectedhomeip/connectedhomeip/.environment/cipd/packages/pigweed" && \
