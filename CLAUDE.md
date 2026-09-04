@@ -213,7 +213,9 @@ before changing anything here.
 - The pool choice for `esp-matter-build` is about disk, not cores: the
   connectedhomeip tree needs ~50 GB, and the 8-core pools measured 372 GB (amd64)
   and 393 GB (arm64) free under Docker against 88 GB on 4-core. Re-measure with
-  `runner-smoke.yml` before moving that job to a smaller pool.
+  `runner-smoke.yml` before moving that job to a smaller pool. The thinning below
+  shrinks the *published* image, not this requirement: what it deletes is still
+  downloaded and unpacked first, inside the same layer.
 - **No build cache**, by measurement: zero `cache-from`/`cache-to` hits across every
   master run, against 21.6 minutes per run spent writing the cache — for esp-idf,
   390 s of export on a 72 s build. `mode=max` wrote about 3.9 GiB per leg into a
@@ -332,6 +334,25 @@ before changing anything here.
   chip-tool/chip-cert) and platformio's `pio run`/`pio test` pre-warm block is
   commented out as a "VERY LONG step". Toolchains are meant to download on first
   build. Do not "optimize" these back on.
+- **esp-matter is thinned twice more, and both cuts are measured.** Its checkout
+  asks `checkout_submodules.py` for `--platform esp32` alone, not the
+  `esp32 linux` upstream documents — `linux` is there for the host tools this image
+  does not build, and it costs eleven submodules plus three that connectedhomeip's
+  own `.gitmodules` marks `excluded-platforms = esp32` (1.9 GB of tree against
+  649 MB). Its install layer then sets `PW_NO_CIPD_CACHE_DIR=1` (pigweed otherwise
+  keeps every CIPD package twice — unpacked, and again in `~/.cipd-cache-dir`, both
+  written by the same `RUN`, 1.4 GB of duplicate) and deletes what a
+  cross-compile never opens: `cipd/packages/arm` (arm-none-eabi-gcc, and a cipd
+  cpython3 the venv does not use — `pigweed-venv/pyvenv.cfg` names ESP-IDF's own
+  interpreter), pigweed's clang/qemu/bionic-sysroot subtrees, and `gn_out`. `gn`,
+  `ninja`, `openocd`, `bin/protoc`, `packages/zap` and `pigweed-venv` stay, and the
+  verification layer asserts `gn` and `zap-cli` because the deletion list is
+  literal paths upstream is free to rearrange. Deleting rather than not installing
+  is the point: `install.sh` runs exactly as upstream wrote it, and a caller who
+  re-runs `bootstrap.sh` in the container gets the packages back. Together
+  17.9 GB → 10.8 GB unpacked, the install layer 6.9 GB → 1.05 GB; verified by
+  building `examples/light` for esp32 in the resulting image. Re-measure before
+  restating any of it.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)
   without the ESP32 cross-toolchains — those arrive on the user's first build. The
   host compiler is present (`build-essential`, and the verification layer runs

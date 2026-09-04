@@ -30,10 +30,23 @@ This image extends the `jethome-dev-esp-idf` image with Espressif's ESP-Matter S
 - libavahi-client-dev
 
 **Note on Host Tools:**
-Host tools (chip-tool, chip-cert, ZAP) are **NOT included** in this image to keep size minimal. For Matter commissioning and testing, use:
+The image installs with `--no-host-tool`, so **chip-tool and chip-cert are not
+built**. For Matter commissioning and testing, use:
 - Separate chip-tool installation on host
 - Matter controllers (Apple Home, Google Home, etc.)
 - Python controller from connectedhomeip
+
+**ZAP is included**, at `$ZAP_INSTALL_PATH` — the entrypoint exports that variable
+but does not put the directory on `PATH`, so call the binary by path
+(`"$ZAP_INSTALL_PATH/zap-cli"`). It is what regenerates the Matter data model.
+
+What is *not* here is the rest of the pigweed host environment that
+`install.sh` provisions: clang/LLVM, qemu, the bionic sysroot and
+arm-none-eabi-gcc are removed in the same layer that installs them. An ESP32
+firmware build never opens them — the compiler comes from ESP-IDF — and keeping
+them tripled the size of this image's largest layer. `gn`, `ninja`, `openocd` and
+`protoc` stay; re-running `connectedhomeip/connectedhomeip/scripts/bootstrap.sh`
+inside the container restores the rest.
 
 ## Quick Start
 
@@ -294,6 +307,10 @@ The image sets the following Matter-specific variables:
 ```bash
 ESP_MATTER_PATH=/opt/esp-matter
 ```
+
+`ZAP_INSTALL_PATH` is set by `export.sh` at container start rather than baked in as
+an `ENV`, so it is present in a shell the entrypoint opened and absent under a
+`--entrypoint` override.
 
 **Inherited from ESP-IDF base image:**
 ```bash

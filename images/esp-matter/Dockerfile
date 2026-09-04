@@ -62,6 +62,18 @@ RUN apt-get update && \
 # fetch of an arbitrary SHA, so this stays as cheap as `clone --depth 1` while
 # being reproducible. Submodules need no pinning of their own: their commits are
 # recorded in this tree, so fixing the superproject fixes all of it.
+#
+# `--platform esp32`, without the `linux` upstream documents beside it. That pair
+# is the recipe for a host-tools build - "the modules for platform linux or darwin
+# are required for the host tools building" (esp-matter docs/en/developing.rst) -
+# and this image installs with `--no-host-tool`. Asking for `linux` here checks out
+# eleven submodules nothing in this image can build against (perfetto, ot-br-posix,
+# abseil-cpp, fuzztest, googletest, libdatachannel, libwebsockets, imgui, cirque,
+# ot-commissioner, imx-secure-enclave) and drags in three more that connectedhomeip's
+# own .gitmodules marks `excluded-platforms = esp32` (mbedtls, boringssl, lwip):
+# 1.9 GB of tree and .git against 649 MB for esp32 alone. The platform names are
+# upstream metadata, not a guess - checkout_submodules.py reads them from
+# .gitmodules and validates them against ALL_PLATFORMS.
 WORKDIR /opt
 RUN git init esp-matter && \
     cd esp-matter && \
@@ -70,7 +82,7 @@ RUN git init esp-matter && \
     git checkout FETCH_HEAD && \
     git submodule update --init --depth 1 && \
     cd connectedhomeip/connectedhomeip && \
-    ./scripts/checkout_submodules.py --platform esp32 linux --shallow
+    ./scripts/checkout_submodules.py --platform esp32 --shallow
 
 # The checkout above belongs to root, because the build created it, while the
 # documented invocation runs this image as the caller's uid (`-u $(id -u):$(id -g)`,
@@ -106,9 +118,54 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # Install ESP-Matter (without host tools to reduce image size)
 # Source ESP-IDF environment first to activate Python venv with pip
 # TODO: Consider enabling host tools (chip-tool, chip-cert) in future if needed
+#
+# Two environment variables and a deletion list, because `install.sh` provisions a
+# pigweed environment for *host* development of connectedhomeip and this image only
+# ever cross-compiles for ESP32. Measured on the published idf-v5.4.1-matter-v1.4.2
+# image: this layer was 6.63 GB unpacked, 3.1 GB as a blob - the single layer a
+# `docker pull` stalls on.
+#
+# PW_NO_CIPD_CACHE_DIR: pigweed keeps every CIPD package twice - unpacked under
+# .environment/cipd/packages/ and, as downloaded, in CIPD_CACHE_DIR, which defaults
+# to ~/.cipd-cache-dir (pw_env_setup/py/pw_env_setup/env_setup.py). One RUN writes
+# both, so both land in the layer: 1.4 GB of exact duplicate. The variable is
+# upstream's own off switch. PIP_NO_CACHE_DIR does the same for ~/.cache/pip.
+#
+# The deletions run in this RUN so the bytes never enter the layer at all; a later
+# layer removing them would only add a whiteout. What a firmware build takes out of
+# this environment is `gn`, which the chip component resolves with
+# `find_program(GN_EXECUTABLE gn)`; `ninja` comes from the base's apt package,
+# which sits earlier on PATH than the copy kept here, and the compiler comes from
+# ESP-IDF, since config/esp32/components/chip/CMakeLists.txt passes
+# esp32_cc=${CMAKE_C_COMPILER}, i.e. xtensa-gcc. What goes, and why it is not
+# load-bearing:
+#   cipd/packages/arm      1.2 GB  arm-none-eabi-gcc 12.2, plus a cipd cpython3 that
+#                                  nothing uses - pigweed-venv/pyvenv.cfg records
+#                                  ESP-IDF's own interpreter as the venv's base
+#   packages/pigweed/lib   985 MB  clang runtime and fuchsia sysroots
+#   packages/pigweed/bin   849 MB  clang/llvm/lld (692 MB) and qemu (157 MB)
+#   .../clang_sysroot      418 MB  bionic, for Android host builds
+#   .../share              317 MB  qemu firmware blobs
+#   gn_out                 244 MB  the venv bootstrap's own gn build output
+# Kept: `gn`, `ninja`, `openocd`, `bin/protoc`, packages/zap and pigweed-venv.
+# `find … -exec rm -rf {} +` rather than `ls | grep | xargs`: same result, but it
+# survives a filename hadolint's SC2010 is warning about and needs no subshell.
+# Deleting rather than not installing is deliberate - install.sh then runs exactly
+# as upstream wrote it, and a caller who re-runs bootstrap.sh inside the container
+# gets the packages back. Verified by building examples/light for esp32 in the
+# resulting image: 5.0 GB of .environment becomes 998 MB and light.bin still links.
 WORKDIR /opt/esp-matter
-RUN source ${IDF_PATH}/export.sh && \
-    ./install.sh --no-host-tool
+RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 && \
+    source ${IDF_PATH}/export.sh && \
+    ./install.sh --no-host-tool && \
+    CHIP_ENV=/opt/esp-matter/connectedhomeip/connectedhomeip/.environment && \
+    PW_PKG="${CHIP_ENV}/cipd/packages/pigweed" && \
+    rm -rf /root/.cipd-cache-dir /root/.cache/pip \
+           "${CHIP_ENV}/gn_out" "${CHIP_ENV}/cipd/packages/arm" \
+           "${PW_PKG}/lib" "${PW_PKG}/include" "${PW_PKG}/share" \
+           "${PW_PKG}/clang_sysroot" "${PW_PKG}/libexec" "${PW_PKG}/distro-info" && \
+    find "${PW_PKG}/bin" -mindepth 1 -maxdepth 1 \
+         ! -name protoc ! -name ninja ! -name openocd -exec rm -rf {} +
 
 # Set ESP-Matter environment variables
 ENV ESP_MATTER_PATH=/opt/esp-matter
@@ -133,10 +190,21 @@ WORKDIR /workspace
 # "install.sh did not move esptool" without repeating a version number the base
 # already owns. A base with no snapshot (a fork, or an older esp-idf) skips the
 # assertion rather than failing on it.
+#
+# The two survivors of the pruning above are asserted the same way. `gn` and
+# `zap-cli` are what the install layer keeps out of a pigweed environment it
+# otherwise gutted, and the deletion list is a set of literal paths that upstream
+# is free to rearrange: a renamed subdirectory would silently take a needed binary
+# with it, and nothing else in this build would notice - a firmware build is the
+# consumer, and it happens in someone else's CI. Resolved through PATH and
+# ZAP_INSTALL_PATH, so this checks what a caller actually gets rather than that a
+# file exists somewhere.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
     esptool version && \
+    gn --version && \
+    "${ZAP_INSTALL_PATH}/zap-cli" --version && \
     base_esptool="$(grep -m1 '^esptool==' /opt/esp/python-packages.txt || true)" && \
     pip freeze > /opt/esp/python-packages.txt && \
     { [ -z "${base_esptool}" ] && echo "no base snapshot - esptool not asserted" \
