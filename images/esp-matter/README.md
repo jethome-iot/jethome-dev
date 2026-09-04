@@ -34,11 +34,23 @@ The image installs with `--no-host-tool`, so **chip-tool and chip-cert are not
 built**. For Matter commissioning and testing, use:
 - Separate chip-tool installation on host
 - Matter controllers (Apple Home, Google Home, etc.)
-- Python controller from connectedhomeip
+- connectedhomeip's Python controller, built on the host — it is not buildable
+  inside this image, whose checkout omits the `linux`-platform submodules
+  `scripts/build_python.sh` needs
 
 **ZAP is included**, at `$ZAP_INSTALL_PATH` — the entrypoint exports that variable
 but does not put the directory on `PATH`, so call the binary by path
 (`"$ZAP_INSTALL_PATH/zap-cli"`). It is what regenerates the Matter data model.
+
+`zap-cli` is an Electron application and writes a cache on every invocation,
+`--version` included, so under the documented `-u $(id -u):$(id -g)` it needs a
+`HOME` it can write to — otherwise it aborts inside Node before printing anything:
+
+```bash
+docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -e XDG_CACHE_HOME=/tmp \
+  ghcr.io/jethome-iot/jethome-dev-esp-matter:latest \
+  sh -c '"$ZAP_INSTALL_PATH/zap-cli" --version'
+```
 
 What is *not* here is the rest of the pigweed host environment that
 `install.sh` provisions: clang/LLVM, qemu, the bionic sysroot and
@@ -53,7 +65,8 @@ stay, so a `CONFIG_ENABLE_PW_RPC` build still compiles. To get the full pigweed
 environment back inside a container, remove
 `$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment` and re-run
 `$ESP_MATTER_PATH/install.sh --no-host-tool`, which bootstraps it from scratch the
-way the image build does. Keep the flag: without it `install.sh` also builds
+way the image build does — as root, since the tree belongs to root, and with
+network access, because it re-fetches the CIPD packages. Keep the flag: without it `install.sh` also builds
 chip-tool, which needs `third_party/libwebsockets` — one of the `linux`-platform
 submodules this image does not check out, so it would fail. Building the host tools
 here means checking those submodules out first

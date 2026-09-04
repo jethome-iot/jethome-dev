@@ -129,7 +129,11 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # .environment/cipd/packages/ and, as downloaded, in CIPD_CACHE_DIR, which defaults
 # to ~/.cipd-cache-dir (pw_env_setup/py/pw_env_setup/env_setup.py). One RUN writes
 # both, so both land in the layer: 1.4 GB of exact duplicate. The variable is
-# upstream's own off switch. PIP_NO_CACHE_DIR does the same for ~/.cache/pip.
+# upstream's own off switch, but it is not the guarantee - a renamed variable would
+# fail silently, and what keeps the duplicate out of the image either way is the
+# `rm -rf /root/.cipd-cache-dir` at the end of this RUN. Do not drop it as redundant;
+# the variable only saves the disk during the build. PIP_NO_CACHE_DIR does the same
+# for ~/.cache/pip.
 #
 # XDG_CACHE_HOME points the rest of the build's caches - pip-tools' wheel cache and
 # zap's package cache, 24 MB between them - somewhere this RUN can delete wholesale,
@@ -164,12 +168,16 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # "google/protobuf/descriptor.proto"` still compiles - plus packages/zap and
 # pigweed-venv.
 #
-# Each path is asserted before it is removed. `rm -rf` on a path that is not there
-# exits 0, and this list is literal paths in a tree upstream rearranges at will: a
-# renamed directory would leave the image quietly hundreds of MB heavier with every
-# check still green. The two `find` calls are fail-closed for the same reason - find
-# exits non-zero on a missing starting point - and `find ... -exec rm -rf {} +` rather
-# than `ls | grep | xargs` survives a filename hadolint's SC2010 is warning about.
+# The five paths worth hundreds of MB are asserted before they are removed. `rm -rf`
+# on a path that is not there exits 0, and these are literal paths in a tree upstream
+# rearranges at will: a renamed directory would leave the image quietly hundreds of MB
+# heavier with every check still green. The assertion is a size guard and is scoped
+# like one - libexec, distro-info and openocd are a few MB each and go unasserted,
+# because which CIPD packages land in this prefix varies by platform manifest and a
+# per-file inventory taken on one architecture must not fail the build on the other.
+# The two `find` calls are fail-closed for their own directories - find exits non-zero
+# on a missing starting point - and `find ... -exec rm -rf {} +` rather than
+# `ls | grep | xargs` survives a filename hadolint's SC2010 is warning about.
 #
 # Deleting rather than not installing is deliberate - install.sh then runs exactly
 # as upstream wrote it. To get the full environment back inside a container, remove
@@ -188,13 +196,13 @@ RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-c
     CHIP_ENV=/opt/esp-matter/connectedhomeip/connectedhomeip/.environment && \
     PW_PKG="${CHIP_ENV}/cipd/packages/pigweed" && \
     for stale in "${CHIP_ENV}/gn_out" "${CHIP_ENV}/cipd/packages/arm" \
-                 "${PW_PKG}/lib" "${PW_PKG}/share" "${PW_PKG}/clang_sysroot" \
-                 "${PW_PKG}/libexec" "${PW_PKG}/distro-info" "${PW_PKG}/openocd"; do \
+                 "${PW_PKG}/lib" "${PW_PKG}/share" "${PW_PKG}/clang_sysroot"; do \
       [ -e "${stale}" ] \
         || { echo "nothing at ${stale} - upstream moved it, and this layer would keep it" >&2; \
              exit 1; }; \
       rm -rf "${stale}"; \
     done && \
+    rm -rf "${PW_PKG}/libexec" "${PW_PKG}/distro-info" "${PW_PKG}/openocd" && \
     find "${PW_PKG}/bin" -mindepth 1 -maxdepth 1 \
          ! -name protoc ! -name ninja -exec rm -rf {} + && \
     find "${PW_PKG}/include" -mindepth 1 -maxdepth 1 \

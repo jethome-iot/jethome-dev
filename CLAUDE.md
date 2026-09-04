@@ -363,9 +363,13 @@ before changing anything here.
   `_PW_ACTUAL_ENVIRONMENT_ROOT`, which esp-matter's `export.sh` exports only from
   v1.5.1 on: this Dockerfile also builds the pinned v1.4.2 variant, and there the
   tidier form collapses to an absolute path that does not exist — failing one CI
-  leg that no local build of the primary tag reaches. Together 17.9 GB → 10.8 GB unpacked, the install layer
-  6.9 GB → ~1.0 GB; verified by building `examples/light` for esp32 in the
-  resulting image. Re-measure before restating any of it.
+  leg that no local build of the primary tag reaches. The existence assertion covers
+  the five paths worth hundreds of MB and not the few-MB ones, because which CIPD
+  packages land in that prefix varies by platform manifest and an inventory taken on
+  one architecture must not fail the build on the other. Together 17.9 GB → 10.8 GB
+  unpacked, the install layer 6.9 GB → ~1.0 GB; verified by building
+  `examples/light` for esp32 in the resulting image. Re-measure before restating any
+  of it.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)
   without the ESP32 cross-toolchains — those arrive on the user's first build. The
   host compiler is present (`build-essential`, and the verification layer runs
