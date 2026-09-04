@@ -131,41 +131,72 @@ LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
 # both, so both land in the layer: 1.4 GB of exact duplicate. The variable is
 # upstream's own off switch. PIP_NO_CACHE_DIR does the same for ~/.cache/pip.
 #
+# XDG_CACHE_HOME points the rest of the build's caches - pip-tools' wheel cache and
+# zap's package cache, 24 MB between them - somewhere this RUN can delete wholesale,
+# instead of leaving them under /root where a literal deletion list would have to
+# name them and would go stale the moment a tool adds another one.
+#
 # The deletions run in this RUN so the bytes never enter the layer at all; a later
 # layer removing them would only add a whiteout. What a firmware build takes out of
 # this environment is `gn`, which the chip component resolves with
 # `find_program(GN_EXECUTABLE gn)`; `ninja` comes from the base's apt package,
-# which sits earlier on PATH than the copy kept here, and the compiler comes from
+# which sits earlier on PATH than the copies kept here, and the compiler comes from
 # ESP-IDF, since config/esp32/components/chip/CMakeLists.txt passes
 # esp32_cc=${CMAKE_C_COMPILER}, i.e. xtensa-gcc. What goes, and why it is not
 # load-bearing:
-#   cipd/packages/arm      1.2 GB  arm-none-eabi-gcc 12.2, plus a cipd cpython3 that
-#                                  nothing uses - pigweed-venv/pyvenv.cfg records
-#                                  ESP-IDF's own interpreter as the venv's base
-#   packages/pigweed/lib   985 MB  clang runtime and fuchsia sysroots
-#   packages/pigweed/bin   849 MB  clang/llvm/lld (692 MB) and qemu (157 MB)
-#   .../clang_sysroot      418 MB  bionic, for Android host builds
-#   .../share              317 MB  qemu firmware blobs
-#   gn_out                 244 MB  the venv bootstrap's own gn build output
-# Kept: `gn`, `ninja`, `openocd`, `bin/protoc`, packages/zap and pigweed-venv.
-# `find … -exec rm -rf {} +` rather than `ls | grep | xargs`: same result, but it
-# survives a filename hadolint's SC2010 is warning about and needs no subshell.
+#   cipd/packages/arm       1.2 GB  arm-none-eabi-gcc 12.2, plus a cipd cpython3 that
+#                                   nothing uses - pigweed-venv/pyvenv.cfg records
+#                                   ESP-IDF's own interpreter as the venv's base
+#   packages/pigweed/lib    985 MB  clang runtime and fuchsia sysroots
+#   packages/pigweed/bin    849 MB  clang/llvm/lld (692 MB) and qemu (157 MB)
+#   .../clang_sysroot       418 MB  bionic, for Android host builds
+#   .../share               317 MB  qemu firmware blobs
+#   gn_out                  244 MB  the venv bootstrap's own gn build output
+#   .../include              22 MB  clang and libc++ headers - all but include/google
+#   .../openocd, bin/openocd 8.6 MB an ARM/Fuchsia openocd that cannot reach an ESP32
+#                                   and is shadowed anyway: `command -v openocd` in
+#                                   this image answers ESP-IDF's openocd-esp32
+#   .../libexec, .../distro-info    clang's scan-build helpers, and lsb release data
+#
+# Kept: `gn` and `ninja` at the package root, `bin/ninja`, `bin/protoc` together with
+# `include/google` - 172 KB of well-known protos that protoc's own imports resolve
+# against, so a CONFIG_ENABLE_PW_RPC build whose .proto files `import
+# "google/protobuf/descriptor.proto"` still compiles - plus packages/zap and
+# pigweed-venv.
+#
+# Each path is asserted before it is removed. `rm -rf` on a path that is not there
+# exits 0, and this list is literal paths in a tree upstream rearranges at will: a
+# renamed directory would leave the image quietly hundreds of MB heavier with every
+# check still green. The two `find` calls are fail-closed for the same reason - find
+# exits non-zero on a missing starting point - and `find ... -exec rm -rf {} +` rather
+# than `ls | grep | xargs` survives a filename hadolint's SC2010 is warning about.
+#
 # Deleting rather than not installing is deliberate - install.sh then runs exactly
-# as upstream wrote it, and a caller who re-runs bootstrap.sh inside the container
-# gets the packages back. Verified by building examples/light for esp32 in the
-# resulting image: 5.0 GB of .environment becomes 998 MB and light.bin still links.
+# as upstream wrote it. To get the full environment back inside a container, remove
+# .environment and re-run ./install.sh, which bootstraps from scratch the way this
+# layer did; re-running bootstrap.sh over the pruned tree is not the same thing (it
+# has to be sourced, and cipd reconciles against its own record of what it deployed
+# rather than against the files on disk). Verified by building examples/light for
+# esp32 in the resulting image, and light.bin still links.
 WORKDIR /opt/esp-matter
-RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 && \
+RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-cache && \
     source ${IDF_PATH}/export.sh && \
     ./install.sh --no-host-tool && \
     CHIP_ENV=/opt/esp-matter/connectedhomeip/connectedhomeip/.environment && \
     PW_PKG="${CHIP_ENV}/cipd/packages/pigweed" && \
-    rm -rf /root/.cipd-cache-dir /root/.cache/pip \
-           "${CHIP_ENV}/gn_out" "${CHIP_ENV}/cipd/packages/arm" \
-           "${PW_PKG}/lib" "${PW_PKG}/include" "${PW_PKG}/share" \
-           "${PW_PKG}/clang_sysroot" "${PW_PKG}/libexec" "${PW_PKG}/distro-info" && \
+    for stale in "${CHIP_ENV}/gn_out" "${CHIP_ENV}/cipd/packages/arm" \
+                 "${PW_PKG}/lib" "${PW_PKG}/share" "${PW_PKG}/clang_sysroot" \
+                 "${PW_PKG}/libexec" "${PW_PKG}/distro-info" "${PW_PKG}/openocd"; do \
+      [ -e "${stale}" ] \
+        || { echo "nothing at ${stale} - upstream moved it, and this layer would keep it" >&2; \
+             exit 1; }; \
+      rm -rf "${stale}"; \
+    done && \
     find "${PW_PKG}/bin" -mindepth 1 -maxdepth 1 \
-         ! -name protoc ! -name ninja ! -name openocd -exec rm -rf {} +
+         ! -name protoc ! -name ninja -exec rm -rf {} + && \
+    find "${PW_PKG}/include" -mindepth 1 -maxdepth 1 \
+         ! -name google -exec rm -rf {} + && \
+    rm -rf /root/.cipd-cache-dir /tmp/build-cache
 
 # Set ESP-Matter environment variables
 ENV ESP_MATTER_PATH=/opt/esp-matter
@@ -191,20 +222,37 @@ WORKDIR /workspace
 # already owns. A base with no snapshot (a fork, or an older esp-idf) skips the
 # assertion rather than failing on it.
 #
-# The two survivors of the pruning above are asserted the same way. `gn` and
-# `zap-cli` are what the install layer keeps out of a pigweed environment it
-# otherwise gutted, and the deletion list is a set of literal paths that upstream
-# is free to rearrange: a renamed subdirectory would silently take a needed binary
-# with it, and nothing else in this build would notice - a firmware build is the
-# consumer, and it happens in someone else's CI. Resolved through PATH and
-# ZAP_INSTALL_PATH, so this checks what a caller actually gets rather than that a
-# file exists somewhere.
+# The survivors of the pruning above are asserted here. The deletion list is a set
+# of literal paths that upstream is free to rearrange: a renamed subdirectory would
+# silently take a needed binary with it, and nothing else in this build would
+# notice - a firmware build is the consumer, and it happens in someone else's CI.
+# `gn` and `zap-cli` resolve through PATH and ZAP_INSTALL_PATH, so this checks what
+# a caller actually gets rather than that a file exists somewhere.
+#
+# protoc is checked by running it, not by printing a version: it needs the
+# well-known protos beside it, and `bin/protoc` surviving while `include/google`
+# did not is a working binary that fails only later, in a pw_rpc build in another
+# repository. It is addressed absolutely because only the package root, not its
+# `bin`, is on PATH under this entrypoint - `_PW_ACTUAL_ENVIRONMENT_ROOT` is what
+# esp-matter's export.sh exports for exactly this kind of reach.
+#
+# Both probes are given a scratch HOME and XDG_CACHE_HOME: zap is an Electron
+# application and writes ~4.5 MB of cache on any invocation, `--version` included,
+# which would otherwise be this layer's whole content.
 RUN source ${IDF_PATH}/export.sh && \
     source ${ESP_MATTER_PATH}/export.sh && \
     python --version && \
     esptool version && \
     gn --version && \
-    "${ZAP_INSTALL_PATH}/zap-cli" --version && \
+    XDG_CACHE_HOME=/tmp/probe HOME=/tmp/probe \
+      "${ZAP_INSTALL_PATH}/zap-cli" --version && \
+    pw_pkg="${_PW_ACTUAL_ENVIRONMENT_ROOT}/cipd/packages/pigweed" && \
+    "${pw_pkg}/bin/protoc" --version && \
+    printf 'syntax = "proto3";\nimport "google/protobuf/descriptor.proto";\n' \
+      > /tmp/probe.proto && \
+    "${pw_pkg}/bin/protoc" --proto_path=/tmp --descriptor_set_out=/dev/null \
+      /tmp/probe.proto && \
+    rm -rf /tmp/probe /tmp/probe.proto && \
     base_esptool="$(grep -m1 '^esptool==' /opt/esp/python-packages.txt || true)" && \
     pip freeze > /opt/esp/python-packages.txt && \
     { [ -z "${base_esptool}" ] && echo "no base snapshot - esptool not asserted" \

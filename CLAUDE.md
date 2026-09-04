@@ -344,15 +344,22 @@ before changing anything here.
   written by the same `RUN`, 1.4 GB of duplicate) and deletes what a
   cross-compile never opens: `cipd/packages/arm` (arm-none-eabi-gcc, and a cipd
   cpython3 the venv does not use — `pigweed-venv/pyvenv.cfg` names ESP-IDF's own
-  interpreter), pigweed's clang/qemu/bionic-sysroot subtrees, and `gn_out`. `gn`,
-  `ninja`, `openocd`, `bin/protoc`, `packages/zap` and `pigweed-venv` stay, and the
-  verification layer asserts `gn` and `zap-cli` because the deletion list is
-  literal paths upstream is free to rearrange. Deleting rather than not installing
-  is the point: `install.sh` runs exactly as upstream wrote it, and a caller who
-  re-runs `bootstrap.sh` in the container gets the packages back. Together
-  17.9 GB → 10.8 GB unpacked, the install layer 6.9 GB → 1.05 GB; verified by
-  building `examples/light` for esp32 in the resulting image. Re-measure before
-  restating any of it.
+  interpreter), pigweed's clang/qemu/bionic-sysroot subtrees, its OpenOCD (which
+  cannot reach an ESP32 and is shadowed by ESP-IDF's `openocd-esp32` anyway), and
+  `gn_out`. `gn`, `ninja`, `bin/protoc` **with `include/google` beside it**,
+  `packages/zap` and `pigweed-venv` stay. Every deleted path is asserted to exist
+  before it is removed, because `rm -rf` on a missing path exits 0 and the list is
+  literal paths in a tree upstream rearranges; the verification layer then asserts
+  the survivors — `gn` and `zap-cli` through PATH, and protoc by *compiling* a
+  proto that imports `google/protobuf/descriptor.proto`, since a protoc without its
+  well-known protos is a working binary that fails only later, in someone else's
+  pw_rpc build. Deleting rather than not installing is the point: `install.sh` runs
+  exactly as upstream wrote it, and the environment comes back by removing
+  `.environment` and re-running `install.sh` — not by re-running `bootstrap.sh`,
+  which has to be sourced and leaves CIPD reconciling against its own record rather
+  than the files on disk. Together 17.9 GB → 10.8 GB unpacked, the install layer
+  6.9 GB → ~1.0 GB; verified by building `examples/light` for esp32 in the
+  resulting image. Re-measure before restating any of it.
 - Consequently platformio ships *platform definitions* (`espressif32`, `native`)
   without the ESP32 cross-toolchains — those arrive on the user's first build. The
   host compiler is present (`build-essential`, and the verification layer runs

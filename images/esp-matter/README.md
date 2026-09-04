@@ -44,9 +44,18 @@ What is *not* here is the rest of the pigweed host environment that
 `install.sh` provisions: clang/LLVM, qemu, the bionic sysroot and
 arm-none-eabi-gcc are removed in the same layer that installs them. An ESP32
 firmware build never opens them — the compiler comes from ESP-IDF — and keeping
-them tripled the size of this image's largest layer. `gn`, `ninja`, `openocd` and
-`protoc` stay; re-running `connectedhomeip/connectedhomeip/scripts/bootstrap.sh`
-inside the container restores the rest.
+them tripled the size of this image's largest layer. Also gone is pigweed's
+own OpenOCD, which cannot talk to an ESP32 and is shadowed anyway: `openocd` in
+this image resolves to ESP-IDF's `openocd-esp32`.
+
+`gn`, `ninja`, `protoc` and the well-known protos it imports (`include/google`)
+stay, so a `CONFIG_ENABLE_PW_RPC` build still compiles. To get the full pigweed
+environment back inside a container, remove
+`$ESP_MATTER_PATH/connectedhomeip/connectedhomeip/.environment` and re-run
+`$ESP_MATTER_PATH/install.sh`, which bootstraps it from scratch the way the image
+build does. Re-running `bootstrap.sh` over the pruned tree is not equivalent — it
+has to be sourced, and CIPD reconciles against its own record of what it deployed
+rather than against the files on disk.
 
 ## Quick Start
 
