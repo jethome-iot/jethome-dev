@@ -223,166 +223,32 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-
-          SHA_SHORT="${GITHUB_SHA:0:7}"
-          # The revision name: this attempt of this run. `run_id` is unique per
-          # GitHub instance and shared by every leg of the matrix; `run_attempt`
-          # is what distinguishes a re-run, which nothing else here does - the
-          # commit is the same and, with no build cache, the image is not.
-          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
-
-          # What the new index will contain: imagetools copies the CHILDREN of
-          # each leg, not the leg index itself, so that is what an existing tag
-          # has to be compared against. Comparing index digests instead would
-          # compare something that also depends on the order of the sources and
-          # on annotations, neither of which says anything about the contents.
-          #
-          # Accumulated in a loop rather than piped into `sort -u`: a `for` loop
-          # that is not the last element of a pipeline runs with its exit status
-          # ignored, so `set -e` and `pipefail` both stop applying inside it and a
-          # failed inspect would silently truncate the set. esp-idf.yml:255 already
-          # carries that lesson ("jq exits 0 on empty input") - this is the same
-          # trap wearing a loop.
-          new_children=""
-          for digest in *; do
-            leg=$(docker buildx imagetools inspect --raw "${IMAGE}@sha256:${digest}") \
-              || { echo "::error::cannot read the leg ${digest} this run just built"; exit 1; }
-            kids=$(printf '%s' "${leg}" | jq -r '.manifests[]?.digest')
-            [ -n "${kids}" ] || { echo "::error::leg ${digest} reports no children"; exit 1; }
-            new_children="${new_children}${kids}"$'\n'
-          done
-          new_children=$(printf '%s' "${new_children}" | sort -u)
-
-          # Write-once guard. It resolves the immutable names only - `latest` and
-          # the version tag are meant to move - and it decides for the GROUP, not
-          # per name.
-          #
-          # Per name was wrong, and the way it fails is worth spelling out:
-          # `imagetools create` writes its tags as sequential PUTs and stops at the
-          # first error, so a partial failure can leave `sha-<7hex>` written and
-          # `<tag>-sha-<7hex>` not. A per-name guard then freezes the one that
-          # exists and publishes the one that does not - leaving two immutable
-          # names of one commit pointing at different images, with a green run.
-          # Before this guard existed, a re-run simply rewrote both, consistently.
-          immutable=("${TAG}-sha-${SHA_SHORT}")
-          if [ "${PRIMARY}" = "true" ]; then
-            immutable+=("sha-${SHA_SHORT}")
-          fi
-
-          free=0
-          same=0
-          differ=0
-          differ_children=""
-          for name in "${immutable[@]}"; do
-            probe_err=$(mktemp)
-            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${probe_err}"); then
-              existing=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
-              if [ "${existing}" = "${new_children}" ]; then
-                same=$((same + 1))
-              else
-                differ=$((differ + 1))
-                # Flattened to one line per name, because the accumulator is read
-                # line by line below. A name that resolves to something without
-                # children - a single manifest rather than an index - is recorded
-                # by a fingerprint of what it actually resolved to, not by a
-                # constant: a constant makes every such state equal to every other,
-                # so two names on two DIFFERENT non-index manifests would count as
-                # one state and the split would be frozen as "consistent".
-                kids_flat="${existing//$'\n'/,}"
-                if [ -z "${kids_flat}" ]; then
-                  kids_flat="not-an-index:$(printf '%s' "${raw}" | sha256sum | cut -c1-16)"
-                fi
-                differ_children="${differ_children}${name}=${kids_flat}"$'\n'
-              fi
-            # Anchored, not a substring search. buildx prints `ERROR: <ref>: not
-            # found` for a missing tag - verified against ghcr.io - while `not
-            # found` on its own also appears in "executable file not found in
-            # \$PATH" from a broken credential helper and in a proxy's "404 page
-            # not found" body. Either would be read as "the name is free", and the
-            # guard would then overwrite an immutable name. A missing *package*
-            # does not even say "not found": ghcr.io answers 403.
-            elif grep -qE ': not found$|MANIFEST_UNKNOWN' "${probe_err}"; then
-              free=$((free + 1))
-            else
-              # Every other answer, 403 included. A 403 here cannot mean "the
-              # package does not exist": the legs of this run created it by pushing
-              # by digest, and the `new_children` loop above already read it back
-              # with this same token and scope. What a 403 does mean is that this
-              # particular read failed - and a read that failed is not a name that
-              # is free. Treating it as free was tried and reverted: the probe and
-              # the create are two separate authorizations seconds apart, so a
-              # transient 403 on the first would let the second quietly overwrite
-              # an immutable name, with a green run and nothing in the log.
-              echo "::error::cannot tell whether ${name} exists: $(cat "${probe_err}")"
-              rm -f "${probe_err}"
-              exit 1
-            fi
-            rm -f "${probe_err}"
-          done
-
-          total="${#immutable[@]}"
-          skip_immutable=false
-          # Counting the names that differ is not enough: they can differ from this
-          # run AND from each other, which is what a create that failed part-way
-          # through a rewrite leaves behind. Treating that as "consistently held by
-          # an earlier build" would freeze exactly the split state this guard is
-          # here to prevent.
-          # `grep -c ''` counts every line, `grep -c .` skips empty ones - and an
-          # empty line is exactly what a name with no children would contribute,
-          # making a split state look like agreement.
-          differ_distinct=$(printf '%s' "${differ_children}" | sed 's/^[^=]*=//' | sort -u | grep -c '' || true)
-          if [ "${differ}" -eq "${total}" ] && [ "${differ_distinct}" -le 1 ]; then
-            # Every immutable name is held by an earlier build of this commit, all
-            # of them consistently. That is the ordinary rebuild: keep what is
-            # published rather than moving names that promise not to move. The cost
-            # - the sha names describe the earlier build, while `latest` and the
-            # version tag describe this one - is stated here rather than hidden.
-            skip_immutable=true
-            echo "::warning::${TAG}-sha-${SHA_SHORT} and friends already name an earlier build of ${SHA_SHORT}; they stay put"
-            printf '%s' "${differ_children}" | sed 's/^/  /'
-          elif [ "${free}" -eq "${total}" ] || [ "${same}" -eq "${total}" ]; then
-            : # nothing published yet, or an identical re-push: write them
-          else
-            # Mixed: some written, some not, or holding different images. That is
-            # already an inconsistent registry - almost always a `imagetools create`
-            # that failed part-way - so there is nothing worth preserving. Rewrite
-            # them all, which is what this job did before the guard existed.
-            echo "::warning::the immutable names of ${SHA_SHORT} do not agree (${free} free, ${same} identical, ${differ} different across ${differ_distinct} distinct builds) - republishing all of them"
-          fi
-
           # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
-          # Every variant gets `<version>-sha-<short-commit>` and the revision name.
-          # The version tag is passed LAST: GHCR shows the last one as the package's
-          # primary tag.
-          names=()
-          if [ "${PRIMARY}" = "true" ]; then
-            names+=("latest" "sha-${SHA_SHORT}")
-          fi
-          names+=("${TAG}-sha-${SHA_SHORT}" "${TAG}-${STAMP}" "${TAG}")
-
-          # The verify step below needs to know whether names were deliberately
-          # left behind - otherwise it has to treat every mismatch as "probably
-          # fine", which is exactly the case it exists to catch.
-          echo "GUARD_SKIPPED_IMMUTABLE=${skip_immutable}" >> "${GITHUB_ENV}"
-
+          # Every variant gets `<version>-sha-<short-commit>`: the version tag itself is
+          # rewritten on every push, so without it a consumer pinned to a
+          # non-primary variant has no name for the build they were running.
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          # And the revision name: one build, never moved. `<version>-sha-<commit>`
+          # cannot do that job, because a rebuild of the same commit rewrites it -
+          # the commit is identical and, with no build cache, the image is not.
+          # `run_id` is unique per GitHub instance and shared by every leg of the
+          # matrix; `run_attempt` is what a re-run changes.
+          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           tags=()
-          for name in "${names[@]}"; do
-            if [ "${skip_immutable}" = "true" ]; then
-              case " ${immutable[*]} " in
-              *" ${name} "*) continue ;;
-              esac
-            fi
-            tags+=(-t "${IMAGE}:${name}")
-          done
+          if [ "${PRIMARY}" = "true" ]; then
+            tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
+          fi
+          tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
+          tags+=(-t "${IMAGE}:${TAG}-${STAMP}")
+          tags+=(-t "${IMAGE}:${TAG}")
 
-          # The set is asserted rather than trusted: this catches a reordering, a
-          # changed short-SHA length, and a name silently dropped by the loop above.
+          # Asserted rather than trusted, and locally - no registry round-trip.
+          # Catches a reordering, a changed short-SHA length, and a name dropped by
+          # an edit to the block above.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
-          skipped=0
-          [ "${skip_immutable}" = "true" ] && skipped="${#immutable[@]}"
-          if [ "$(( ${#tags[@]} / 2 ))" -ne "$(( expected - skipped ))" ]; then
-            echo "::error::built $(( ${#tags[@]} / 2 )) names, expected $(( expected - skipped ))"
+          if [ "$(( ${#tags[@]} / 2 ))" -ne "${expected}" ]; then
+            echo "::error::built $(( ${#tags[@]} / 2 )) names, expected ${expected}"
             exit 1
           fi
           if [ "${tags[-1]}" != "${IMAGE}:${TAG}" ]; then
@@ -391,105 +257,3 @@ jobs:
           fi
 
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
-
-      # Not a diagnostic for the migration but a permanent check: the set of names
-      # this job publishes is derived in shell, and nothing else compares that
-      # derivation against what the registry ends up holding. It runs after the
-      # push because the registry is the only trustworthy answer.
-      - name: ✅ Verify the published names
-        env:
-          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}
-          TAG: ${{ matrix.tag }}
-          PRIMARY: ${{ matrix.primary }}
-        run: |
-          set -euo pipefail
-          SHA_SHORT="${GITHUB_SHA:0:7}"
-          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
-
-          # A read that fails is not a name that is missing, and GHCR promises no
-          # read-after-write, so a name written seconds ago can briefly read as
-          # absent. Both are handled here, for every lookup this step makes - the
-          # anchor included, which used to be a one-shot read that could fail a
-          # correct publication on a momentary miss.
-          resolve() {
-            local name="$1" err out attempt
-            err=$(mktemp)
-            for attempt in 1 2 3; do
-              if out=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
-                printf '%s' "${out}" | jq -r '.manifests[]?.digest' | sort -u
-                rm -f "${err}"
-                return 0
-              fi
-              grep -qE ': not found$|MANIFEST_UNKNOWN' "${err}" || break
-              [ "${attempt}" -eq 3 ] || sleep 3
-            done
-            if grep -qE ': not found$|MANIFEST_UNKNOWN' "${err}"; then
-              rm -f "${err}"
-              return 1
-            fi
-            cat "${err}" >&2
-            rm -f "${err}"
-            return 2
-          }
-
-          # The anchor: the revision name belongs to this attempt alone, so no
-          # other run can have moved it. Everything else is compared against it.
-          if ! anchor=$(resolve "${TAG}-${STAMP}"); then
-            echo "::error::${TAG}-${STAMP} does not resolve after publication - this run did not publish what it thinks"
-            exit 1
-          fi
-          if [ -z "${anchor}" ]; then
-            echo "::error::${TAG}-${STAMP} resolves to an index with no children"
-            exit 1
-          fi
-
-          # Mutable names are checked but never fail the job: `concurrency` gives
-          # every master push its own group on purpose, so a second run can move
-          # `latest` and the version tag between the push above and this check.
-          # That is a supported race, not a defect - CLAUDE.md keeps it deliberately.
-          immutable=("${TAG}-sha-${SHA_SHORT}")
-          mutable=("${TAG}")
-          if [ "${PRIMARY}" = "true" ]; then
-            immutable+=("sha-${SHA_SHORT}")
-            mutable+=("latest")
-          fi
-
-          fail=0
-
-          for name in "${immutable[@]}"; do
-            if got=$(resolve "${name}"); then
-              if [ "${got}" = "${anchor}" ]; then
-                echo "${name}: matches this run"
-              elif [ "${GUARD_SKIPPED_IMMUTABLE:-false}" = "true" ]; then
-                echo "${name}: left on an earlier build of this commit, as the guard decided"
-              else
-                # The guard published this name in this run, so a mismatch is not
-                # explainable - it means the set of names this job derives and the
-                # set the registry holds have come apart.
-                echo "::error::${name} does not match this run and the guard did not skip it"
-                fail=1
-              fi
-            elif [ "$?" -eq 1 ]; then
-              echo "::error::${name} does not exist after publication"
-              fail=1
-            else
-              echo "::warning::could not read ${name} - registry unreachable, so this run is unverified rather than wrong"
-            fi
-          done
-          for name in "${mutable[@]}"; do
-            if got=$(resolve "${name}"); then
-              if [ "${got}" = "${anchor}" ]; then
-                echo "${name}: matches this run"
-              else
-                echo "${name}: moved on by a later run - expected under concurrent pushes"
-              fi
-            elif [ "$?" -eq 1 ]; then
-              # Mutable names never fail this job - CLAUDE.md says so, and a tag
-              # that a later run took over can also be absent for a moment, since
-              # GHCR does not promise read-after-write.
-              echo "::warning::${name} does not resolve right now - a concurrent run may be mid-publish"
-            else
-              echo "::warning::could not read ${name} - registry unreachable, so this run is unverified rather than wrong"
-            fi
-          done
-          exit "${fail}"

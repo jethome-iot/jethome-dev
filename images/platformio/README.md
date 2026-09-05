@@ -37,20 +37,21 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 |----------|---------|-------|
 | **Latest** | `latest` | Newest build. Moves on every rebuild |
 | **Version** | `pio-v<version>` | Newest build of that PlatformIO version. Also moves on every rebuild |
-| **Revision** | `pio-v<version>-r<run-id>.<attempt>` | One build. Never moves — a rebuild of the same commit gets a new one |
-| **Commit** | `pio-v<version>-sha-<short-commit>` | The build made from that commit, first 7 characters of the SHA |
+| **Revision** | `pio-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Commit** | `pio-v<version>-sha-<short-commit>` | The **latest** build of that commit — rewritten if the commit is rebuilt |
 | **Commit, primary** | `sha-<short-commit>` | The same, under the name every image of this repo shares |
 
-**Reading a tag:** a suffix of `-r<digits>.<digits>` or `-sha-<7 hex>` means the
-name is written once and does not move; `latest` and `pio-v<version>` move on
-every rebuild.
+**Reading a tag:** `-r<digits>.<digits>` names one build and is never reused, so
+it is the name to pin when you need the exact image you were running. The others
+all move: `latest` and `pio-v<version>` on every rebuild, and `-sha-<7 hex>`
+whenever that same commit is rebuilt.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`pio-v<version>`) for the newest build of a version,
   or a revision tag (`pio-v<version>-r<run-id>.<attempt>`) to stay on exactly one
-- **Rolling back**: Use a revision tag — the version tag itself is rewritten, so it
-  cannot name the build you were running
+- **Rolling back**: Use a revision tag. Both the version tag and the commit tag are
+  rewritten by a rebuild, so neither can name the build you were running
 - **Debugging**: Use commit tags to reproduce the build made from a given commit
 
 None of these names is guaranteed to exist forever: nothing in the registry is
