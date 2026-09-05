@@ -22,6 +22,15 @@
 #   6. Every base_tag exists among the base image's tags, and an image with a base
 #      declares base_arg. This is what stops a half-done bump from publishing an
 #      idf-v<old> tag built on v<new>.
+#   7. Every tag is a legal Docker reference and short enough to carry the
+#      suffixes the manifest jobs append. A tag with `+` or `/` in it, or one 152
+#      characters long, is accepted here today and fails later, inside the push.
+#   8. No tag is shaped like a name the manifest jobs publish by themselves -
+#      `latest`, a bare `sha-<7hex>`, or `<tag>-sha-<7hex>`. The bare pair is the
+#      dangerous one: `sha-1234567` is nobody's prefix, so nothing else here sees
+#      it, and it is overwritten the day a commit's short SHA is 1234567.
+#   9. The published names of an image are unique across its variants - the
+#      backstop behind check 8, for whatever a future derived name adds.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,6 +79,70 @@ for image in ${images}; do
     unique=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag] | unique | length' "${VERSIONS}")
     [ "${total}" -eq "${unique}" ] || problem "${image}: duplicate tags among its variants"
 
+    # A tag is a Docker reference: [a-zA-Z0-9_] first, then [a-zA-Z0-9._-], 128 max.
+    # The cap here is 100, not 128, so a tag always has room for the suffixes the
+    # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
+    # Without this check a `+` or a `/` reaches the artifact name and
+    # `docker buildx imagetools create`, and fails there instead. A newline cannot
+    # be caught in this loop at all - the reader already split on it - which is what
+    # the data-level check just above the loop is for.
+    # Two things that can only be seen in the data, before any loop reads it.
+    #
+    # A control character, because `jq -r` emits one line per tag and `read` splits
+    # on newlines: a tag containing one arrives as two values that are each legal on
+    # their own, and the uniqueness check counts a single tag either way.
+    #
+    # A tag that is not a string, because `test` refuses one - and under `set -e`
+    # that ends the whole run at this line, with no image name and no field name in
+    # the log. `"tag": 24.04` written without quotes is the way to get there. The
+    # type guard keeps the message a `problem` like any other, so the rest of the
+    # file is still checked.
+    nonstring=$(jq -r --arg i "${image}" '[.images[$i].builds[] | select((.tag | type) != "string")] | length' "${VERSIONS}")
+    [ "${nonstring}" -eq 0 ] || problem "${image}: a variant's tag is not a string - quote it in ${VERSIONS}"
+    # Every value that reaches a line-based reader, not just the tag: an `args`
+    # value carrying a newline splits into a second `--build-arg` in the matrix
+    # (`IDF_BASE_TAG=v5.4.1` plus a fabricated `EXTRA=1`), and the loop below drops
+    # that second line through its own emptiness guard, so nothing checks it.
+    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[] | (.tag, ((.args // {}) | .[]), ((.pin // {}) | .[])) | select(type == "string" and test("[[:cntrl:]]"))] | length' "${VERSIONS}")
+    [ "${ctrl}" -eq 0 ] || problem "${image}: a tag, arg or pin value contains a control character - the line-based checks below cannot see it"
+
+    # `IFS= read` rather than plain `read`: the latter strips leading and trailing
+    # whitespace, so ` ubuntu-24.04` would satisfy the pattern below while
+    # versions-matrix.sh passes the space through to the manifest job, which then
+    # fails on an illegal reference after every build has already run.
+    # No `[ -n ... ] || continue` here, deliberately: the empty string is the one
+    # value guaranteed to be an illegal reference, and skipping it would exempt it
+    # from the only check that says so. It reaches `imagetools create -t <image>:`
+    # otherwise, after every build in the matrix has run.
+    while IFS= read -r variant_tag; do
+        if ! printf '%s' "${variant_tag}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$'; then
+            problem "${image}: tag '${variant_tag}' is not a legal Docker reference of at most 100 characters"
+        fi
+        # The manifest jobs derive `<tag>-sha-<7hex>` from this value, and publish
+        # `latest` and a bare `sha-<7hex>` for the primary variant. A hand-written
+        # tag of any of those three shapes cannot be told apart from a derived one -
+        # and the bare forms are the dangerous pair, since neither the prefix rule
+        # nor the derived-suffix check below sees them: `sha-1234567` is nobody's
+        # prefix, yet it is overwritten the day a commit's short SHA is 1234567.
+        case "${variant_tag}" in
+        latest) problem "${image}: tag 'latest' is the name the primary variant publishes - it cannot also be a variant's own tag" ;;
+        sha-???????)
+            case "${variant_tag#sha-}" in
+            *[!0-9a-f]*) ;;
+            *) problem "${image}: tag '${variant_tag}' is the shape the primary variant publishes for a commit - it would be overwritten by the build of commit ${variant_tag#sha-}" ;;
+            esac
+            ;;
+        esac
+        case "${variant_tag}" in
+        *-sha-???????)
+            case "${variant_tag##*-sha-}" in
+            *[!0-9a-f]*) ;;
+            *) problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-sha-<7hex>" ;;
+            esac
+            ;;
+        esac
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+
     platforms=$(jq -r --arg i "${image}" '.images[$i].platforms | length' "${VERSIONS}")
     [ "${platforms}" -gt 0 ] || problem "${image}: no platforms declared"
     empty_runners=$(jq -r --arg i "${image}" '[.images[$i].platforms[] | select(. == "" or . == null)] | length' "${VERSIONS}")
@@ -115,17 +188,31 @@ for image in ${images}; do
     # it can, and the result is a GHCR tag whose name contradicts its contents.
     # Requiring every version that went into the build to appear in the tag is what
     # restores that link.
+    # Matched on a token boundary, not as a bare substring: as a substring a value
+    # satisfied any tag that merely contained it, so a variant built with `v5.5`
+    # passed while its tag claimed `idf-v5.5.5` - the tag naming a version the
+    # build never used.
+    # The value is escaped first - every version here contains dots, and an
+    # unescaped `.` is a regex metacharacter that matches `24X04` as happily as
+    # `24.04`. The boundary class is `[-_]` and deliberately excludes `.`: with a
+    # dot in it, `idf-v5.5.5` would satisfy a claim of `v5.5`, which is the hole
+    # this replaces.
     while IFS='|' read -r variant_tag value; do
         [ -n "${value}" ] || continue
-        case "${variant_tag}" in
-        *"${value}"*) ;;
-        *) problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag" ;;
-        esac
+        escaped=$(printf '%s' "${value}" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
+        printf '%s' "${variant_tag}" | grep -Eq "(^v?|[-_]v?)${escaped}($|[-_])" \
+            || problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag"
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | (($b.args // {}) | to_entries[] | "\($b.tag)|\(.value)"), (if ($b.base_tag // "") != "" then "\($b.tag)|\($b.base_tag)" else empty end)' "${VERSIONS}")
 
     # Digests are downloaded with `digest-<image>-<tag>-*`, so one tag being a
     # prefix of another would pull in the other variant's platforms and publish a
     # mixed manifest. Uniqueness alone does not rule that out.
+    #
+    # Note what this rule is about, because it reads like a constraint on published
+    # names and is not one: both this check and that glob read `builds[].tag`, the
+    # matrix key. The names the manifest jobs publish are derived from it at build
+    # time and never appear in this file, so adding a derived name costs nothing
+    # here.
     while read -r a; do
         while read -r b; do
             [ "${a}" != "${b}" ] || continue
@@ -134,6 +221,30 @@ for image in ${images}; do
             esac
         done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
     done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+
+    # The names actually published must be unique across variants - `tag`
+    # uniqueness does not imply it, because every variant publishes more names than
+    # its tag. This is the backstop behind the shape rules above rather than a
+    # first line of defence: those reject the shapes a collision needs, and this
+    # catches whatever a future derived name adds that they do not know about. The
+    # placeholders stand in for values only CI knows, and are constant on purpose -
+    # a collision must not depend on which commit happens to build.
+    # An array rather than a multi-line string literal: the literal's continuation
+    # lines have to start at column 0 to avoid prefixing every name with the
+    # script's own indentation, which makes correctness depend on something any
+    # reformatting would quietly break.
+    published=()
+    while IFS='|' read -r variant_tag is_primary; do
+        [ -n "${variant_tag}" ] || continue
+        published+=("${variant_tag}" "${variant_tag}-sha-0000000")
+        if [ "${is_primary}" = "true" ]; then
+            published+=(latest sha-0000000)
+        fi
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\(.primary // false)"' "${VERSIONS}")
+    while read -r dupe; do
+        [ -n "${dupe}" ] || continue
+        problem "${image}: two variants would publish the same name '${dupe}'"
+    done < <(printf '%s\n' "${published[@]}" | sort | uniq -d)
 
     # Every variant passes the same set of build args. An empty or partial set
     # would silently fall back to the Dockerfile's defaults and publish that under

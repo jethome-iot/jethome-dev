@@ -142,6 +142,11 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: ${{ matrix.build_args }}
+          # Pinned rather than left to the action's default, which differs between
+          # public and private repositories and has changed across majors. mode=max
+          # records build-args and the event payload into a public attestation - see
+          # CLAUDE.md before adding an ARG that carries anything sensitive.
+          provenance: mode=max
 
       # Matrix legs cannot each set a job output - they would overwrite one
       # another - so the digests travel as one empty file per leg, named after the
@@ -160,7 +165,7 @@ jobs:
           name: digest-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   platformio-manifest:
     name: platformio-manifest (${{ matrix.tag }})

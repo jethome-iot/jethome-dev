@@ -105,6 +105,34 @@ before changing anything here.
   runtime `runs-on` is invisible to actionlint); every `base_tag` exists among the
   base image's tags; and the base image's `ARG` default names the primary variant's
   base tag. Run it locally with `./scripts/check-versions.sh`.
+- Three of those checks are about the *shape* of a tag rather than its contents.
+  A tag must be a legal Docker reference of at most 100 characters — 128 is the
+  registry limit, and the margin leaves room for the suffixes the manifest jobs
+  append (today the longest is `-sha-<7hex>`, 12 characters). It must not be
+  shaped like a name those jobs publish on their own — `latest`, a bare
+  `sha-<7hex>`, or `<tag>-sha-<7hex>`. The bare pair is the dangerous one: a
+  variant tagged `sha-1234567` is nobody's prefix, so the prefix rule never sees
+  it, and it is silently overwritten the day a commit's short SHA is `1234567`.
+  Behind those sits a uniqueness check over the names an image actually
+  publishes — a backstop for whatever a future derived name adds. The
+  version-naming check matches on a **token boundary with the value escaped**. As
+  a bare substring a value satisfied any tag that merely contained it, so a variant
+  built with `v5.5` passed under a tag claiming `idf-v5.5.5` — the tag naming a
+  version the build never used. The escaping is what keeps the `.` in `24.04` from
+  matching `24X04` now that the comparison is a regex. Control characters are
+  checked in `args` and `pin` values too, not only in tags: a newline there splits
+  into a second `--build-arg` in the generated matrix.
+- `provenance: mode=max` is set explicitly on every build rather than left to the
+  action's default, which differs between public and private repositories and has
+  moved across majors. It writes every build-arg value and the GitHub event
+  payload into a **public** attestation, so an `ARG` carrying anything sensitive
+  would leak there — weigh that before adding one.
+- The digest artifacts keep **7 days**, not 1. They are consumed inside the run
+  that made them, so the retention buys nothing during a normal build — it buys
+  the re-run: a manifest job that failed on Friday could not be restarted on
+  Saturday, because its artifact had expired and only a full cold rebuild could
+  replace it. The files are empty and named after the digest, so the cost is a
+  slot in the artifact list, not storage.
 - The checker validates the whole file and every build workflow gates on it, so a version
   file broken for one image blocks publishing for all of them. That is deliberate —
   the data is shared — but it is also why `images/versions.json` sits in every
