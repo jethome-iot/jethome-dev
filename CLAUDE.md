@@ -56,6 +56,9 @@ before changing anything here.
   a rebuild of the same commit: the commit is identical and, with no build cache,
   the image is not. Only platformio publishes it so far — the other images follow.
 - **The write-once guard decides for the group of immutable names, never per name.**
+  Like the revision name, it exists in `platformio.yml` only so far — `esp-idf.yml`
+  and `host.yml` still overwrite `sha-<short-commit>` and
+  `<prefix>-<version>-sha-<short-commit>` unconditionally on every rebuild.
   `imagetools create` writes its tags as sequential PUTs and stops at the first
   error, so a partial failure can leave `sha-<short-commit>` written while
   `<prefix>-<version>-sha-<short-commit>` is not. Deciding per name then freezes the
@@ -67,7 +70,8 @@ before changing anything here.
   is already inconsistent and holds nothing worth preserving. A registry that cannot
   answer fails the step: "free" and "unreachable" must not read alike.
 - A permanent `✅ Verify the published names` step follows the push and checks the
-  names against the registry rather than against the code that wrote them. Its
+  names against the registry rather than against the code that wrote them — in
+  `platformio.yml` for now, alongside the guard. Its
   anchor is the revision name, which no other run can have moved; `latest` and the
   version tag are compared but never fail the job, because `concurrency` gives every
   master push its own group on purpose and a later run may legitimately have taken
