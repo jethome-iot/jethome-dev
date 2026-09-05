@@ -84,7 +84,11 @@ for image in ${images}; do
     # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
     # Without this check a `+`, a `/` or a newline reaches the artifact name and
     # `docker buildx imagetools create`, and fails there instead.
-    while read -r variant_tag; do
+    # `IFS= read` rather than plain `read`: the latter strips leading and trailing
+    # whitespace, so ` ubuntu-24.04` would satisfy the pattern below while
+    # versions-matrix.sh passes the space through to the manifest job, which then
+    # fails on an illegal reference after every build has already run.
+    while IFS= read -r variant_tag; do
         [ -n "${variant_tag}" ] || continue
         if ! printf '%s' "${variant_tag}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$'; then
             problem "${image}: tag '${variant_tag}' is not a legal Docker reference of at most 100 characters"
