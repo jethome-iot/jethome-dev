@@ -83,22 +83,34 @@ for image in ${images}; do
     # The cap here is 100, not 128, so a tag always has room for the suffixes the
     # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
     # Without this check a `+` or a `/` reaches the artifact name and
-    # `docker buildx imagetools create`, and fails there instead. A newline is
-    # caught above, in the data, where a line-based loop still can see it.
-    # A control character has to be caught in the data, before any loop: `jq -r`
-    # emits one line per tag and `read` splits on newlines, so a tag containing one
-    # arrives as two values that are each legal on their own - and the uniqueness
-    # check counts one tag either way. It would pass the whole checker and break in
-    # the manifest job.
-    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag | select(test("[[:cntrl:]]"))] | length' "${VERSIONS}")
+    # `docker buildx imagetools create`, and fails there instead. A newline cannot
+    # be caught here at all - the loop reading this value already split on it, which
+    # is why the data itself is checked further up.
+    # Two things that can only be seen in the data, before any loop reads it.
+    #
+    # A control character, because `jq -r` emits one line per tag and `read` splits
+    # on newlines: a tag containing one arrives as two values that are each legal on
+    # their own, and the uniqueness check counts a single tag either way.
+    #
+    # A tag that is not a string, because `test` refuses one - and under `set -e`
+    # that ends the whole run at this line, with no image name and no field name in
+    # the log. `"tag": 24.04` written without quotes is the way to get there. The
+    # type guard keeps the message a `problem` like any other, so the rest of the
+    # file is still checked.
+    nonstring=$(jq -r --arg i "${image}" '[.images[$i].builds[] | select((.tag | type) != "string")] | length' "${VERSIONS}")
+    [ "${nonstring}" -eq 0 ] || problem "${image}: a variant's tag is not a string - quote it in ${VERSIONS}"
+    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag | select(type == "string" and test("[[:cntrl:]]"))] | length' "${VERSIONS}")
     [ "${ctrl}" -eq 0 ] || problem "${image}: a tag contains a control character - the line-based checks below cannot see it"
 
     # `IFS= read` rather than plain `read`: the latter strips leading and trailing
     # whitespace, so ` ubuntu-24.04` would satisfy the pattern below while
     # versions-matrix.sh passes the space through to the manifest job, which then
     # fails on an illegal reference after every build has already run.
+    # No `[ -n ... ] || continue` here, deliberately: the empty string is the one
+    # value guaranteed to be an illegal reference, and skipping it would exempt it
+    # from the only check that says so. It reaches `imagetools create -t <image>:`
+    # otherwise, after every build in the matrix has run.
     while IFS= read -r variant_tag; do
-        [ -n "${variant_tag}" ] || continue
         if ! printf '%s' "${variant_tag}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$'; then
             problem "${image}: tag '${variant_tag}' is not a legal Docker reference of at most 100 characters"
         fi
@@ -172,8 +184,10 @@ for image in ${images}; do
     # it can, and the result is a GHCR tag whose name contradicts its contents.
     # Requiring every version that went into the build to appear in the tag is what
     # restores that link.
-    # Matched on a token boundary, not as a bare substring: `*"${value}"*` accepts
-    # any truncation, so a variant built with v5.5.5 passed a tag naming only v5.5.
+    # Matched on a token boundary, not as a bare substring: as a substring a value
+    # satisfied any tag that merely contained it, so a variant built with `v5.5`
+    # passed while its tag claimed `idf-v5.5.5` - the tag naming a version the
+    # build never used.
     # The value is escaped first - every version here contains dots, and an
     # unescaped `.` is a regex metacharacter that matches `24X04` as happily as
     # `24.04`. The boundary class is `[-_]` and deliberately excludes `.`: with a
@@ -182,7 +196,7 @@ for image in ${images}; do
     while IFS='|' read -r variant_tag value; do
         [ -n "${value}" ] || continue
         escaped=$(printf '%s' "${value}" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
-        printf '%s' "${variant_tag}" | grep -Eq "(^|[-_]v?)${escaped}($|[-_])" \
+        printf '%s' "${variant_tag}" | grep -Eq "(^v?|[-_]v?)${escaped}($|[-_])" \
             || problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag"
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | (($b.args // {}) | to_entries[] | "\($b.tag)|\(.value)"), (if ($b.base_tag // "") != "" then "\($b.tag)|\($b.base_tag)" else empty end)' "${VERSIONS}")
 
