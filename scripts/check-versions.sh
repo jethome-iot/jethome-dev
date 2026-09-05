@@ -229,22 +229,22 @@ for image in ${images}; do
     # catches whatever a future derived name adds that they do not know about. The
     # placeholders stand in for values only CI knows, and are constant on purpose -
     # a collision must not depend on which commit happens to build.
-    published=""
+    # An array rather than a multi-line string literal: the literal's continuation
+    # lines have to start at column 0 to avoid prefixing every name with the
+    # script's own indentation, which makes correctness depend on something any
+    # reformatting would quietly break.
+    published=()
     while IFS='|' read -r variant_tag is_primary; do
         [ -n "${variant_tag}" ] || continue
-        published="${published}${variant_tag}
-${variant_tag}-sha-0000000
-"
+        published+=("${variant_tag}" "${variant_tag}-sha-0000000")
         if [ "${is_primary}" = "true" ]; then
-            published="${published}latest
-sha-0000000
-"
+            published+=(latest sha-0000000)
         fi
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\(.primary // false)"' "${VERSIONS}")
     while read -r dupe; do
         [ -n "${dupe}" ] || continue
         problem "${image}: two variants would publish the same name '${dupe}'"
-    done < <(printf '%s' "${published}" | sort | uniq -d)
+    done < <(printf '%s\n' "${published[@]}" | sort | uniq -d)
 
     # Every variant passes the same set of build args. An empty or partial set
     # would silently fall back to the Dockerfile's defaults and publish that under
