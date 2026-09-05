@@ -107,7 +107,8 @@ Two things worth knowing before pinning:
 
 - `latest` moves when the primary does, which happens on a version bump. Pin the
   version tag if the Matter specification matters to you, and
-  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` if you need the exact build —
+  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` for the newest build of a
+  commit, which a rebuild of that commit moves —
   the version tag is rewritten on every rebuild.
 - **The tag names the Matter specification, and the build is pinned to a commit.**
   ESP-Matter publishes no git tags — only moving `release/*` branches, where a

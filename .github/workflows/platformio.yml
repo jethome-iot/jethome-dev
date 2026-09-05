@@ -242,15 +242,20 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}-${STAMP}")
           tags+=(-t "${IMAGE}:${TAG}")
 
-          # Asserted rather than trusted, and locally - no registry round-trip.
+          # Checked rather than trusted, and locally - no registry round-trip.
+          # Warnings, not failures, and deliberately so: this job runs on master
+          # only, so nothing here can be exercised by a pull request. A failure
+          # would therefore first appear AFTER a full multi-arch build and would
+          # publish no name at all - `latest` and the version tag stranded on the
+          # previous build, this run's digests sitting in GHCR unnamed. The typo
+          # these catch is worth a loud line in the log, not that.
           #
           # The short SHA first, because check-versions.sh hardcodes the 7-hex shape
           # in its own rules: a change here would leave the checker validating a
           # shape this job no longer publishes, and a hand-written `sha-12345678`
           # would pass it and then be overwritten by this very step.
           if [ "${#SHA_SHORT}" -ne 7 ]; then
-            echo "::error::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
-            exit 1
+            echo "::warning::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
           fi
 
           # Counting `-t` occurrences, not array length halved: an entry added
@@ -265,8 +270,7 @@ jobs:
             [ "${arg}" = "-t" ] && flags=$((flags + 1))
           done
           if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
-            echo "::error::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
-            exit 1
+            echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
           fi
           if [ "${tags[-1]}" != "${IMAGE}:${TAG}" ]; then
             echo "::error::the version tag must be last, for GHCR's primary-tag display"
