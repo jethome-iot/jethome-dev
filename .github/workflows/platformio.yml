@@ -283,7 +283,14 @@ jobs:
                 differ=$((differ + 1))
                 differ_children="${differ_children}${name}=${existing//$'\n'/,}"$'\n'
               fi
-            elif grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' "${probe_err}"; then
+            # Anchored, not a substring search. buildx prints `ERROR: <ref>: not
+            # found` for a missing tag - verified against ghcr.io - while `not
+            # found` on its own also appears in "executable file not found in
+            # \$PATH" from a broken credential helper and in a proxy's "404 page
+            # not found" body. Either would be read as "the name is free", and the
+            # guard would then overwrite an immutable name. A missing *package*
+            # does not even say "not found": ghcr.io answers 403.
+            elif grep -qE ': not found$|MANIFEST_UNKNOWN' "${probe_err}"; then
               free=$((free + 1))
             else
               echo "::error::cannot tell whether ${name} exists: $(cat "${probe_err}")"
@@ -295,7 +302,13 @@ jobs:
 
           total="${#immutable[@]}"
           skip_immutable=false
-          if [ "${differ}" -eq "${total}" ]; then
+          # Counting the names that differ is not enough: they can differ from this
+          # run AND from each other, which is what a create that failed part-way
+          # through a rewrite leaves behind. Treating that as "consistently held by
+          # an earlier build" would freeze exactly the split state this guard is
+          # here to prevent.
+          differ_distinct=$(printf '%s' "${differ_children}" | sed 's/^[^=]*=//' | sort -u | grep -c . || true)
+          if [ "${differ}" -eq "${total}" ] && [ "${differ_distinct}" -le 1 ]; then
             # Every immutable name is held by an earlier build of this commit, all
             # of them consistently. That is the ordinary rebuild: keep what is
             # published rather than moving names that promise not to move. The cost
@@ -311,7 +324,7 @@ jobs:
             # already an inconsistent registry - almost always a `imagetools create`
             # that failed part-way - so there is nothing worth preserving. Rewrite
             # them all, which is what this job did before the guard existed.
-            echo "::warning::the immutable names of ${SHA_SHORT} are in mixed states (${free} free, ${same} identical, ${differ} different) - republishing all of them to make them agree"
+            echo "::warning::the immutable names of ${SHA_SHORT} do not agree (${free} free, ${same} identical, ${differ} different across ${differ_distinct} distinct builds) - republishing all of them"
           fi
 
           # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
@@ -323,6 +336,11 @@ jobs:
             names+=("latest" "sha-${SHA_SHORT}")
           fi
           names+=("${TAG}-sha-${SHA_SHORT}" "${TAG}-${STAMP}" "${TAG}")
+
+          # The verify step below needs to know whether names were deliberately
+          # left behind - otherwise it has to treat every mismatch as "probably
+          # fine", which is exactly the case it exists to catch.
+          echo "GUARD_SKIPPED_IMMUTABLE=${skip_immutable}" >> "${GITHUB_ENV}"
 
           tags=()
           for name in "${names[@]}"; do
@@ -365,9 +383,6 @@ jobs:
           SHA_SHORT="${GITHUB_SHA:0:7}"
           STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
 
-          # The revision name is the anchor: it belongs to this attempt alone, so
-          # no other run can have moved it. Everything else is compared against
-          # what it resolves to.
           # The anchor: the revision name belongs to this attempt alone, so no
           # other run can have moved it. Read with its own diagnostic - under
           # `set -e` a bare pipeline would die here with nothing but buildx's
@@ -406,7 +421,7 @@ jobs:
               rm -f "${err}"
               return 0
             fi
-            if grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' "${err}"; then
+            if grep -qE ': not found$|MANIFEST_UNKNOWN' "${err}"; then
               rm -f "${err}"
               return 1
             fi
@@ -419,8 +434,14 @@ jobs:
             if got=$(resolve "${name}"); then
               if [ "${got}" = "${anchor}" ]; then
                 echo "${name}: matches this run"
+              elif [ "${GUARD_SKIPPED_IMMUTABLE:-false}" = "true" ]; then
+                echo "${name}: left on an earlier build of this commit, as the guard decided"
               else
-                echo "::warning::${name} does not match this run - expected if the guard left it on an earlier build, a defect otherwise"
+                # The guard published this name in this run, so a mismatch is not
+                # explainable - it means the set of names this job derives and the
+                # set the registry holds have come apart.
+                echo "::error::${name} does not match this run and the guard did not skip it"
+                fail=1
               fi
             elif [ "$?" -eq 1 ]; then
               echo "::error::${name} does not exist after publication"
@@ -437,8 +458,10 @@ jobs:
                 echo "${name}: moved on by a later run - expected under concurrent pushes"
               fi
             elif [ "$?" -eq 1 ]; then
-              echo "::error::${name} does not exist after publication"
-              fail=1
+              # Mutable names never fail this job - CLAUDE.md says so, and a tag
+              # that a later run took over can also be absent for a moment, since
+              # GHCR does not promise read-after-write.
+              echo "::warning::${name} does not resolve right now - a concurrent run may be mid-publish"
             else
               echo "::warning::could not read ${name} - registry unreachable, so this run is unverified rather than wrong"
             fi

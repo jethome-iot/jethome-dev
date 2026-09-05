@@ -38,7 +38,7 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 | **Latest** | `latest` | Newest build. Moves on every rebuild |
 | **Version** | `pio-v<version>` | Newest build of that PlatformIO version. Also moves on every rebuild |
 | **Revision** | `pio-v<version>-r<run-id>.<attempt>` | One build. Never moves — a rebuild of the same commit gets a new one |
-| **Commit** | `pio-v<version>-sha<br>-<short-commit>` | The build made from that commit, first 7 characters of the SHA |
+| **Commit** | `pio-v<version>-sha-<short-commit>` | The build made from that commit, first 7 characters of the SHA |
 | **Commit, primary** | `sha-<short-commit>` | The same, under the name every image of this repo shares |
 
 **Reading a tag:** a suffix of `-r<digits>.<digits>` or `-sha-<7 hex>` means the
