@@ -115,10 +115,13 @@ before changing anything here.
   it, and it is silently overwritten the day a commit's short SHA is `1234567`.
   Behind those sits a uniqueness check over the names an image actually
   publishes — a backstop for whatever a future derived name adds. The
-  version-naming check matches on a **token boundary with the value escaped**,
-  not as a bare substring: unescaped, the `.` in `24.04` matched `24X04`, and
-  without boundaries a variant built with `v5.5.5` satisfied a tag naming only
-  `v5.5`.
+  version-naming check matches on a **token boundary with the value escaped**. As
+  a bare substring a value satisfied any tag that merely contained it, so a variant
+  built with `v5.5` passed under a tag claiming `idf-v5.5.5` — the tag naming a
+  version the build never used. The escaping is what keeps the `.` in `24.04` from
+  matching `24X04` now that the comparison is a regex. Control characters are
+  checked in `args` and `pin` values too, not only in tags: a newline there splits
+  into a second `--build-arg` in the generated matrix.
 - `provenance: mode=max` is set explicitly on every build rather than left to the
   action's default, which differs between public and private repositories and has
   moved across majors. It writes every build-arg value and the GitHub event

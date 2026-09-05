@@ -84,8 +84,8 @@ for image in ${images}; do
     # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
     # Without this check a `+` or a `/` reaches the artifact name and
     # `docker buildx imagetools create`, and fails there instead. A newline cannot
-    # be caught here at all - the loop reading this value already split on it, which
-    # is why the data itself is checked further up.
+    # be caught in this loop at all - the reader already split on it - which is what
+    # the data-level check just above the loop is for.
     # Two things that can only be seen in the data, before any loop reads it.
     #
     # A control character, because `jq -r` emits one line per tag and `read` splits
@@ -99,8 +99,12 @@ for image in ${images}; do
     # file is still checked.
     nonstring=$(jq -r --arg i "${image}" '[.images[$i].builds[] | select((.tag | type) != "string")] | length' "${VERSIONS}")
     [ "${nonstring}" -eq 0 ] || problem "${image}: a variant's tag is not a string - quote it in ${VERSIONS}"
-    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag | select(type == "string" and test("[[:cntrl:]]"))] | length' "${VERSIONS}")
-    [ "${ctrl}" -eq 0 ] || problem "${image}: a tag contains a control character - the line-based checks below cannot see it"
+    # Every value that reaches a line-based reader, not just the tag: an `args`
+    # value carrying a newline splits into a second `--build-arg` in the matrix
+    # (`IDF_BASE_TAG=v5.4.1` plus a fabricated `EXTRA=1`), and the loop below drops
+    # that second line through its own emptiness guard, so nothing checks it.
+    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[] | (.tag, ((.args // {}) | .[]), ((.pin // {}) | .[])) | select(type == "string" and test("[[:cntrl:]]"))] | length' "${VERSIONS}")
+    [ "${ctrl}" -eq 0 ] || problem "${image}: a tag, arg or pin value contains a control character - the line-based checks below cannot see it"
 
     # `IFS= read` rather than plain `read`: the latter strips leading and trailing
     # whitespace, so ` ubuntu-24.04` would satisfy the pattern below while
