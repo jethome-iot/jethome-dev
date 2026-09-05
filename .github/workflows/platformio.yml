@@ -233,46 +233,86 @@ jobs:
 
           # What the new index will contain: imagetools copies the CHILDREN of
           # each leg, not the leg index itself, so that is what an existing tag
-          # has to be compared against. The index digest itself is no use for
-          # this - it carries a fresh `created`, so it differs on every run even
-          # when the layers are identical.
-          new_children=$(for digest in *; do
-            docker buildx imagetools inspect --raw "${IMAGE}@sha256:${digest}" | jq -r '.manifests[]?.digest'
-          done | sort -u)
+          # has to be compared against. Comparing index digests instead would
+          # compare something that also depends on the order of the sources and
+          # on annotations, neither of which says anything about the contents.
+          #
+          # Accumulated in a loop rather than piped into `sort -u`: a `for` loop
+          # that is not the last element of a pipeline runs with its exit status
+          # ignored, so `set -e` and `pipefail` both stop applying inside it and a
+          # failed inspect would silently truncate the set. esp-idf.yml:255 already
+          # carries that lesson ("jq exits 0 on empty input") - this is the same
+          # trap wearing a loop.
+          new_children=""
+          for digest in *; do
+            leg=$(docker buildx imagetools inspect --raw "${IMAGE}@sha256:${digest}") \
+              || { echo "::error::cannot read the leg ${digest} this run just built"; exit 1; }
+            kids=$(printf '%s' "${leg}" | jq -r '.manifests[]?.digest')
+            [ -n "${kids}" ] || { echo "::error::leg ${digest} reports no children"; exit 1; }
+            new_children="${new_children}${kids}"$'\n'
+          done
+          new_children=$(printf '%s' "${new_children}" | sort -u)
 
-          # Write-once guard, per name rather than per operation. It resolves the
-          # immutable names only - `latest` and the version tag are meant to move.
-          # Three outcomes, and the third is why this is not a one-liner: a
-          # registry that cannot answer must not read as "free".
+          # Write-once guard. It resolves the immutable names only - `latest` and
+          # the version tag are meant to move - and it decides for the GROUP, not
+          # per name.
+          #
+          # Per name was wrong, and the way it fails is worth spelling out:
+          # `imagetools create` writes its tags as sequential PUTs and stops at the
+          # first error, so a partial failure can leave `sha-<7hex>` written and
+          # `<tag>-sha-<7hex>` not. A per-name guard then freezes the one that
+          # exists and publishes the one that does not - leaving two immutable
+          # names of one commit pointing at different images, with a green run.
+          # Before this guard existed, a re-run simply rewrote both, consistently.
           immutable=("${TAG}-sha-${SHA_SHORT}")
           if [ "${PRIMARY}" = "true" ]; then
             immutable+=("sha-${SHA_SHORT}")
           fi
-          skip=""
+
+          free=0
+          same=0
+          differ=0
+          differ_children=""
           for name in "${immutable[@]}"; do
             probe_err=$(mktemp)
             if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${probe_err}"); then
               existing=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
               if [ "${existing}" = "${new_children}" ]; then
-                echo "${name}: already published with identical contents - idempotent re-run"
+                same=$((same + 1))
               else
-                # Deliberately a warning and a skip, not a failure: failing here
-                # would withhold `latest` and the version tag too, turning the
-                # ordinary "Re-run all jobs" recovery into a guaranteed red run
-                # after a full multi-arch build.
-                echo "::warning::${name} exists with different contents and will NOT be moved"
-                echo "  existing: $(printf '%s' "${existing}" | tr '\n' ' ')"
-                echo "  this run: $(printf '%s' "${new_children}" | tr '\n' ' ')"
-                skip="${skip}${name}"$'\n'
+                differ=$((differ + 1))
+                differ_children="${differ_children}${name}=${existing//$'\n'/,}"$'\n'
               fi
             elif grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' "${probe_err}"; then
-              echo "${name}: free"
+              free=$((free + 1))
             else
               echo "::error::cannot tell whether ${name} exists: $(cat "${probe_err}")"
+              rm -f "${probe_err}"
               exit 1
             fi
             rm -f "${probe_err}"
           done
+
+          total="${#immutable[@]}"
+          skip_immutable=false
+          if [ "${differ}" -eq "${total}" ]; then
+            # Every immutable name is held by an earlier build of this commit, all
+            # of them consistently. That is the ordinary rebuild: keep what is
+            # published rather than moving names that promise not to move. The cost
+            # - the sha names describe the earlier build, while `latest` and the
+            # version tag describe this one - is stated here rather than hidden.
+            skip_immutable=true
+            echo "::warning::${TAG}-sha-${SHA_SHORT} and friends already name an earlier build of ${SHA_SHORT}; they stay put"
+            printf '%s' "${differ_children}" | sed 's/^/  /'
+          elif [ "${free}" -eq "${total}" ] || [ "${same}" -eq "${total}" ]; then
+            : # nothing published yet, or an identical re-push: write them
+          else
+            # Mixed: some written, some not, or holding different images. That is
+            # already an inconsistent registry - almost always a `imagetools create`
+            # that failed part-way - so there is nothing worth preserving. Rewrite
+            # them all, which is what this job did before the guard existed.
+            echo "::warning::the immutable names of ${SHA_SHORT} are in mixed states (${free} free, ${same} identical, ${differ} different) - republishing all of them to make them agree"
+          fi
 
           # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
           # Every variant gets `<version>-sha-<short-commit>` and the revision name.
@@ -286,8 +326,10 @@ jobs:
 
           tags=()
           for name in "${names[@]}"; do
-            if printf '%s' "${skip}" | grep -qxF "${name}"; then
-              continue
+            if [ "${skip_immutable}" = "true" ]; then
+              case " ${immutable[*]} " in
+              *" ${name} "*) continue ;;
+              esac
             fi
             tags+=(-t "${IMAGE}:${name}")
           done
@@ -296,7 +338,8 @@ jobs:
           # changed short-SHA length, and a name silently dropped by the loop above.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
-          skipped=$(printf '%s' "${skip}" | grep -c . || true)
+          skipped=0
+          [ "${skip_immutable}" = "true" ] && skipped="${#immutable[@]}"
           if [ "$(( ${#tags[@]} / 2 ))" -ne "$(( expected - skipped ))" ]; then
             echo "::error::built $(( ${#tags[@]} / 2 )) names, expected $(( expected - skipped ))"
             exit 1
@@ -325,10 +368,17 @@ jobs:
           # The revision name is the anchor: it belongs to this attempt alone, so
           # no other run can have moved it. Everything else is compared against
           # what it resolves to.
-          anchor=$(docker buildx imagetools inspect --raw "${IMAGE}:${TAG}-${STAMP}" \
-            | jq -r '.manifests[]?.digest' | sort -u)
+          # The anchor: the revision name belongs to this attempt alone, so no
+          # other run can have moved it. Read with its own diagnostic - under
+          # `set -e` a bare pipeline would die here with nothing but buildx's
+          # stderr, and the one thing worth saying is which name failed.
+          anchor_raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${TAG}-${STAMP}" 2>&1) || {
+            echo "::error::${TAG}-${STAMP} does not resolve after publication - this run did not publish what it thinks: ${anchor_raw}"
+            exit 1
+          }
+          anchor=$(printf '%s' "${anchor_raw}" | jq -r '.manifests[]?.digest' | sort -u)
           if [ -z "${anchor}" ]; then
-            echo "::error::${TAG}-${STAMP} does not resolve - this run did not publish what it thinks"
+            echo "::error::${TAG}-${STAMP} resolves to an index with no children"
             exit 1
           fi
 
@@ -344,35 +394,53 @@ jobs:
           fi
 
           fail=0
-          for name in "${immutable[@]}"; do
+          # A read that fails is not a name that is missing. Distinguishing them
+          # matters more here than in the guard: this step runs AFTER a correct
+          # publication, so treating a transient registry error as absence paints
+          # master red for something that went right.
+          resolve() {
+            local name="$1" err out
             err=$(mktemp)
-            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
-              got=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
+            if out=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
+              printf '%s' "${out}" | jq -r '.manifests[]?.digest' | sort -u
+              rm -f "${err}"
+              return 0
+            fi
+            if grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' "${err}"; then
+              rm -f "${err}"
+              return 1
+            fi
+            cat "${err}" >&2
+            rm -f "${err}"
+            return 2
+          }
+
+          for name in "${immutable[@]}"; do
+            if got=$(resolve "${name}"); then
               if [ "${got}" = "${anchor}" ]; then
                 echo "${name}: matches this run"
               else
-                # Only legitimate when the guard above skipped it.
-                echo "::warning::${name} does not match this run - expected if the guard skipped it, a defect otherwise"
+                echo "::warning::${name} does not match this run - expected if the guard left it on an earlier build, a defect otherwise"
               fi
-            else
-              echo "::error::${name} does not resolve after publication: $(cat "${err}")"
+            elif [ "$?" -eq 1 ]; then
+              echo "::error::${name} does not exist after publication"
               fail=1
+            else
+              echo "::warning::could not read ${name} - registry unreachable, so this run is unverified rather than wrong"
             fi
-            rm -f "${err}"
           done
           for name in "${mutable[@]}"; do
-            err=$(mktemp)
-            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
-              got=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
+            if got=$(resolve "${name}"); then
               if [ "${got}" = "${anchor}" ]; then
                 echo "${name}: matches this run"
               else
                 echo "${name}: moved on by a later run - expected under concurrent pushes"
               fi
-            else
-              echo "::error::${name} does not resolve after publication: $(cat "${err}")"
+            elif [ "$?" -eq 1 ]; then
+              echo "::error::${name} does not exist after publication"
               fail=1
+            else
+              echo "::warning::could not read ${name} - registry unreachable, so this run is unverified rather than wrong"
             fi
-            rm -f "${err}"
           done
           exit "${fail}"

@@ -26,9 +26,10 @@
 #      suffixes the manifest jobs append. A tag with `+` or `/` in it, or one 152
 #      characters long, is accepted here today and fails later, inside the push.
 #   8. No tag is shaped like a name the manifest jobs publish by themselves -
-#      `latest`, a bare `sha-<7hex>`, or `<tag>-sha-<7hex>`. The bare pair is the
-#      dangerous one: `sha-1234567` is nobody's prefix, so nothing else here sees
-#      it, and it is overwritten the day a commit's short SHA is 1234567.
+#      `latest`, a bare `sha-<7hex>`, `<tag>-sha-<7hex>`, or the revision name
+#      `<tag>-r<run_id>.<attempt>`. The bare pair is the dangerous one:
+#      `sha-1234567` is nobody's prefix, so nothing else here sees it, and it is
+#      overwritten the day a commit's short SHA is 1234567.
 #   9. The published names of an image are unique across its variants - the
 #      backstop behind check 8, for whatever a future derived name adds.
 set -euo pipefail

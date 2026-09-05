@@ -49,9 +49,29 @@ before changing anything here.
   since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (one leg per variant × platform) then
   `<image>-manifest`. Tags per variant: `<prefix>-<version>` (moves on every
-  rebuild) and `<prefix>-<version>-sha-<short-commit>` (immutable, the only thing to
+  rebuild), `<prefix>-<version>-sha-<short-commit>` (the build made from that
+  commit) and `<prefix>-<version>-r<run-id>.<attempt>` (**one build**, and what to
   roll back to). The **primary** variant additionally gets `latest` and the bare
-  `sha-<short-commit>`.
+  `sha-<short-commit>`. The revision name exists because nothing else distinguishes
+  a rebuild of the same commit: the commit is identical and, with no build cache,
+  the image is not. Only platformio publishes it so far — the other images follow.
+- **The write-once guard decides for the group of immutable names, never per name.**
+  `imagetools create` writes its tags as sequential PUTs and stops at the first
+  error, so a partial failure can leave `sha-<short-commit>` written while
+  `<prefix>-<version>-sha-<short-commit>` is not. Deciding per name then freezes the
+  one that exists and publishes the one that does not, leaving two immutable names
+  of one commit on different images — with a green run. So: all free or all
+  identical → publish; all held by an earlier build of the same commit → keep them
+  and warn (the ordinary rebuild, where `latest` moves and the sha names
+  deliberately do not); any mixed state → republish all of them, since a mixed state
+  is already inconsistent and holds nothing worth preserving. A registry that cannot
+  answer fails the step: "free" and "unreachable" must not read alike.
+- A permanent `✅ Verify the published names` step follows the push and checks the
+  names against the registry rather than against the code that wrote them. Its
+  anchor is the revision name, which no other run can have moved; `latest` and the
+  version tag are compared but never fail the job, because `concurrency` gives every
+  master push its own group on purpose and a later run may legitimately have taken
+  them over.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
