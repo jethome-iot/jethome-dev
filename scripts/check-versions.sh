@@ -22,16 +22,15 @@
 #   6. Every base_tag exists among the base image's tags, and an image with a base
 #      declares base_arg. This is what stops a half-done bump from publishing an
 #      idf-v<old> tag built on v<new>.
-#   7. Every tag is a legal Docker reference and short enough to carry the derived
+#   7. Every tag is a legal Docker reference and short enough to carry the
 #      suffixes the manifest jobs append. A tag with `+` or `/` in it, or one 152
 #      characters long, is accepted here today and fails later, inside the push.
-#   8. No tag is shaped like a name the manifest jobs derive (`-sha-<7hex>`,
-#      `-r<run_id>.<attempt>`). A hand-written variant that looks derived is
-#      indistinguishable from one, and the write-once guard would refuse to
-#      publish a legitimate tag.
-#   9. The published names of an image are unique across its variants. `tag`
-#      uniqueness does not imply it: a variant tagged `foo` and one tagged
-#      `foo-sha-abc1234` collide once `foo` grows its own commit suffix.
+#   8. No tag is shaped like a name the manifest jobs publish by themselves -
+#      `latest`, a bare `sha-<7hex>`, or `<tag>-sha-<7hex>`. The bare pair is the
+#      dangerous one: `sha-1234567` is nobody's prefix, so nothing else here sees
+#      it, and it is overwritten the day a commit's short SHA is 1234567.
+#   9. The published names of an image are unique across its variants - the
+#      backstop behind check 8, for whatever a future derived name adds.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,29 +80,38 @@ for image in ${images}; do
     [ "${total}" -eq "${unique}" ] || problem "${image}: duplicate tags among its variants"
 
     # A tag is a Docker reference: [a-zA-Z0-9_] first, then [a-zA-Z0-9._-], 128 max.
-    # The cap here is 100, not 128: the manifest jobs append the longest derived
-    # suffix `-r<run_id>.<attempt>` - 12 digits plus 2 today - so 100 leaves room
-    # for 17 characters of suffix and 11 to spare. Without this check a `+` or a
-    # `/` reaches `docker buildx imagetools create` and fails there instead.
+    # The cap here is 100, not 128, so a tag always has room for the suffixes the
+    # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
+    # Without this check a `+`, a `/` or a newline reaches the artifact name and
+    # `docker buildx imagetools create`, and fails there instead.
     while read -r variant_tag; do
         [ -n "${variant_tag}" ] || continue
         if ! printf '%s' "${variant_tag}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$'; then
             problem "${image}: tag '${variant_tag}' is not a legal Docker reference of at most 100 characters"
         fi
-        # The manifest jobs derive `<tag>-sha-<7hex>` and `<tag>-r<run_id>.<attempt>`
-        # from this value. A hand-written tag of that shape cannot be told apart from
-        # a derived one, and the write-once guard would then refuse to publish it.
+        # The manifest jobs derive `<tag>-sha-<7hex>` from this value, and publish
+        # `latest` and a bare `sha-<7hex>` for the primary variant. A hand-written
+        # tag of any of those three shapes cannot be told apart from a derived one -
+        # and the bare forms are the dangerous pair, since neither the prefix rule
+        # nor the derived-suffix check below sees them: `sha-1234567` is nobody's
+        # prefix, yet it is overwritten the day a commit's short SHA is 1234567.
+        case "${variant_tag}" in
+        latest) problem "${image}: tag 'latest' is the name the primary variant publishes - it cannot also be a variant's own tag" ;;
+        sha-???????)
+            case "${variant_tag#sha-}" in
+            *[!0-9a-f]*) ;;
+            *) problem "${image}: tag '${variant_tag}' is the shape the primary variant publishes for a commit - it would be overwritten by the build of commit ${variant_tag#sha-}" ;;
+            esac
+            ;;
+        esac
         case "${variant_tag}" in
         *-sha-???????)
             case "${variant_tag##*-sha-}" in
             *[!0-9a-f]*) ;;
-            *) problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-sha-<7hex> - the guard could not tell it from one" ;;
+            *) problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-sha-<7hex>" ;;
             esac
             ;;
         esac
-        if printf '%s' "${variant_tag}" | grep -Eq -- '-r[0-9]+(\.[0-9]+)?$'; then
-            problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-r<run_id>.<attempt>"
-        fi
     done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
 
     platforms=$(jq -r --arg i "${image}" '.images[$i].platforms | length' "${VERSIONS}")
@@ -184,12 +192,12 @@ for image in ${images}; do
     done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
 
     # The names actually published must be unique across variants - `tag`
-    # uniqueness does not imply it. A variant tagged `foo` and one tagged
-    # `foo-sha-abc1234` have distinct tags, yet `foo` grows exactly that name once
-    # the manifest job appends its commit suffix, and the two would overwrite each
-    # other in GHCR. The placeholders stand in for values only CI knows; they are
-    # constant here on purpose, since a collision must not depend on which commit
-    # happens to build.
+    # uniqueness does not imply it, because every variant publishes more names than
+    # its tag. This is the backstop behind the shape rules above rather than a
+    # first line of defence: those reject the shapes a collision needs, and this
+    # catches whatever a future derived name adds that they do not know about. The
+    # placeholders stand in for values only CI knows, and are constant on purpose -
+    # a collision must not depend on which commit happens to build.
     published=""
     while IFS='|' read -r variant_tag is_primary; do
         [ -n "${variant_tag}" ] || continue
