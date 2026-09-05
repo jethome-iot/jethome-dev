@@ -82,8 +82,17 @@ for image in ${images}; do
     # A tag is a Docker reference: [a-zA-Z0-9_] first, then [a-zA-Z0-9._-], 128 max.
     # The cap here is 100, not 128, so a tag always has room for the suffixes the
     # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
-    # Without this check a `+`, a `/` or a newline reaches the artifact name and
-    # `docker buildx imagetools create`, and fails there instead.
+    # Without this check a `+` or a `/` reaches the artifact name and
+    # `docker buildx imagetools create`, and fails there instead. A newline is
+    # caught above, in the data, where a line-based loop still can see it.
+    # A control character has to be caught in the data, before any loop: `jq -r`
+    # emits one line per tag and `read` splits on newlines, so a tag containing one
+    # arrives as two values that are each legal on their own - and the uniqueness
+    # check counts one tag either way. It would pass the whole checker and break in
+    # the manifest job.
+    ctrl=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag | select(test("[[:cntrl:]]"))] | length' "${VERSIONS}")
+    [ "${ctrl}" -eq 0 ] || problem "${image}: a tag contains a control character - the line-based checks below cannot see it"
+
     # `IFS= read` rather than plain `read`: the latter strips leading and trailing
     # whitespace, so ` ubuntu-24.04` would satisfy the pattern below while
     # versions-matrix.sh passes the space through to the manifest job, which then
@@ -207,7 +216,6 @@ for image in ${images}; do
         [ -n "${variant_tag}" ] || continue
         published="${published}${variant_tag}
 ${variant_tag}-sha-0000000
-${variant_tag}-r0.0
 "
         if [ "${is_primary}" = "true" ]; then
             published="${published}latest
