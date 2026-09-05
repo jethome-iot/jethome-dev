@@ -281,17 +281,18 @@ jobs:
                 same=$((same + 1))
               else
                 differ=$((differ + 1))
-                # An empty child set means the name resolves to something that is
-                # not an index at all. Recorded as its own literal rather than as
-                # an empty string: empty lines vanish from the distinct count
-                # below, and a name that vanishes agrees with everything.
                 # Flattened to one line per name, because the accumulator is read
-                # line by line below. An empty child set - a name resolving to
-                # something that is not an index - is recorded as a literal rather
-                # than as nothing: an empty line drops out of the distinct count,
-                # and a name that drops out agrees with everything.
+                # line by line below. A name that resolves to something without
+                # children - a single manifest rather than an index - is recorded
+                # by a fingerprint of what it actually resolved to, not by a
+                # constant: a constant makes every such state equal to every other,
+                # so two names on two DIFFERENT non-index manifests would count as
+                # one state and the split would be frozen as "consistent".
                 kids_flat="${existing//$'\n'/,}"
-                differ_children="${differ_children}${name}=${kids_flat:-(not-an-index)}"$'\n'
+                if [ -z "${kids_flat}" ]; then
+                  kids_flat="not-an-index:$(printf '%s' "${raw}" | sha256sum | cut -c1-16)"
+                fi
+                differ_children="${differ_children}${name}=${kids_flat}"$'\n'
               fi
             # Anchored, not a substring search. buildx prints `ERROR: <ref>: not
             # found` for a missing tag - verified against ghcr.io - while `not
@@ -302,23 +303,16 @@ jobs:
             # does not even say "not found": ghcr.io answers 403.
             elif grep -qE ': not found$|MANIFEST_UNKNOWN' "${probe_err}"; then
               free=$((free + 1))
-            elif grep -qE '\b403 Forbidden\b' "${probe_err}"; then
-              # A package that does not exist yet answers 403, not 404 - anonymous
-              # pull cannot be authorized for a repository with no versions. The
-              # first publication of any image lands here, so failing would mean
-              # this guard makes a new image unpublishable: no `latest`, no version
-              # tag, nothing. Treated as free, which is also what this job did
-              # before the guard existed. A 403 that really is a permissions
-              # problem still fails, loudly, on the create below.
-              #
-              # Matched on the status itself, never on the wrapper around it:
-              # `failed to authorize` also prefixes a transient `503 Service
-              # Unavailable` from the token service, and reading THAT as free
-              # would overwrite existing commit tags as soon as the service
-              # recovered before the create.
-              echo "${name}: registry answers 403 - the package does not exist yet, or this token cannot read it; treating the name as free"
-              free=$((free + 1))
             else
+              # Every other answer, 403 included. A 403 here cannot mean "the
+              # package does not exist": the legs of this run created it by pushing
+              # by digest, and the `new_children` loop above already read it back
+              # with this same token and scope. What a 403 does mean is that this
+              # particular read failed - and a read that failed is not a name that
+              # is free. Treating it as free was tried and reverted: the probe and
+              # the create are two separate authorizations seconds apart, so a
+              # transient 403 on the first would let the second quietly overwrite
+              # an immutable name, with a green run and nothing in the log.
               echo "::error::cannot tell whether ${name} exists: $(cat "${probe_err}")"
               rm -f "${probe_err}"
               exit 1
