@@ -397,13 +397,13 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
+            ${{ matrix.base_arg }}=${{ steps.base.outputs.ref }}
+            ${{ matrix.build_args }}
           # Pinned rather than left to the action's default, which differs between
           # public and private repositories and has changed across majors. mode=max
           # records build-args and the event payload into a public attestation - see
           # CLAUDE.md before adding an ARG that carries anything sensitive.
           provenance: mode=max
-            ${{ matrix.base_arg }}=${{ steps.base.outputs.ref }}
-            ${{ matrix.build_args }}
 
       - name: 📤 Export digest
         if: github.ref_name == 'master'
