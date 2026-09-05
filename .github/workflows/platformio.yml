@@ -281,7 +281,17 @@ jobs:
                 same=$((same + 1))
               else
                 differ=$((differ + 1))
-                differ_children="${differ_children}${name}=${existing//$'\n'/,}"$'\n'
+                # An empty child set means the name resolves to something that is
+                # not an index at all. Recorded as its own literal rather than as
+                # an empty string: empty lines vanish from the distinct count
+                # below, and a name that vanishes agrees with everything.
+                # Flattened to one line per name, because the accumulator is read
+                # line by line below. An empty child set - a name resolving to
+                # something that is not an index - is recorded as a literal rather
+                # than as nothing: an empty line drops out of the distinct count,
+                # and a name that drops out agrees with everything.
+                kids_flat="${existing//$'\n'/,}"
+                differ_children="${differ_children}${name}=${kids_flat:-(not-an-index)}"$'\n'
               fi
             # Anchored, not a substring search. buildx prints `ERROR: <ref>: not
             # found` for a missing tag - verified against ghcr.io - while `not
@@ -307,7 +317,10 @@ jobs:
           # through a rewrite leaves behind. Treating that as "consistently held by
           # an earlier build" would freeze exactly the split state this guard is
           # here to prevent.
-          differ_distinct=$(printf '%s' "${differ_children}" | sed 's/^[^=]*=//' | sort -u | grep -c . || true)
+          # `grep -c ''` counts every line, `grep -c .` skips empty ones - and an
+          # empty line is exactly what a name with no children would contribute,
+          # making a split state look like agreement.
+          differ_distinct=$(printf '%s' "${differ_children}" | sed 's/^[^=]*=//' | sort -u | grep -c '' || true)
           if [ "${differ}" -eq "${total}" ] && [ "${differ_distinct}" -le 1 ]; then
             # Every immutable name is held by an earlier build of this commit, all
             # of them consistently. That is the ordinary rebuild: keep what is
