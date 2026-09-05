@@ -243,12 +243,29 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}")
 
           # Asserted rather than trusted, and locally - no registry round-trip.
-          # Catches a reordering, a changed short-SHA length, and a name dropped by
-          # an edit to the block above.
+          #
+          # The short SHA first, because check-versions.sh hardcodes the 7-hex shape
+          # in its own rules: a change here would leave the checker validating a
+          # shape this job no longer publishes, and a hand-written `sha-12345678`
+          # would pass it and then be overwritten by this very step.
+          if [ "${#SHA_SHORT}" -ne 7 ]; then
+            echo "::error::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
+            exit 1
+          fi
+
+          # Counting `-t` occurrences, not array length halved: an entry added
+          # without its `-t` leaves an odd array whose halved length still matches,
+          # while `imagetools create` reads every non-flag argument as a SOURCE -
+          # folding a mutable tag into the manifest this run publishes. Catching
+          # exactly that kind of edit is what this assertion is for.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
-          if [ "$(( ${#tags[@]} / 2 ))" -ne "${expected}" ]; then
-            echo "::error::built $(( ${#tags[@]} / 2 )) names, expected ${expected}"
+          flags=0
+          for arg in "${tags[@]}"; do
+            [ "${arg}" = "-t" ] && flags=$((flags + 1))
+          done
+          if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
+            echo "::error::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
             exit 1
           fi
           if [ "${tags[-1]}" != "${IMAGE}:${TAG}" ]; then

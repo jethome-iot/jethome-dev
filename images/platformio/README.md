@@ -55,8 +55,10 @@ whenever that same commit is rebuilt.
 - **Debugging**: Use commit tags to reproduce the build made from a given commit
 
 None of these names is guaranteed to exist forever: nothing in the registry is
-immutable by enforcement, and old versions have been deleted by hand before. The
-only identity that cannot change is the digest — `…@sha256:<digest>`.
+immutable by enforcement, and old versions have been deleted by hand before —
+including a sweep that removed roughly nine months of them. A revision tag is the
+name to pin, and the digest (`…@sha256:<digest>`) is the only identity that cannot
+change at all.
 
 ### Pull Image
 
