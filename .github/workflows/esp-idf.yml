@@ -180,6 +180,11 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_IDF_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.actor != 'dependabot[bot]' }}
           build-args: ${{ matrix.build_args }}
+          # Pinned rather than left to the action's default, which differs between
+          # public and private repositories and has changed across majors. mode=max
+          # records build-args and the event payload into a public attestation - see
+          # CLAUDE.md before adding an ARG that carries anything sensitive.
+          provenance: mode=max
 
       # Matrix legs cannot each set a job output - they would overwrite one
       # another - so the digests travel as one empty file per leg, named after the
@@ -199,7 +204,7 @@ jobs:
           name: digest-${{ env.ESP_IDF_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   esp-idf-manifest:
     name: esp-idf-manifest (${{ matrix.tag }})
@@ -392,6 +397,11 @@ jobs:
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.ESP_MATTER_IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'master' }}
           build-args: |
+          # Pinned rather than left to the action's default, which differs between
+          # public and private repositories and has changed across majors. mode=max
+          # records build-args and the event payload into a public attestation - see
+          # CLAUDE.md before adding an ARG that carries anything sensitive.
+          provenance: mode=max
             ${{ matrix.base_arg }}=${{ steps.base.outputs.ref }}
             ${{ matrix.build_args }}
 
@@ -409,7 +419,7 @@ jobs:
           name: digest-${{ env.ESP_MATTER_IMAGE_NAME }}-${{ matrix.tag }}-${{ matrix.platform_tag }}
           path: /tmp/digests/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   esp-matter-manifest:
     name: esp-matter-manifest (${{ matrix.tag }})

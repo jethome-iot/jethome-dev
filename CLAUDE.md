@@ -105,6 +105,23 @@ before changing anything here.
   runtime `runs-on` is invisible to actionlint); every `base_tag` exists among the
   base image's tags; and the base image's `ARG` default names the primary variant's
   base tag. Run it locally with `./scripts/check-versions.sh`.
+- Three of those checks are about the *shape* of a tag rather than its contents.
+  A tag must be a legal Docker reference of at most 100 characters — 128 is the
+  registry limit and the manifest jobs append up to 17 characters of derived
+  suffix. It must not look like a name those jobs derive (`-sha-<7hex>`), because
+  a hand-written tag of that shape cannot be told apart from a real one. And the
+  names an image actually publishes must be unique across its variants, which tag
+  uniqueness alone does not give you: `foo` and `foo-sha-abc1234` are distinct
+  tags, yet the first grows exactly the second once its commit suffix is appended.
+  The version-naming check matches on a **token boundary with the value escaped**,
+  not as a bare substring: unescaped, the `.` in `24.04` matched `24X04`, and
+  without boundaries a variant built with `v5.5.5` satisfied a tag naming only
+  `v5.5`.
+- `provenance: mode=max` is set explicitly on every build rather than left to the
+  action's default, which differs between public and private repositories and has
+  moved across majors. It writes every build-arg value and the GitHub event
+  payload into a **public** attestation, so an `ARG` carrying anything sensitive
+  would leak there — weigh that before adding one.
 - The checker validates the whole file and every build workflow gates on it, so a version
   file broken for one image blocks publishing for all of them. That is deliberate —
   the data is shared — but it is also why `images/versions.json` sits in every

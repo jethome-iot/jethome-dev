@@ -22,6 +22,16 @@
 #   6. Every base_tag exists among the base image's tags, and an image with a base
 #      declares base_arg. This is what stops a half-done bump from publishing an
 #      idf-v<old> tag built on v<new>.
+#   7. Every tag is a legal Docker reference and short enough to carry the derived
+#      suffixes the manifest jobs append. A tag with `+` or `/` in it, or one 152
+#      characters long, is accepted here today and fails later, inside the push.
+#   8. No tag is shaped like a name the manifest jobs derive (`-sha-<7hex>`,
+#      `-r<run_id>.<attempt>`). A hand-written variant that looks derived is
+#      indistinguishable from one, and the write-once guard would refuse to
+#      publish a legitimate tag.
+#   9. The published names of an image are unique across its variants. `tag`
+#      uniqueness does not imply it: a variant tagged `foo` and one tagged
+#      `foo-sha-abc1234` collide once `foo` grows its own commit suffix.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,6 +80,32 @@ for image in ${images}; do
     unique=$(jq -r --arg i "${image}" '[.images[$i].builds[].tag] | unique | length' "${VERSIONS}")
     [ "${total}" -eq "${unique}" ] || problem "${image}: duplicate tags among its variants"
 
+    # A tag is a Docker reference: [a-zA-Z0-9_] first, then [a-zA-Z0-9._-], 128 max.
+    # The cap here is 100, not 128: the manifest jobs append the longest derived
+    # suffix `-r<run_id>.<attempt>` - 12 digits plus 2 today - so 100 leaves room
+    # for 17 characters of suffix and 11 to spare. Without this check a `+` or a
+    # `/` reaches `docker buildx imagetools create` and fails there instead.
+    while read -r variant_tag; do
+        [ -n "${variant_tag}" ] || continue
+        if ! printf '%s' "${variant_tag}" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$'; then
+            problem "${image}: tag '${variant_tag}' is not a legal Docker reference of at most 100 characters"
+        fi
+        # The manifest jobs derive `<tag>-sha-<7hex>` and `<tag>-r<run_id>.<attempt>`
+        # from this value. A hand-written tag of that shape cannot be told apart from
+        # a derived one, and the write-once guard would then refuse to publish it.
+        case "${variant_tag}" in
+        *-sha-???????)
+            case "${variant_tag##*-sha-}" in
+            *[!0-9a-f]*) ;;
+            *) problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-sha-<7hex> - the guard could not tell it from one" ;;
+            esac
+            ;;
+        esac
+        if printf '%s' "${variant_tag}" | grep -Eq -- '-r[0-9]+(\.[0-9]+)?$'; then
+            problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-r<run_id>.<attempt>"
+        fi
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+
     platforms=$(jq -r --arg i "${image}" '.images[$i].platforms | length' "${VERSIONS}")
     [ "${platforms}" -gt 0 ] || problem "${image}: no platforms declared"
     empty_runners=$(jq -r --arg i "${image}" '[.images[$i].platforms[] | select(. == "" or . == null)] | length' "${VERSIONS}")
@@ -115,17 +151,29 @@ for image in ${images}; do
     # it can, and the result is a GHCR tag whose name contradicts its contents.
     # Requiring every version that went into the build to appear in the tag is what
     # restores that link.
+    # Matched on a token boundary, not as a bare substring: `*"${value}"*` accepts
+    # any truncation, so a variant built with v5.5.5 passed a tag naming only v5.5.
+    # The value is escaped first - every version here contains dots, and an
+    # unescaped `.` is a regex metacharacter that matches `24X04` as happily as
+    # `24.04`. The boundary class is `[-_]` and deliberately excludes `.`: with a
+    # dot in it, `idf-v5.5.5` would satisfy a claim of `v5.5`, which is the hole
+    # this replaces.
     while IFS='|' read -r variant_tag value; do
         [ -n "${value}" ] || continue
-        case "${variant_tag}" in
-        *"${value}"*) ;;
-        *) problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag" ;;
-        esac
+        escaped=$(printf '%s' "${value}" | sed 's/[.[\*^$()+?{}|\\]/\\&/g')
+        printf '%s' "${variant_tag}" | grep -Eq "(^|[-_]v?)${escaped}($|[-_])" \
+            || problem "${image}: variant '${variant_tag}' is built with '${value}' but does not name it in its tag"
     done < <(jq -r --arg i "${image}" '.images[$i].builds[] as $b | (($b.args // {}) | to_entries[] | "\($b.tag)|\(.value)"), (if ($b.base_tag // "") != "" then "\($b.tag)|\($b.base_tag)" else empty end)' "${VERSIONS}")
 
     # Digests are downloaded with `digest-<image>-<tag>-*`, so one tag being a
     # prefix of another would pull in the other variant's platforms and publish a
     # mixed manifest. Uniqueness alone does not rule that out.
+    #
+    # Note what this rule is about, because it reads like a constraint on published
+    # names and is not one: both this check and that glob read `builds[].tag`, the
+    # matrix key. The names the manifest jobs publish are derived from it at build
+    # time and never appear in this file, so adding a derived name costs nothing
+    # here.
     while read -r a; do
         while read -r b; do
             [ "${a}" != "${b}" ] || continue
@@ -134,6 +182,31 @@ for image in ${images}; do
             esac
         done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
     done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
+
+    # The names actually published must be unique across variants - `tag`
+    # uniqueness does not imply it. A variant tagged `foo` and one tagged
+    # `foo-sha-abc1234` have distinct tags, yet `foo` grows exactly that name once
+    # the manifest job appends its commit suffix, and the two would overwrite each
+    # other in GHCR. The placeholders stand in for values only CI knows; they are
+    # constant here on purpose, since a collision must not depend on which commit
+    # happens to build.
+    published=""
+    while IFS='|' read -r variant_tag is_primary; do
+        [ -n "${variant_tag}" ] || continue
+        published="${published}${variant_tag}
+${variant_tag}-sha-0000000
+${variant_tag}-r0.0
+"
+        if [ "${is_primary}" = "true" ]; then
+            published="${published}latest
+sha-0000000
+"
+        fi
+    done < <(jq -r --arg i "${image}" '.images[$i].builds[] | "\(.tag)|\(.primary // false)"' "${VERSIONS}")
+    while read -r dupe; do
+        [ -n "${dupe}" ] || continue
+        problem "${image}: two variants would publish the same name '${dupe}'"
+    done < <(printf '%s' "${published}" | sort | uniq -d)
 
     # Every variant passes the same set of build args. An empty or partial set
     # would silently fall back to the Dockerfile's defaults and publish that under
