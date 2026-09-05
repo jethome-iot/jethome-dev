@@ -302,7 +302,7 @@ jobs:
             # does not even say "not found": ghcr.io answers 403.
             elif grep -qE ': not found$|MANIFEST_UNKNOWN' "${probe_err}"; then
               free=$((free + 1))
-            elif grep -qE '403 Forbidden|denied|failed to authorize' "${probe_err}"; then
+            elif grep -qE '\b403 Forbidden\b' "${probe_err}"; then
               # A package that does not exist yet answers 403, not 404 - anonymous
               # pull cannot be authorized for a repository with no versions. The
               # first publication of any image lands here, so failing would mean
@@ -310,6 +310,12 @@ jobs:
               # tag, nothing. Treated as free, which is also what this job did
               # before the guard existed. A 403 that really is a permissions
               # problem still fails, loudly, on the create below.
+              #
+              # Matched on the status itself, never on the wrapper around it:
+              # `failed to authorize` also prefixes a transient `503 Service
+              # Unavailable` from the token service, and reading THAT as free
+              # would overwrite existing commit tags as soon as the service
+              # recovered before the create.
               echo "${name}: registry answers 403 - the package does not exist yet, or this token cannot read it; treating the name as free"
               free=$((free + 1))
             else
@@ -406,43 +412,11 @@ jobs:
           SHA_SHORT="${GITHUB_SHA:0:7}"
           STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
 
-          # The anchor: the revision name belongs to this attempt alone, so no
-          # other run can have moved it. Read with its own diagnostic - under
-          # `set -e` a bare pipeline would die here with nothing but buildx's
-          # stderr, and the one thing worth saying is which name failed.
-          anchor_err=$(mktemp)
-          anchor_raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${TAG}-${STAMP}" 2>"${anchor_err}") || {
-            echo "::error::${TAG}-${STAMP} does not resolve after publication - this run did not publish what it thinks: $(cat "${anchor_err}")"
-            rm -f "${anchor_err}"
-            exit 1
-          }
-          rm -f "${anchor_err}"
-          anchor=$(printf '%s' "${anchor_raw}" | jq -r '.manifests[]?.digest' | sort -u)
-          if [ -z "${anchor}" ]; then
-            echo "::error::${TAG}-${STAMP} resolves to an index with no children"
-            exit 1
-          fi
-
-          # Mutable names are checked but never fail the job: `concurrency` gives
-          # every master push its own group on purpose, so a second run can move
-          # `latest` and the version tag between the push above and this check.
-          # That is a supported race, not a defect - CLAUDE.md keeps it deliberately.
-          immutable=("${TAG}-sha-${SHA_SHORT}")
-          mutable=("${TAG}")
-          if [ "${PRIMARY}" = "true" ]; then
-            immutable+=("sha-${SHA_SHORT}")
-            mutable+=("latest")
-          fi
-
-          fail=0
-          # A read that fails is not a name that is missing. Distinguishing them
-          # matters more here than in the guard: this step runs AFTER a correct
-          # publication, so treating a transient registry error as absence paints
-          # master red for something that went right.
-          # GHCR promises no read-after-write, so a name written seconds ago can
-          # briefly read as absent. Retried before absence is believed - the
-          # mutable loop below tolerates it outright, and the immutable one must
-          # not paint master red for a push that went through.
+          # A read that fails is not a name that is missing, and GHCR promises no
+          # read-after-write, so a name written seconds ago can briefly read as
+          # absent. Both are handled here, for every lookup this step makes - the
+          # anchor included, which used to be a one-shot read that could fail a
+          # correct publication on a momentary miss.
           resolve() {
             local name="$1" err out attempt
             err=$(mktemp)
@@ -463,6 +437,30 @@ jobs:
             rm -f "${err}"
             return 2
           }
+
+          # The anchor: the revision name belongs to this attempt alone, so no
+          # other run can have moved it. Everything else is compared against it.
+          if ! anchor=$(resolve "${TAG}-${STAMP}"); then
+            echo "::error::${TAG}-${STAMP} does not resolve after publication - this run did not publish what it thinks"
+            exit 1
+          fi
+          if [ -z "${anchor}" ]; then
+            echo "::error::${TAG}-${STAMP} resolves to an index with no children"
+            exit 1
+          fi
+
+          # Mutable names are checked but never fail the job: `concurrency` gives
+          # every master push its own group on purpose, so a second run can move
+          # `latest` and the version tag between the push above and this check.
+          # That is a supported race, not a defect - CLAUDE.md keeps it deliberately.
+          immutable=("${TAG}-sha-${SHA_SHORT}")
+          mutable=("${TAG}")
+          if [ "${PRIMARY}" = "true" ]; then
+            immutable+=("sha-${SHA_SHORT}")
+            mutable+=("latest")
+          fi
+
+          fail=0
 
           for name in "${immutable[@]}"; do
             if got=$(resolve "${name}"); then
