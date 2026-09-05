@@ -223,15 +223,156 @@ jobs:
           for digest in *; do
             refs+=("${IMAGE}@sha256:${digest}")
           done
-          # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
-          # Every variant gets `<version>-sha-<short-commit>`: the version tag itself is
-          # rewritten on every push, so without it a consumer pinned to a
-          # non-primary variant has no name for the build they were running.
+
           SHA_SHORT="${GITHUB_SHA:0:7}"
-          tags=()
+          # The revision name: this attempt of this run. `run_id` is unique per
+          # GitHub instance and shared by every leg of the matrix; `run_attempt`
+          # is what distinguishes a re-run, which nothing else here does - the
+          # commit is the same and, with no build cache, the image is not.
+          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+
+          # What the new index will contain: imagetools copies the CHILDREN of
+          # each leg, not the leg index itself, so that is what an existing tag
+          # has to be compared against. The index digest itself is no use for
+          # this - it carries a fresh `created`, so it differs on every run even
+          # when the layers are identical.
+          new_children=$(for digest in *; do
+            docker buildx imagetools inspect --raw "${IMAGE}@sha256:${digest}" | jq -r '.manifests[]?.digest'
+          done | sort -u)
+
+          # Write-once guard, per name rather than per operation. It resolves the
+          # immutable names only - `latest` and the version tag are meant to move.
+          # Three outcomes, and the third is why this is not a one-liner: a
+          # registry that cannot answer must not read as "free".
+          immutable=("${TAG}-sha-${SHA_SHORT}")
           if [ "${PRIMARY}" = "true" ]; then
-            tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
+            immutable+=("sha-${SHA_SHORT}")
           fi
-          tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
-          tags+=(-t "${IMAGE}:${TAG}")
+          skip=""
+          for name in "${immutable[@]}"; do
+            probe_err=$(mktemp)
+            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${probe_err}"); then
+              existing=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
+              if [ "${existing}" = "${new_children}" ]; then
+                echo "${name}: already published with identical contents - idempotent re-run"
+              else
+                # Deliberately a warning and a skip, not a failure: failing here
+                # would withhold `latest` and the version tag too, turning the
+                # ordinary "Re-run all jobs" recovery into a guaranteed red run
+                # after a full multi-arch build.
+                echo "::warning::${name} exists with different contents and will NOT be moved"
+                echo "  existing: $(printf '%s' "${existing}" | tr '\n' ' ')"
+                echo "  this run: $(printf '%s' "${new_children}" | tr '\n' ' ')"
+                skip="${skip}${name}"$'\n'
+              fi
+            elif grep -qiE 'manifest unknown|MANIFEST_UNKNOWN|not found' "${probe_err}"; then
+              echo "${name}: free"
+            else
+              echo "::error::cannot tell whether ${name} exists: $(cat "${probe_err}")"
+              exit 1
+            fi
+            rm -f "${probe_err}"
+          done
+
+          # Only the primary variant moves `latest` and the bare `sha-<short-commit>`.
+          # Every variant gets `<version>-sha-<short-commit>` and the revision name.
+          # The version tag is passed LAST: GHCR shows the last one as the package's
+          # primary tag.
+          names=()
+          if [ "${PRIMARY}" = "true" ]; then
+            names+=("latest" "sha-${SHA_SHORT}")
+          fi
+          names+=("${TAG}-sha-${SHA_SHORT}" "${TAG}-${STAMP}" "${TAG}")
+
+          tags=()
+          for name in "${names[@]}"; do
+            if printf '%s' "${skip}" | grep -qxF "${name}"; then
+              continue
+            fi
+            tags+=(-t "${IMAGE}:${name}")
+          done
+
+          # The set is asserted rather than trusted: this catches a reordering, a
+          # changed short-SHA length, and a name silently dropped by the loop above.
+          expected=5
+          [ "${PRIMARY}" = "true" ] || expected=3
+          skipped=$(printf '%s' "${skip}" | grep -c . || true)
+          if [ "$(( ${#tags[@]} / 2 ))" -ne "$(( expected - skipped ))" ]; then
+            echo "::error::built $(( ${#tags[@]} / 2 )) names, expected $(( expected - skipped ))"
+            exit 1
+          fi
+          if [ "${tags[-1]}" != "${IMAGE}:${TAG}" ]; then
+            echo "::error::the version tag must be last, for GHCR's primary-tag display"
+            exit 1
+          fi
+
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+
+      # Not a diagnostic for the migration but a permanent check: the set of names
+      # this job publishes is derived in shell, and nothing else compares that
+      # derivation against what the registry ends up holding. It runs after the
+      # push because the registry is the only trustworthy answer.
+      - name: ✅ Verify the published names
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PLATFORMIO_IMAGE_NAME }}
+          TAG: ${{ matrix.tag }}
+          PRIMARY: ${{ matrix.primary }}
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+
+          # The revision name is the anchor: it belongs to this attempt alone, so
+          # no other run can have moved it. Everything else is compared against
+          # what it resolves to.
+          anchor=$(docker buildx imagetools inspect --raw "${IMAGE}:${TAG}-${STAMP}" \
+            | jq -r '.manifests[]?.digest' | sort -u)
+          if [ -z "${anchor}" ]; then
+            echo "::error::${TAG}-${STAMP} does not resolve - this run did not publish what it thinks"
+            exit 1
+          fi
+
+          # Mutable names are checked but never fail the job: `concurrency` gives
+          # every master push its own group on purpose, so a second run can move
+          # `latest` and the version tag between the push above and this check.
+          # That is a supported race, not a defect - CLAUDE.md keeps it deliberately.
+          immutable=("${TAG}-sha-${SHA_SHORT}")
+          mutable=("${TAG}")
+          if [ "${PRIMARY}" = "true" ]; then
+            immutable+=("sha-${SHA_SHORT}")
+            mutable+=("latest")
+          fi
+
+          fail=0
+          for name in "${immutable[@]}"; do
+            err=$(mktemp)
+            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
+              got=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
+              if [ "${got}" = "${anchor}" ]; then
+                echo "${name}: matches this run"
+              else
+                # Only legitimate when the guard above skipped it.
+                echo "::warning::${name} does not match this run - expected if the guard skipped it, a defect otherwise"
+              fi
+            else
+              echo "::error::${name} does not resolve after publication: $(cat "${err}")"
+              fail=1
+            fi
+            rm -f "${err}"
+          done
+          for name in "${mutable[@]}"; do
+            err=$(mktemp)
+            if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:${name}" 2>"${err}"); then
+              got=$(printf '%s' "${raw}" | jq -r '.manifests[]?.digest' | sort -u)
+              if [ "${got}" = "${anchor}" ]; then
+                echo "${name}: matches this run"
+              else
+                echo "${name}: moved on by a later run - expected under concurrent pushes"
+              fi
+            else
+              echo "::error::${name} does not resolve after publication: $(cat "${err}")"
+              fail=1
+            fi
+            rm -f "${err}"
+          done
+          exit "${fail}"

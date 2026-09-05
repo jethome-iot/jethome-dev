@@ -81,7 +81,9 @@ for image in ${images}; do
 
     # A tag is a Docker reference: [a-zA-Z0-9_] first, then [a-zA-Z0-9._-], 128 max.
     # The cap here is 100, not 128, so a tag always has room for the suffixes the
-    # manifest jobs append - today the longest is `-sha-<7hex>`, 12 characters.
+    # manifest jobs append. The longest is now the revision name,
+    # `-r<run_id>.<attempt>`: 15 characters at today's 11-digit run IDs, and it
+    # gains one per decade of GitHub's counter, so 100 leaves 13 to spare.
     # Without this check a `+` or a `/` reaches the artifact name and
     # `docker buildx imagetools create`, and fails there instead. A newline cannot
     # be caught in this loop at all - the reader already split on it - which is what
@@ -141,6 +143,12 @@ for image in ${images}; do
             esac
             ;;
         esac
+        # The revision name the manifest jobs now append. A hand-written tag of
+        # this shape is indistinguishable from a derived one and would be
+        # overwritten by whichever run happens to match it.
+        if printf '%s' "${variant_tag}" | grep -Eq -- '-r[0-9]+\.[0-9]+$'; then
+            problem "${image}: tag '${variant_tag}' looks like the derived name <tag>-r<run_id>.<attempt>"
+        fi
     done < <(jq -r --arg i "${image}" '.images[$i].builds[].tag' "${VERSIONS}")
 
     platforms=$(jq -r --arg i "${image}" '.images[$i].platforms | length' "${VERSIONS}")
@@ -236,7 +244,7 @@ for image in ${images}; do
     published=()
     while IFS='|' read -r variant_tag is_primary; do
         [ -n "${variant_tag}" ] || continue
-        published+=("${variant_tag}" "${variant_tag}-sha-0000000")
+        published+=("${variant_tag}" "${variant_tag}-sha-0000000" "${variant_tag}-r0.0")
         if [ "${is_primary}" = "true" ]; then
             published+=(latest sha-0000000)
         fi
