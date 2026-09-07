@@ -56,7 +56,7 @@ env:
 # *pending* run in a group whenever a newer one arrives, regardless of that flag -
 # so grouping master pushes by ref would silently drop the middle commit of any
 # three that land inside one build window, and its sha-<short-commit> image, which the
-# READMEs document as the way to pin an exact commit, would never exist.
+# READMEs document as the newest build made from a given commit, would never exist.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -245,34 +245,58 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}")
 
           # Checked rather than trusted, and locally - no registry round-trip.
-          # Warnings, not failures, and deliberately so: this job runs on master
-          # only, so nothing here can be exercised by a pull request. A failure
-          # would therefore first appear AFTER a full multi-arch build and would
-          # publish no name at all - `latest` and the version tag stranded on the
-          # previous build, this run's digests sitting in GHCR unnamed. The typo
-          # these catch is worth a loud line in the log, not that.
+          # Three of these warn and one fails, deliberately: this job runs on
+          # master only, so nothing here is exercised by a pull request and a
+          # failure first appears AFTER a full multi-arch build. A bad `PRIMARY`,
+          # a miscount or a misordered version tag each cost a name too many, too
+          # few, or the wrong one shown as the package's primary - worth a line in
+          # the log. An argument list that is not `-t <name>` pairs would publish a
+          # CORRUPTED index, which is worse than publishing nothing.
           #
-          # The short SHA first, because check-versions.sh hardcodes the 7-hex shape
-          # in its own rules: a change here would leave the checker validating a
-          # shape this job no longer publishes, and a hand-written `sha-12345678`
-          # would pass it and then be overwritten by this very step.
-          if [ "${#SHA_SHORT}" -ne 7 ]; then
-            echo "::warning::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
-          fi
+          # `PRIMARY` decides both what goes into the array and what is expected of
+          # it, so a value that is neither `true` nor `false` - a renamed matrix
+          # key, a missing one - would quietly drop `latest` and the bare
+          # `sha-<short-commit>` with the count still agreeing. Checked before use.
+          case "${PRIMARY}" in
+          true|false) ;;
+          *) echo "::warning::PRIMARY is '${PRIMARY}', expected true or false; the primary-only names may be missing" ;;
+          esac
 
-          # Counting `-t` occurrences, not array length halved: an entry added
-          # without its `-t` leaves an odd array whose halved length still matches,
-          # while `imagetools create` reads every non-flag argument as a SOURCE -
-          # folding a mutable tag into the manifest this run publishes. Catching
-          # exactly that kind of edit is what this assertion is for.
+          # `tags` must alternate `-t <name>` strictly, and this FAILS rather than
+          # warns: `imagetools create` reads every non-flag argument as a SOURCE,
+          # so any entry that is not a flag and not preceded by one gets merged
+          # into the published index - folding whatever a mutable tag points at
+          # into this image. Publishing a corrupted index is worse than publishing
+          # nothing, which is not true of the count below.
+          #
+          # Parity alone was not enough: it says nothing about WHERE the flags
+          # sit, so `-t -t <name> <name>` passed it. Anything this array needs
+          # beyond `-t <name>` pairs - a boolean flag, say - belongs on the command
+          # line, not in here.
+          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
+            echo "::error::${#tags[@]} arguments cannot be -t <name> pairs"
+            exit 1
+          fi
+          i=0
+          while [ "${i}" -lt "${#tags[@]}" ]; do
+            if [ "${tags[${i}]}" != "-t" ]; then
+              echo "::error::tags[${i}] is '${tags[${i}]}', expected -t; a stray argument would be merged as a source"
+              exit 1
+            fi
+            case "${tags[$(( i + 1 ))]}" in
+            -*)
+              echo "::error::tags[$(( i + 1 ))] is '${tags[$(( i + 1 ))]}', expected a name; the next argument would be consumed as its value"
+              exit 1
+              ;;
+            esac
+            i=$(( i + 2 ))
+          done
+          # The count is only a warning: being wrong here publishes a name too many
+          # or too few, which is a nuisance, not a corrupted image.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
-          flags=0
-          for arg in "${tags[@]}"; do
-            [ "${arg}" = "-t" ] && flags=$((flags + 1))
-          done
-          if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
-            echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
+          if [ "$(( ${#tags[@]} / 2 ))" -ne "${expected}" ]; then
+            echo "::warning::built $(( ${#tags[@]} / 2 )) names, expected ${expected}"
           fi
           # Positive index rather than `${tags[-1]}`: negative subscripts need
           # bash 4.3. This step assumes bash throughout - arrays, substring

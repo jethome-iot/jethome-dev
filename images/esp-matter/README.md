@@ -89,12 +89,22 @@ own record of what it deployed rather than against the files on disk.
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Revision** | `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Version + commit** | `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` | The newest build of that commit for THIS combination — the only commit name a non-primary variant gets |
+| **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
+
+The commit in every tag above is the **first 7 characters** of the SHA, e.g.
+`sha-9a76c51` — `git rev-parse --short=7 HEAD`, since `--short` alone depends on
+`core.abbrev`.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
+- **Rolling back**: use a revision tag
+  (`idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>`) — it names one build
+  and is never reused
+- **Debugging**: commit tags name the newest build made from a given commit, which
+  a rebuild of that commit replaces
 
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
 
@@ -107,8 +117,8 @@ Two things worth knowing before pinning:
 
 - `latest` moves when the primary does, which happens on a version bump. Pin the
   version tag if the Matter specification matters to you, and
-  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` for the newest build of a
-  commit, which a rebuild of that commit moves —
+  `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` when you need one exact
+  build —
   the version tag is rewritten on every rebuild.
 - **The tag names the Matter specification, and the build is pinned to a commit.**
   ESP-Matter publishes no git tags — only moving `release/*` branches, where a

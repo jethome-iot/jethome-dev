@@ -45,20 +45,28 @@ image built on this one, so it always describes the container you are in.
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Revision** | `idf-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Version + commit** | `idf-v<version>-sha-<short-commit>` | The newest build of that commit for THIS version — the only commit name a non-primary variant gets |
+| **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
+
+The commit in every tag above is the **first 7 characters** of the SHA, e.g.
+`sha-9a76c51` — `git rev-parse --short=7 HEAD`, since `--short` alone depends on
+`core.abbrev`.
 
 **Several ESP-IDF versions are published at once**, each under its own
 `idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
 chosen in [`images/versions.json`](../versions.json) — that file is also where you
 can see which versions currently exist. Pin the version tag if the release matters
-to you, and `idf-v<version>-sha-<short-commit>` for the newest build of a commit — a rebuild
-of that commit moves it, so it is not the exact build: the version
+to you, and `idf-v<version>-r<run-id>.<attempt>` when you need one exact build: the version
 tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
+- **Rolling back**: use a revision tag (`idf-v<version>-r<run-id>.<attempt>`) — it
+  names one build and is never reused
+- **Debugging**: commit tags name the newest build made from a given commit, which
+  a rebuild of that commit replaces
 
 ### Reading the ESP-IDF version without pulling the image
 
