@@ -269,12 +269,22 @@ jobs:
           # flags leave the array even and the count unchanged. Anything this
           # array needs beyond `-t <name>` pairs - a boolean flag, say - belongs
           # in the command line, not in here.
+          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
+            echo "::error::${#tags[@]} arguments cannot be -t <name> pairs"
+            exit 1
+          fi
           i=0
           while [ "${i}" -lt "${#tags[@]}" ]; do
             if [ "${tags[${i}]}" != "-t" ]; then
               echo "::error::tags[${i}] is '${tags[${i}]}', expected -t; a stray argument would be merged as a source"
               exit 1
             fi
+            case "${tags[$(( i + 1 ))]}" in
+            -*)
+              echo "::error::tags[$(( i + 1 ))] is '${tags[$(( i + 1 ))]}', expected a name; the next argument would be consumed as its value"
+              exit 1
+              ;;
+            esac
             i=$(( i + 2 ))
           done
           # The count is only a warning: being wrong here publishes a name too many
