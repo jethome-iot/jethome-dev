@@ -273,8 +273,8 @@ jobs:
             echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
           fi
           # Positive index rather than `${tags[-1]}`: negative subscripts need
-          # bash 4.3, and this is the only line in the file that would care which
-          # shell runs it.
+          # bash 4.3. This step assumes bash throughout - arrays, substring
+          # expansion, `pipefail` - so the point is the version, not the shell.
           if [ "${tags[$(( ${#tags[@]} - 1 ))]}" != "${IMAGE}:${TAG}" ]; then
             echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
