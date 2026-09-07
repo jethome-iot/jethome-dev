@@ -49,6 +49,10 @@ image built on this one, so it always describes the container you are in.
 | **Version + commit** | `idf-v<version>-sha-<short-commit>` | The newest build of that commit for THIS version — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
 
+The commit in every tag above is the **first 7 characters** of the SHA, e.g.
+`sha-9a76c51` — `git rev-parse --short=7 HEAD`, since `--short` alone depends on
+`core.abbrev`.
+
 **Several ESP-IDF versions are published at once**, each under its own
 `idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
 chosen in [`images/versions.json`](../versions.json) — that file is also where you

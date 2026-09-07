@@ -93,6 +93,10 @@ own record of what it deployed rather than against the files on disk.
 | **Version + commit** | `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` | The newest build of that commit for THIS combination — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
 
+The commit in every tag above is the **first 7 characters** of the SHA, e.g.
+`sha-9a76c51` — `git rev-parse --short=7 HEAD`, since `--short` alone depends on
+`core.abbrev`.
+
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
