@@ -46,7 +46,8 @@ image built on this one, so it always describes the container you are in.
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
 | **Revision** | `idf-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
-| **Commit** | `sha-<short-commit>` | The newest build of that commit — rewritten if the commit is rebuilt |
+| **Version + commit** | `idf-v<version>-sha-<short-commit>` | The newest build of that commit for THIS version — the only commit name a non-primary variant gets |
+| **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
 
 **Several ESP-IDF versions are published at once**, each under its own
 `idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
@@ -58,7 +59,10 @@ tag itself is rewritten on every rebuild.
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
+- **Rolling back**: use a revision tag (`idf-v<version>-r<run-id>.<attempt>`) — it
+  names one build and is never reused
+- **Debugging**: commit tags name the newest build made from a given commit, which
+  a rebuild of that commit replaces
 
 ### Reading the ESP-IDF version without pulling the image
 

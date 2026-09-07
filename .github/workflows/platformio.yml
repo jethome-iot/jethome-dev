@@ -258,19 +258,26 @@ jobs:
             echo "::warning::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
           fi
 
-          # Counting `-t` occurrences, not array length halved: an entry added
-          # without its `-t` leaves an odd array whose halved length still matches,
-          # while `imagetools create` reads every non-flag argument as a SOURCE -
-          # folding a mutable tag into the manifest this run publishes. Catching
-          # exactly that kind of edit is what this assertion is for.
+          # An odd array means some entry lacks its `-t`, and `imagetools create`
+          # reads every non-flag argument as a SOURCE - so that entry would be
+          # merged into the published index, folding whatever a mutable tag points
+          # at into this image. That one FAILS: publishing a corrupted index is
+          # worse than publishing nothing, which is not true of the count and the
+          # ordering below.
+          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
+            echo "::error::${#tags[@]} arguments is odd - an entry is missing its -t and would be merged as a source"
+            exit 1
+          fi
+          # The count itself is only a warning: being wrong here publishes a name
+          # too many or too few, which is a nuisance, not a corrupted image.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
           flags=0
           for arg in "${tags[@]}"; do
             [ "${arg}" = "-t" ] && flags=$((flags + 1))
           done
-          if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
-            echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
+          if [ "${flags}" -ne "${expected}" ]; then
+            echo "::warning::built ${flags} names, expected ${expected}"
           fi
           # Positive index rather than `${tags[-1]}`: negative subscripts need
           # bash 4.3. This step assumes bash throughout - arrays, substring

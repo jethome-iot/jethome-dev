@@ -90,12 +90,17 @@ own record of what it deployed rather than against the files on disk.
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
 | **Revision** | `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` | One build. Never moves, never reused |
-| **Commit** | `sha-<short-commit>` | The newest build of that commit — rewritten if the commit is rebuilt |
+| **Version + commit** | `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` | The newest build of that commit for THIS combination — the only commit name a non-primary variant gets |
+| **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
 - **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
+- **Rolling back**: use a revision tag
+  (`idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>`) — it names one build
+  and is never reused
+- **Debugging**: commit tags name the newest build made from a given commit, which
+  a rebuild of that commit replaces
 
 **Note**: Version tags include both ESP-IDF and ESP-Matter versions for full clarity.
 
