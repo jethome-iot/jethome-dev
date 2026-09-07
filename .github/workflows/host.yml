@@ -230,10 +230,55 @@ jobs:
           # rewritten on every push, so without it a consumer pinned to a
           # non-primary variant has no name for the build they were running.
           SHA_SHORT="${GITHUB_SHA:0:7}"
+          # And the revision name: one build, never moved. `<version>-sha-<commit>`
+          # cannot do that job, because a rebuild of the same commit rewrites it -
+          # the commit is identical and, with no build cache, the image is not.
+          # `run_id` is unique per GitHub instance and shared by every leg of the
+          # matrix; `run_attempt` is what a re-run changes.
+          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           tags=()
           if [ "${PRIMARY}" = "true" ]; then
             tags+=(-t "${IMAGE}:latest" -t "${IMAGE}:sha-${SHA_SHORT}")
           fi
           tags+=(-t "${IMAGE}:${TAG}-sha-${SHA_SHORT}")
+          tags+=(-t "${IMAGE}:${TAG}-${STAMP}")
           tags+=(-t "${IMAGE}:${TAG}")
+
+          # Checked rather than trusted, and locally - no registry round-trip.
+          # Warnings, not failures, and deliberately so: this job runs on master
+          # only, so nothing here can be exercised by a pull request. A failure
+          # would therefore first appear AFTER a full multi-arch build and would
+          # publish no name at all - `latest` and the version tag stranded on the
+          # previous build, this run's digests sitting in GHCR unnamed. The typo
+          # these catch is worth a loud line in the log, not that.
+          #
+          # The short SHA first, because check-versions.sh hardcodes the 7-hex shape
+          # in its own rules: a change here would leave the checker validating a
+          # shape this job no longer publishes, and a hand-written `sha-12345678`
+          # would pass it and then be overwritten by this very step.
+          if [ "${#SHA_SHORT}" -ne 7 ]; then
+            echo "::warning::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
+          fi
+
+          # Counting `-t` occurrences, not array length halved: an entry added
+          # without its `-t` leaves an odd array whose halved length still matches,
+          # while `imagetools create` reads every non-flag argument as a SOURCE -
+          # folding a mutable tag into the manifest this run publishes. Catching
+          # exactly that kind of edit is what this assertion is for.
+          expected=5
+          [ "${PRIMARY}" = "true" ] || expected=3
+          flags=0
+          for arg in "${tags[@]}"; do
+            [ "${arg}" = "-t" ] && flags=$((flags + 1))
+          done
+          if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
+            echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
+          fi
+          # Positive index rather than `${tags[-1]}`: negative subscripts need
+          # bash 4.3. This step assumes bash throughout - arrays, substring
+          # expansion, `pipefail` - so the point is the version, not the shell.
+          if [ "${tags[$(( ${#tags[@]} - 1 ))]}" != "${IMAGE}:${TAG}" ]; then
+            echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
+          fi
+
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"

@@ -54,7 +54,7 @@ before changing anything here.
   roll back to). The **primary** variant additionally gets `latest` and the bare
   `sha-<short-commit>`. The revision name exists because nothing else distinguishes
   a rebuild of the same commit: the commit is identical and, with no build cache,
-  the image is not. Only platformio publishes it so far — the other images follow.
+  the image is not. platformio and host publish it so far — the ESP images follow.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
