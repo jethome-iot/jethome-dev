@@ -56,7 +56,7 @@ env:
 # *pending* run in a group whenever a newer one arrives, regardless of that flag -
 # so grouping master pushes by ref would silently drop the middle commit of any
 # three that land inside one build window, and its sha-<short-commit> image, which the
-# READMEs document as the way to pin an exact commit, would never exist.
+# READMEs document as the newest build made from a given commit, would never exist.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

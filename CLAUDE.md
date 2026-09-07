@@ -177,7 +177,7 @@ before changing anything here.
   *pending* run in a group whenever a newer one arrives, whatever that flag says.
   Grouping master pushes by ref would therefore drop the middle commit of any three
   landing inside one build window, along with its `sha-<short-commit>` image, which the
-  READMEs document as the way to pin an exact commit.
+  READMEs document as the newest build made from a given commit.
 - Each manifest job asserts it received one digest per platform before publishing.
   With `fail-fast: false` a failed leg would otherwise leave a single file in the
   directory and quietly publish a single-platform image under the multi-arch tags.
