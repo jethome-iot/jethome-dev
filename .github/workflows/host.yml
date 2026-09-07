@@ -245,12 +245,13 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}")
 
           # Checked rather than trusted, and locally - no registry round-trip.
-          # Two of these warn and one fails, deliberately: this job runs on master
-          # only, so nothing here is exercised by a pull request and a failure
-          # first appears AFTER a full multi-arch build. A miscount publishes a
-          # name too many or too few and is worth a line in the log; an argument
-          # list that is not `-t <name>` pairs would publish a CORRUPTED index,
-          # which is worse than publishing nothing.
+          # Three of these warn and one fails, deliberately: this job runs on
+          # master only, so nothing here is exercised by a pull request and a
+          # failure first appears AFTER a full multi-arch build. A bad `PRIMARY`,
+          # a miscount or a misordered version tag each cost a name too many, too
+          # few, or the wrong one shown as the package's primary - worth a line in
+          # the log. An argument list that is not `-t <name>` pairs would publish a
+          # CORRUPTED index, which is worse than publishing nothing.
           #
           # `PRIMARY` decides both what goes into the array and what is expected of
           # it, so a value that is neither `true` nor `false` - a renamed matrix
