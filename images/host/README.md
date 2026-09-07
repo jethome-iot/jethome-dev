@@ -58,7 +58,7 @@ consumer can assert the image agrees with its own pins instead of assuming it
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `ubuntu-<version>` | Pin to a specific Ubuntu base (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Commit** | `sha-<short-commit>` | The newest build of that commit, under the name every image of this repo shares — rewritten if the commit is rebuilt |
 | **Revision** | `ubuntu-<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `ubuntu-<version>-sha-<short-commit>` | The **latest** build of that commit — rewritten if the commit is rebuilt |
 
@@ -69,6 +69,11 @@ consumer can assert the image agrees with its own pins instead of assuming it
   and is never reused, while `ubuntu-<version>-sha-<short-commit>` names the newest
   build of a commit and moves when that commit is rebuilt. The version tag itself is
   rewritten on every rebuild
+
+No name here is guaranteed to exist forever: the registry enforces no immutability,
+and roughly nine months of versions have been removed by hand before. The revision
+tag is the name to pin, and the digest (`…@sha256:<digest>`) is the only identity
+that cannot change at all.
 
 ### Pull Image
 
