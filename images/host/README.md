@@ -59,16 +59,15 @@ consumer can assert the image agrees with its own pins instead of assuming it
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `ubuntu-<version>` | Pin to a specific Ubuntu base (recommended for CI/CD) |
 | **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Revision** | `ubuntu-<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `ubuntu-<version>-sha-<short-commit>` | The **latest** build of that commit — rewritten if the commit is rebuilt |
 
 **Tag Recommendations:**
 - **Development**: `latest` for convenience
 - **CI/CD**: the version tag for reproducibility
-- **Rolling back**: `ubuntu-<version>-sha-<short-commit>` names the newest build of
-  a commit, so a rebuild of that commit moves it. Nothing published by this image
-  names one build and only that build yet — platformio has such a name
-  (`-r<run-id>.<attempt>`) and host follows. Until then the only stable identity is
-  the digest, `…@sha256:<digest>`. The version tag itself is
+- **Rolling back**: use `ubuntu-<version>-r<run-id>.<attempt>`. It names one build
+  and is never reused, while `ubuntu-<version>-sha-<short-commit>` names the newest
+  build of a commit and moves when that commit is rebuilt. The version tag itself is
   rewritten on every rebuild
 
 ### Pull Image
