@@ -330,6 +330,14 @@ jobs:
           # and wants to be short, an annotation is data and wants to be
           # unambiguous. It is also the only place the commit survives at all for a
           # consumer pinned by digest, who by construction kept no tag to read.
+          #
+          # No `licenses`, deliberately. OCI defines it as the licence of the
+          # *contained software*, and these images contain GCC and binutils under
+          # GPL-3.0, a distribution's worth of packages, and ESP-IDF under
+          # Apache-2.0. `MIT` is this repository's own licence and would give a
+          # licence scanner a wrong answer; an SPDX expression covering what is
+          # actually in here is not something this job can compute. `source` points
+          # at the repository, where LICENSE says what jethome-dev is under.
           SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           # Assigned rather than inlined into the array: a command substitution that
           # fails inside `arr+=(...)` leaves an empty value behind and a green step,
@@ -342,7 +350,6 @@ jobs:
           annotations+=(--annotation "index:org.opencontainers.image.created=${CREATED}")
           annotations+=(--annotation "index:org.opencontainers.image.version=${TAG}")
           annotations+=(--annotation "index:org.opencontainers.image.title=${IMAGE##*/}")
-          annotations+=(--annotation "index:org.opencontainers.image.licenses=MIT")
           create_args=("${annotations[@]}" "${tags[@]}")
 
           # Checked rather than trusted, and locally - no registry round-trip.
@@ -415,12 +422,19 @@ jobs:
             echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
 
-          # `--annotation` landed in buildx 0.12. This job runs on ubuntu-latest
-          # with whatever buildx the runner image ships - there is no
-          # setup-buildx-action here, because `imagetools` talks to the registry
-          # and needs no builder - so the flag is checked rather than assumed.
-          # Before publishing, not after: an older buildx would reject the whole
-          # command and leave this run's images in GHCR with no tag at all.
+          # This job runs on ubuntu-latest with whatever buildx the runner image
+          # ships - there is no setup-buildx-action here, because `imagetools`
+          # talks to the registry and needs no builder - so the flag is checked
+          # rather than assumed. Before publishing, not after: a buildx without it
+          # would reject the whole command and leave this run's images in GHCR with
+          # no tag at all.
+          #
+          # What this proves is exactly that the flag is accepted, and nothing
+          # more. Whether that buildx also understands the `index:` prefix, and
+          # whether its `inspect` surfaces annotations at all, are separate
+          # questions - and the read-back below answers both, which is why it tells
+          # an index with no annotations apart from one annotating the wrong
+          # commit.
           if ! docker buildx imagetools create --help | grep -q -- '--annotation'; then
             echo "::error::this buildx does not support --annotation"
             exit 1
@@ -444,8 +458,13 @@ jobs:
           # while publishing images whose revision says nothing.
           if published=$(docker buildx imagetools inspect "${IMAGE}:${TAG}-${STAMP}" \
               --format '{{json .Manifest}}' 2>/dev/null); then
+            written=$(printf '%s' "${published}" | jq -r '(.annotations // {}) | length')
             got=$(printf '%s' "${published}" \
               | jq -r '.annotations["org.opencontainers.image.revision"] // ""')
+            if [ "${written}" -eq 0 ]; then
+              echo "::error::the published index carries no annotations at all - this buildx took --annotation and wrote nothing readable at index level, or its inspect does not surface them. The tags are already published; the metadata is not."
+              exit 1
+            fi
             if [ "${got}" != "${GITHUB_SHA}" ]; then
               echo "::error::published index annotates revision '${got}', expected '${GITHUB_SHA}'"
               exit 1
@@ -680,6 +699,14 @@ jobs:
           # and wants to be short, an annotation is data and wants to be
           # unambiguous. It is also the only place the commit survives at all for a
           # consumer pinned by digest, who by construction kept no tag to read.
+          #
+          # No `licenses`, deliberately. OCI defines it as the licence of the
+          # *contained software*, and these images contain GCC and binutils under
+          # GPL-3.0, a distribution's worth of packages, and ESP-IDF under
+          # Apache-2.0. `MIT` is this repository's own licence and would give a
+          # licence scanner a wrong answer; an SPDX expression covering what is
+          # actually in here is not something this job can compute. `source` points
+          # at the repository, where LICENSE says what jethome-dev is under.
           SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
           # Assigned rather than inlined into the array: a command substitution that
           # fails inside `arr+=(...)` leaves an empty value behind and a green step,
@@ -692,7 +719,6 @@ jobs:
           annotations+=(--annotation "index:org.opencontainers.image.created=${CREATED}")
           annotations+=(--annotation "index:org.opencontainers.image.version=${TAG}")
           annotations+=(--annotation "index:org.opencontainers.image.title=${IMAGE##*/}")
-          annotations+=(--annotation "index:org.opencontainers.image.licenses=MIT")
           create_args=("${annotations[@]}" "${tags[@]}")
 
           # Checked rather than trusted, and locally - no registry round-trip.
@@ -765,12 +791,19 @@ jobs:
             echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
 
-          # `--annotation` landed in buildx 0.12. This job runs on ubuntu-latest
-          # with whatever buildx the runner image ships - there is no
-          # setup-buildx-action here, because `imagetools` talks to the registry
-          # and needs no builder - so the flag is checked rather than assumed.
-          # Before publishing, not after: an older buildx would reject the whole
-          # command and leave this run's images in GHCR with no tag at all.
+          # This job runs on ubuntu-latest with whatever buildx the runner image
+          # ships - there is no setup-buildx-action here, because `imagetools`
+          # talks to the registry and needs no builder - so the flag is checked
+          # rather than assumed. Before publishing, not after: a buildx without it
+          # would reject the whole command and leave this run's images in GHCR with
+          # no tag at all.
+          #
+          # What this proves is exactly that the flag is accepted, and nothing
+          # more. Whether that buildx also understands the `index:` prefix, and
+          # whether its `inspect` surfaces annotations at all, are separate
+          # questions - and the read-back below answers both, which is why it tells
+          # an index with no annotations apart from one annotating the wrong
+          # commit.
           if ! docker buildx imagetools create --help | grep -q -- '--annotation'; then
             echo "::error::this buildx does not support --annotation"
             exit 1
@@ -794,8 +827,13 @@ jobs:
           # while publishing images whose revision says nothing.
           if published=$(docker buildx imagetools inspect "${IMAGE}:${TAG}-${STAMP}" \
               --format '{{json .Manifest}}' 2>/dev/null); then
+            written=$(printf '%s' "${published}" | jq -r '(.annotations // {}) | length')
             got=$(printf '%s' "${published}" \
               | jq -r '.annotations["org.opencontainers.image.revision"] // ""')
+            if [ "${written}" -eq 0 ]; then
+              echo "::error::the published index carries no annotations at all - this buildx took --annotation and wrote nothing readable at index level, or its inspect does not surface them. The tags are already published; the metadata is not."
+              exit 1
+            fi
             if [ "${got}" != "${GITHUB_SHA}" ]; then
               echo "::error::published index annotates revision '${got}', expected '${GITHUB_SHA}'"
               exit 1

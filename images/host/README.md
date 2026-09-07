@@ -256,8 +256,12 @@ dev.jethome.lychee.version, …docker-cli.version
 
 Alongside them the image carries the standard OCI identity labels —
 `org.opencontainers.image.version` (this variant's published tag),
-`.base.name`, `.source`, `.description` and `.licenses`. Those describe the
-image; the `dev.jethome.*` ones above are what a consumer asserts against.
+`.base.name`, `.source` and `.description`. Those describe the image; the
+`dev.jethome.*` ones above are what a consumer asserts against. There is no
+`.licenses`: OCI defines it as the licence of the software *inside*, and this
+image carries GCC and binutils under GPL-3.0 alongside a distribution's worth of
+packages — `MIT` is the repository's own licence and would be a wrong answer to
+the question that field asks.
 
 The Python environment carries its own snapshot at `/opt/qa-packages.txt`
 (`pip freeze` as of the build), which includes the transitive dependencies the

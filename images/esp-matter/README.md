@@ -142,8 +142,11 @@ Two things worth knowing before pinning:
 
   ```bash
   docker buildx imagetools inspect ghcr.io/jethome-iot/jethome-dev-esp-matter:<tag> \
-    --format '{{ json .Manifest.annotations }}'
+    --format '{{ json .Manifest.Annotations }}'
   ```
+
+  The capital `A` is not a typo: `--format` is a Go template and reaches struct
+  fields by their Go name, not by the lower-case name the JSON carries.
 
   The ESP-IDF underneath is readable the same way, on an image already pulled:
 

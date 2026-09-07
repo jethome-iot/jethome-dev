@@ -134,8 +134,7 @@ LABEL dev.jethome.matter.ref="${ESP_MATTER_REF}" \
       org.opencontainers.image.version="idf-${IDF_VERSION}-matter-${ESP_MATTER_VERSION}" \
       org.opencontainers.image.base.name="${BASE_IMAGE}" \
       org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="ESP-Matter SDK for Matter protocol development on ESP32" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.description="ESP-Matter SDK for Matter protocol development on ESP32"
 
 # `base.name` is the one label here that a reader cannot reconstruct from
 # anywhere else: CI passes BASE_IMAGE as a digest reference resolved from the

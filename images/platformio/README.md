@@ -60,6 +60,44 @@ including a sweep that removed roughly nine months of them. A revision tag is th
 name to pin, and the digest (`…@sha256:<digest>`) is the only identity that cannot
 change at all.
 
+### Reading What the Image Carries
+
+The pins below are `ARG` defaults CI never passes, so this Dockerfile is their
+only source of truth — and the image records them, so a consumer can read them
+without starting anything:
+
+```bash
+docker image inspect --format '{{json .Config.Labels}}' \
+  ghcr.io/jethome-iot/jethome-dev-platformio:latest | jq .
+```
+
+```text
+dev.jethome.pio.version              # PlatformIO Core
+dev.jethome.espressif32.version      # the espressif32 platform
+dev.jethome.native.version           # the native platform
+dev.jethome.unity.range              # a semver RANGE, not a version
+org.opencontainers.image.version     # this variant's published tag
+org.opencontainers.image.source, …description
+```
+
+`unity.range` says `range` because that is what it is: the install asks for
+`^<version>`, so the image can carry a newer patch release than the number the
+range names. Ask the image itself — `pio pkg list --global` — for what is
+actually installed.
+
+The published index carries annotations of its own, and they are a different
+thing from the labels above: labels are inherited through `FROM`, annotations are
+written onto the index this repository publishes and inherit nothing. That is
+where the `jethome-dev` commit lives, in full:
+
+```bash
+docker buildx imagetools inspect ghcr.io/jethome-iot/jethome-dev-platformio:<tag> \
+  --format '{{ json .Manifest.Annotations }}'
+```
+
+The capital `A` is not a typo: `--format` is a Go template and reaches struct
+fields by their Go name, not by the lower-case name the JSON carries.
+
 ### Pull Image
 
 ```bash

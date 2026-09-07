@@ -70,8 +70,13 @@ before changing anything here.
   is written onto *this* index and inherits nothing. The set is `revision`
   (the **full 40 hex**, where the tags carry 7 — and the only place the commit
   survives for a consumer who pinned by digest and therefore kept no tag),
-  `source`, `url`, `created`, `version` (the variant's own tag), `title` and
-  `licenses`. Only `index:` is written: `imagetools create` offers no `manifest:`
+  `source`, `url`, `created`, `version` (the variant's own tag) and `title`.
+  There is deliberately no `licenses`: OCI defines it as the licence of the
+  software *contained*, and these images carry GCC under GPL-3.0, a
+  distribution's worth of packages and ESP-IDF under Apache-2.0 — `MIT` is this
+  repository's own licence and would hand a licence scanner a wrong answer, while
+  an expression covering what is actually inside is not something a manifest job
+  can compute. Only `index:` is written: `imagetools create` offers no `manifest:`
   level at all, and `manifest-descriptor:` would annotate every platform entry
   identically — so anything that genuinely differs per platform stays a Dockerfile
   `LABEL`, which is where `image.base.name` lives. The job then reads the index

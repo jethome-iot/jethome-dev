@@ -92,11 +92,14 @@ COPY pio_project/ /tmp/pio_project/
 # default is the only source of truth, which is exactly the case where a reader
 # has nowhere else to look.
 #
-# `image.version` is built to equal the variant's published tag, which
-# check-versions.sh already holds to `args` and to this ARG default. The manifest
-# job annotates the published index with the same field; annotations are not
-# inherited through FROM and labels are, so an image already pulled reports these
-# and a local ./scripts/build.sh produces them with no manifest job involved.
+# `image.version` is assembled from the same ARG the variant's tag is checked
+# against, so a version bump cannot move one without the other; check-versions.sh
+# matches that tag on a token boundary rather than for equality, so a tag carrying
+# more than the version would read differently here. The manifest job annotates
+# the published index with the same field, taking the tag verbatim; annotations
+# are not inherited through FROM and labels are, so an image already pulled
+# reports these and a local ./scripts/build.sh produces them with no manifest job
+# involved.
 #
 # No `image.base.name`: this Dockerfile names its base as a literal in FROM, and
 # a label repeating it would be a second copy to keep in step. The images whose
@@ -111,7 +114,6 @@ COPY pio_project/ /tmp/pio_project/
 LABEL org.opencontainers.image.version="pio-v${PIO_VERSION}" \
       org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
       org.opencontainers.image.description="PlatformIO with ESP32 platform support + ESP-IDF + Unity testing" \
-      org.opencontainers.image.licenses="MIT" \
       dev.jethome.pio.version="${PIO_VERSION}" \
       dev.jethome.espressif32.version="${ESP32_PLATFORM_VERSION}" \
       dev.jethome.native.version="${NATIVE_PLATFORM_VERSION}" \
