@@ -84,6 +84,39 @@ COPY pio_project/ /tmp/pio_project/
 #    && for e in $PIO_ENVS; do pio test -e "$e" --without-uploading --without-testing; done \
 #    && rm -rf /tmp/pio_project
 
+# ── what is in here, machine-readable ─────────────────────────────────────────
+#
+# This image had no labels at all: `docker image inspect` on a published
+# platformio returned null, so nothing about it was readable without starting it.
+# The three platform pins below are ARGs CI never passes - their Dockerfile
+# default is the only source of truth, which is exactly the case where a reader
+# has nowhere else to look.
+#
+# `image.version` is built to equal the variant's published tag, which
+# check-versions.sh already holds to `args` and to this ARG default. The manifest
+# job annotates the published index with the same field; annotations are not
+# inherited through FROM and labels are, so an image already pulled reports these
+# and a local ./scripts/build.sh produces them with no manifest job involved.
+#
+# No `image.base.name`: this Dockerfile names its base as a literal in FROM, and
+# a label repeating it would be a second copy to keep in step. The images whose
+# base tag is an ARG carry the label.
+#
+# Unity gets `.range`, not `.version`, because that is what UNITY_VERSION is: the
+# install below asks for `@^${UNITY_VERSION}`, a semver range, and the image
+# already carries 2.6.1 against an ARG saying 2.6.0. A `dev.jethome.unity.version`
+# label would state a number no layer here installs. Dropping the caret changes
+# what the image contains and belongs to the pin work, not to a metadata change -
+# see the `pin-allow` note above the install.
+LABEL org.opencontainers.image.version="pio-v${PIO_VERSION}" \
+      org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
+      org.opencontainers.image.description="PlatformIO with ESP32 platform support + ESP-IDF + Unity testing" \
+      org.opencontainers.image.licenses="MIT" \
+      dev.jethome.pio.version="${PIO_VERSION}" \
+      dev.jethome.espressif32.version="${ESP32_PLATFORM_VERSION}" \
+      dev.jethome.native.version="${NATIVE_PLATFORM_VERSION}" \
+      dev.jethome.unity.range="^${UNITY_VERSION}"
+
 # Set working directory
 WORKDIR /workspace
 

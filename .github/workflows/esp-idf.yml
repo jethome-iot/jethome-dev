@@ -185,6 +185,14 @@ jobs:
           # public and private repositories and has changed across majors. mode=max
           # records build-args and the event payload into a public attestation - see
           # CLAUDE.md before adding an ARG that carries anything sensitive.
+          #
+          # Its `subject[].name` reads `pkg:docker/<image>@latest?platform=...` on
+          # every image this repository publishes, and that is not a misconfiguration
+          # to fix: `push-by-digest=true` supplies no tag, so buildx fills in the
+          # placeholder, and naming one in `name=` is refused outright - `can't push
+          # tagged ref <image>:<tag> by digest`, measured against a local registry.
+          # The digest beside the name is correct and is what identifies the image;
+          # the name is not.
           provenance: mode=max
 
       # Matrix legs cannot each set a job output - they would overwrite one
@@ -304,14 +312,47 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}-${STAMP}")
           tags+=(-t "${IMAGE}:${TAG}")
 
+          # Index-level annotations: the metadata a consumer reads straight off the
+          # registry, and the reason a LABEL alone is not enough. A LABEL is
+          # inherited through FROM, so an image that forgets to override one reports
+          # its base's value - `org.opencontainers.image.version` read `24.04` on
+          # both esp-idf and host, inherited from ubuntu, for as long as those
+          # images have existed. An annotation is written onto THIS index and
+          # inherits nothing, so the same mistake is not available here.
+          #
+          # `index:` is the level a tag resolves to. `manifest-descriptor:` would
+          # annotate the per-platform entries uniformly, which is wrong for anything
+          # that genuinely differs per platform, and `imagetools create` offers no
+          # `manifest:` level at all - so per-platform facts stay in the
+          # Dockerfile's LABELs, which is where the base image reference lives.
+          #
+          # revision carries the full 40 hex where the tags carry 7: a tag is a name
+          # and wants to be short, an annotation is data and wants to be
+          # unambiguous. It is also the only place the commit survives at all for a
+          # consumer pinned by digest, who by construction kept no tag to read.
+          SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          # Assigned rather than inlined into the array: a command substitution that
+          # fails inside `arr+=(...)` leaves an empty value behind and a green step,
+          # while a plain assignment under `set -e` stops here.
+          CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          annotations=()
+          annotations+=(--annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}")
+          annotations+=(--annotation "index:org.opencontainers.image.source=${SOURCE}")
+          annotations+=(--annotation "index:org.opencontainers.image.url=${SOURCE}")
+          annotations+=(--annotation "index:org.opencontainers.image.created=${CREATED}")
+          annotations+=(--annotation "index:org.opencontainers.image.version=${TAG}")
+          annotations+=(--annotation "index:org.opencontainers.image.title=${IMAGE##*/}")
+          annotations+=(--annotation "index:org.opencontainers.image.licenses=MIT")
+          create_args=("${annotations[@]}" "${tags[@]}")
+
           # Checked rather than trusted, and locally - no registry round-trip.
           # Three of these warn and one fails, deliberately: this job runs on
           # master only, so nothing here is exercised by a pull request and a
           # failure first appears AFTER a full multi-arch build. A bad `PRIMARY`,
           # a miscount or a misordered version tag each cost a name too many, too
           # few, or the wrong one shown as the package's primary - worth a line in
-          # the log. An argument list that is not `-t <name>` pairs would publish a
-          # CORRUPTED index, which is worse than publishing nothing.
+          # the log. An argument list that is not `<flag> <value>` pairs would
+          # publish a CORRUPTED index, which is worse than publishing nothing.
           #
           # `PRIMARY` decides both what goes into the array and what is expected of
           # it, so a value that is neither `true` nor `false` - a renamed matrix
@@ -322,30 +363,39 @@ jobs:
           *) echo "::warning::PRIMARY is '${PRIMARY}', expected true or false; the primary-only names may be missing" ;;
           esac
 
-          # `tags` must alternate `-t <name>` strictly, and this FAILS rather than
-          # warns: `imagetools create` reads every non-flag argument as a SOURCE,
-          # so any entry that is not a flag and not preceded by one gets merged
-          # into the published index - folding whatever a mutable tag points at
-          # into this image. Publishing a corrupted index is worse than publishing
-          # nothing, which is not true of the count below.
+          # `create_args` must alternate `<flag> <value>` strictly, and this FAILS
+          # rather than warns: `imagetools create` reads every non-flag argument as
+          # a SOURCE, so any entry that is not a flag and not preceded by one gets
+          # merged into the published index - folding whatever a mutable tag points
+          # at into this image. Publishing a corrupted index is worse than
+          # publishing nothing, which is not true of the count below.
           #
-          # Parity alone was not enough: it says nothing about WHERE the flags
-          # sit, so `-t -t <name> <name>` passed it. Anything this array needs
-          # beyond `-t <name>` pairs - a boolean flag, say - belongs on the command
-          # line, not in here.
-          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
-            echo "::error::${#tags[@]} arguments cannot be -t <name> pairs"
+          # The flag set is closed on purpose. `--annotation` joined `-t` here
+          # because both take a value, and a value-taking flag is exactly what
+          # swallows the argument after it when one goes missing; a boolean flag
+          # would pass this check and then shift every pair after it, so anything
+          # this array needs beyond `<flag> <value>` belongs on the command line,
+          # not in here.
+          #
+          # Parity alone was not enough: it says nothing about WHERE the flags sit,
+          # so `-t -t <name> <name>` passed it. It is still checked first, so that
+          # reading `[i + 1]` below cannot run off the end of the array.
+          if [ "$(( ${#create_args[@]} % 2 ))" -ne 0 ]; then
+            echo "::error::${#create_args[@]} arguments cannot be <flag> <value> pairs"
             exit 1
           fi
           i=0
-          while [ "${i}" -lt "${#tags[@]}" ]; do
-            if [ "${tags[${i}]}" != "-t" ]; then
-              echo "::error::tags[${i}] is '${tags[${i}]}', expected -t; a stray argument would be merged as a source"
+          while [ "${i}" -lt "${#create_args[@]}" ]; do
+            case "${create_args[${i}]}" in
+            -t|--annotation) ;;
+            *)
+              echo "::error::create_args[${i}] is '${create_args[${i}]}', expected -t or --annotation; a stray argument would be merged as a source"
               exit 1
-            fi
-            case "${tags[$(( i + 1 ))]}" in
+              ;;
+            esac
+            case "${create_args[$(( i + 1 ))]}" in
             -*)
-              echo "::error::tags[$(( i + 1 ))] is '${tags[$(( i + 1 ))]}', expected a name; the next argument would be consumed as its value"
+              echo "::error::create_args[$(( i + 1 ))] is '${create_args[$(( i + 1 ))]}', expected a value; the next argument would be consumed as its value"
               exit 1
               ;;
             esac
@@ -365,14 +415,50 @@ jobs:
             echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
 
-          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          # `--annotation` landed in buildx 0.12. This job runs on ubuntu-latest
+          # with whatever buildx the runner image ships - there is no
+          # setup-buildx-action here, because `imagetools` talks to the registry
+          # and needs no builder - so the flag is checked rather than assumed.
+          # Before publishing, not after: an older buildx would reject the whole
+          # command and leave this run's images in GHCR with no tag at all.
+          if ! docker buildx imagetools create --help | grep -q -- '--annotation'; then
+            echo "::error::this buildx does not support --annotation"
+            exit 1
+          fi
 
-          # Reported, not handed on: esp-matter-build takes the per-platform
-          # digests from esp-idf-build directly, so nothing downstream waits on
-          # this job any more.
-          digest=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" \
-            --format '{{json .Manifest}}' | jq -er '.digest')
-          echo "published ${IMAGE}:${TAG} as ${digest}"
+          docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
+
+          # Read back what was published, by the one name this run alone holds.
+          # Deliberately not `${IMAGE}:${TAG}`: concurrent master runs are allowed
+          # to overwrite the version tag and `latest` - that is why `concurrency`
+          # groups by github.sha rather than by ref - so re-reading a mutable name
+          # can legitimately return another run's index. That is inconclusive, not
+          # a mismatch, and the revision name is the one thing no other run can be
+          # holding.
+          #
+          # Three outcomes, and the middle one is the point: annotations that agree
+          # (a line in the log), a read that did not happen (a warning - GHCR being
+          # unreachable is not evidence about what was written), and annotations
+          # that disagree (an error). The error cannot unpublish anything, since the
+          # tags are already written; what it buys is that a run does not go green
+          # while publishing images whose revision says nothing.
+          if published=$(docker buildx imagetools inspect "${IMAGE}:${TAG}-${STAMP}" \
+              --format '{{json .Manifest}}' 2>/dev/null); then
+            got=$(printf '%s' "${published}" \
+              | jq -r '.annotations["org.opencontainers.image.revision"] // ""')
+            if [ "${got}" != "${GITHUB_SHA}" ]; then
+              echo "::error::published index annotates revision '${got}', expected '${GITHUB_SHA}'"
+              exit 1
+            fi
+            # The digest of this run's own index, logged from the read that was
+            # already made. `${IMAGE}:${TAG}` used to be inspected separately for
+            # this line, which cost a second registry round-trip to resolve a name
+            # another run is allowed to have taken meanwhile.
+            digest=$(printf '%s' "${published}" | jq -er '.digest')
+            echo "published ${IMAGE}:${TAG}-${STAMP} as ${digest}, revision ${got}"
+          else
+            echo "::warning::could not read back ${IMAGE}:${TAG}-${STAMP}; annotations unverified"
+          fi
 
   esp-matter-build:
     name: esp-matter-build (${{ matrix.tag }}, ${{ matrix.platform }})
@@ -473,6 +559,14 @@ jobs:
           # public and private repositories and has changed across majors. mode=max
           # records build-args and the event payload into a public attestation - see
           # CLAUDE.md before adding an ARG that carries anything sensitive.
+          #
+          # Its `subject[].name` reads `pkg:docker/<image>@latest?platform=...` on
+          # every image this repository publishes, and that is not a misconfiguration
+          # to fix: `push-by-digest=true` supplies no tag, so buildx fills in the
+          # placeholder, and naming one in `name=` is refused outright - `can't push
+          # tagged ref <image>:<tag> by digest`, measured against a local registry.
+          # The digest beside the name is correct and is what identifies the image;
+          # the name is not.
           provenance: mode=max
 
       - name: 📤 Export digest
@@ -568,14 +662,47 @@ jobs:
           tags+=(-t "${IMAGE}:${TAG}-${STAMP}")
           tags+=(-t "${IMAGE}:${TAG}")
 
+          # Index-level annotations: the metadata a consumer reads straight off the
+          # registry, and the reason a LABEL alone is not enough. A LABEL is
+          # inherited through FROM, so an image that forgets to override one reports
+          # its base's value - `org.opencontainers.image.version` read `24.04` on
+          # both esp-idf and host, inherited from ubuntu, for as long as those
+          # images have existed. An annotation is written onto THIS index and
+          # inherits nothing, so the same mistake is not available here.
+          #
+          # `index:` is the level a tag resolves to. `manifest-descriptor:` would
+          # annotate the per-platform entries uniformly, which is wrong for anything
+          # that genuinely differs per platform, and `imagetools create` offers no
+          # `manifest:` level at all - so per-platform facts stay in the
+          # Dockerfile's LABELs, which is where the base image reference lives.
+          #
+          # revision carries the full 40 hex where the tags carry 7: a tag is a name
+          # and wants to be short, an annotation is data and wants to be
+          # unambiguous. It is also the only place the commit survives at all for a
+          # consumer pinned by digest, who by construction kept no tag to read.
+          SOURCE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          # Assigned rather than inlined into the array: a command substitution that
+          # fails inside `arr+=(...)` leaves an empty value behind and a green step,
+          # while a plain assignment under `set -e` stops here.
+          CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          annotations=()
+          annotations+=(--annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}")
+          annotations+=(--annotation "index:org.opencontainers.image.source=${SOURCE}")
+          annotations+=(--annotation "index:org.opencontainers.image.url=${SOURCE}")
+          annotations+=(--annotation "index:org.opencontainers.image.created=${CREATED}")
+          annotations+=(--annotation "index:org.opencontainers.image.version=${TAG}")
+          annotations+=(--annotation "index:org.opencontainers.image.title=${IMAGE##*/}")
+          annotations+=(--annotation "index:org.opencontainers.image.licenses=MIT")
+          create_args=("${annotations[@]}" "${tags[@]}")
+
           # Checked rather than trusted, and locally - no registry round-trip.
           # Three of these warn and one fails, deliberately: this job runs on
           # master only, so nothing here is exercised by a pull request and a
           # failure first appears AFTER a full multi-arch build. A bad `PRIMARY`,
           # a miscount or a misordered version tag each cost a name too many, too
           # few, or the wrong one shown as the package's primary - worth a line in
-          # the log. An argument list that is not `-t <name>` pairs would publish a
-          # CORRUPTED index, which is worse than publishing nothing.
+          # the log. An argument list that is not `<flag> <value>` pairs would
+          # publish a CORRUPTED index, which is worse than publishing nothing.
           #
           # `PRIMARY` decides both what goes into the array and what is expected of
           # it, so a value that is neither `true` nor `false` - a renamed matrix
@@ -586,30 +713,39 @@ jobs:
           *) echo "::warning::PRIMARY is '${PRIMARY}', expected true or false; the primary-only names may be missing" ;;
           esac
 
-          # `tags` must alternate `-t <name>` strictly, and this FAILS rather than
-          # warns: `imagetools create` reads every non-flag argument as a SOURCE,
-          # so any entry that is not a flag and not preceded by one gets merged
-          # into the published index - folding whatever a mutable tag points at
-          # into this image. Publishing a corrupted index is worse than publishing
-          # nothing, which is not true of the count below.
+          # `create_args` must alternate `<flag> <value>` strictly, and this FAILS
+          # rather than warns: `imagetools create` reads every non-flag argument as
+          # a SOURCE, so any entry that is not a flag and not preceded by one gets
+          # merged into the published index - folding whatever a mutable tag points
+          # at into this image. Publishing a corrupted index is worse than
+          # publishing nothing, which is not true of the count below.
           #
-          # Parity alone was not enough: it says nothing about WHERE the flags
-          # sit, so `-t -t <name> <name>` passed it. Anything this array needs
-          # beyond `-t <name>` pairs - a boolean flag, say - belongs on the command
-          # line, not in here.
-          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
-            echo "::error::${#tags[@]} arguments cannot be -t <name> pairs"
+          # The flag set is closed on purpose. `--annotation` joined `-t` here
+          # because both take a value, and a value-taking flag is exactly what
+          # swallows the argument after it when one goes missing; a boolean flag
+          # would pass this check and then shift every pair after it, so anything
+          # this array needs beyond `<flag> <value>` belongs on the command line,
+          # not in here.
+          #
+          # Parity alone was not enough: it says nothing about WHERE the flags sit,
+          # so `-t -t <name> <name>` passed it. It is still checked first, so that
+          # reading `[i + 1]` below cannot run off the end of the array.
+          if [ "$(( ${#create_args[@]} % 2 ))" -ne 0 ]; then
+            echo "::error::${#create_args[@]} arguments cannot be <flag> <value> pairs"
             exit 1
           fi
           i=0
-          while [ "${i}" -lt "${#tags[@]}" ]; do
-            if [ "${tags[${i}]}" != "-t" ]; then
-              echo "::error::tags[${i}] is '${tags[${i}]}', expected -t; a stray argument would be merged as a source"
+          while [ "${i}" -lt "${#create_args[@]}" ]; do
+            case "${create_args[${i}]}" in
+            -t|--annotation) ;;
+            *)
+              echo "::error::create_args[${i}] is '${create_args[${i}]}', expected -t or --annotation; a stray argument would be merged as a source"
               exit 1
-            fi
-            case "${tags[$(( i + 1 ))]}" in
+              ;;
+            esac
+            case "${create_args[$(( i + 1 ))]}" in
             -*)
-              echo "::error::tags[$(( i + 1 ))] is '${tags[$(( i + 1 ))]}', expected a name; the next argument would be consumed as its value"
+              echo "::error::create_args[$(( i + 1 ))] is '${create_args[$(( i + 1 ))]}', expected a value; the next argument would be consumed as its value"
               exit 1
               ;;
             esac
@@ -629,4 +765,47 @@ jobs:
             echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
 
-          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          # `--annotation` landed in buildx 0.12. This job runs on ubuntu-latest
+          # with whatever buildx the runner image ships - there is no
+          # setup-buildx-action here, because `imagetools` talks to the registry
+          # and needs no builder - so the flag is checked rather than assumed.
+          # Before publishing, not after: an older buildx would reject the whole
+          # command and leave this run's images in GHCR with no tag at all.
+          if ! docker buildx imagetools create --help | grep -q -- '--annotation'; then
+            echo "::error::this buildx does not support --annotation"
+            exit 1
+          fi
+
+          docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
+
+          # Read back what was published, by the one name this run alone holds.
+          # Deliberately not `${IMAGE}:${TAG}`: concurrent master runs are allowed
+          # to overwrite the version tag and `latest` - that is why `concurrency`
+          # groups by github.sha rather than by ref - so re-reading a mutable name
+          # can legitimately return another run's index. That is inconclusive, not
+          # a mismatch, and the revision name is the one thing no other run can be
+          # holding.
+          #
+          # Three outcomes, and the middle one is the point: annotations that agree
+          # (a line in the log), a read that did not happen (a warning - GHCR being
+          # unreachable is not evidence about what was written), and annotations
+          # that disagree (an error). The error cannot unpublish anything, since the
+          # tags are already written; what it buys is that a run does not go green
+          # while publishing images whose revision says nothing.
+          if published=$(docker buildx imagetools inspect "${IMAGE}:${TAG}-${STAMP}" \
+              --format '{{json .Manifest}}' 2>/dev/null); then
+            got=$(printf '%s' "${published}" \
+              | jq -r '.annotations["org.opencontainers.image.revision"] // ""')
+            if [ "${got}" != "${GITHUB_SHA}" ]; then
+              echo "::error::published index annotates revision '${got}', expected '${GITHUB_SHA}'"
+              exit 1
+            fi
+            # The digest of this run's own index, logged from the read that was
+            # already made. `${IMAGE}:${TAG}` used to be inspected separately for
+            # this line, which cost a second registry round-trip to resolve a name
+            # another run is allowed to have taken meanwhile.
+            digest=$(printf '%s' "${published}" | jq -er '.digest')
+            echo "published ${IMAGE}:${TAG}-${STAMP} as ${digest}, revision ${got}"
+          else
+            echo "::warning::could not read back ${IMAGE}:${TAG}-${STAMP}; annotations unverified"
+          fi

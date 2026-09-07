@@ -17,7 +17,23 @@ ARG IDF_BASE_TAG
 # not keep the tag, so the tag is exactly what it cannot read. The verification
 # layer at the bottom holds this to what the SDK itself reports, so it is a fact
 # about the image rather than a claim it makes.
-LABEL dev.jethome.idf.version="${IDF_BASE_TAG}"
+LABEL dev.jethome.idf.version="${IDF_BASE_TAG}" \
+      org.opencontainers.image.version="idf-${IDF_BASE_TAG}" \
+      org.opencontainers.image.base.name="espressif/idf:${IDF_BASE_TAG}" \
+      org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
+      org.opencontainers.image.description="ESP-IDF for every ESP32 chip, plus pytest and QEMU emulation for some of them" \
+      org.opencontainers.image.licenses="MIT"
+
+# `image.version` is set here because a LABEL is inherited through FROM and this
+# one was arriving from three images away: ubuntu sets it to `24.04`, espressif/idf
+# does not override it, and so every published esp-idf image announced itself as
+# version 24.04. The value is built to equal the variant's own published tag -
+# `check-versions.sh` already holds `args` and the ARG defaults to each other, and
+# the tag to both, so the two agree by construction rather than by discipline.
+#
+# The index annotations the manifest job writes carry the same field, and cannot
+# be inherited at all; these labels are what an image already pulled reports, and
+# what a local `./scripts/build.sh` produces, where no manifest job ran.
 
 # Use bash for all RUN commands: the layers below call the bash builtin `source`,
 # which /bin/sh does not have. (This once said "needed for QEMU emulation

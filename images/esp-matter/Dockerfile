@@ -34,6 +34,10 @@ FROM ${BASE_IMAGE}
 ARG ESP_MATTER_VERSION
 ARG ESP_MATTER_REF
 ARG IDF_VERSION
+# BASE_IMAGE too, for the label below. An ARG stated before FROM is out of scope
+# after it, and Docker does not object to an undefined variable - the label would
+# expand to the empty string, silently.
+ARG BASE_IMAGE
 
 # Use bash for all RUN commands: the layers below call the bash builtin `source`,
 # which /bin/sh does not have. (This once said "needed for QEMU emulation
@@ -111,9 +115,34 @@ RUN git config --system --add safe.directory /opt/esp-matter && \
     git config --system --add safe.directory '/opt/esp-matter/*'
 
 # Answers "what is actually in here" without starting the container.
-LABEL org.opencontainers.image.revision="${ESP_MATTER_REF}" \
-      org.opencontainers.image.version="${ESP_MATTER_VERSION}" \
-      dev.jethome.idf.version="${IDF_VERSION}"
+#
+# The upstream commit moved out of `org.opencontainers.image.revision`. OCI pairs
+# that field with `image.source`, and the manifest job now annotates the published
+# index with this repository as the source - which would have made the pair say
+# that jethome-dev's revision is an esp-matter commit. It is the pin, so it gets a
+# name that says pin: `dev.jethome.matter.ref`, matching how every other pin in
+# these images is labelled. `image.revision` is left unset here on purpose; the
+# index annotation carries this repository's commit, in full 40 hex.
+#
+# `image.version` names the whole variant - the published tag - rather than the
+# Matter specification alone, because an image built on ESP-IDF 5.4.1 and one
+# built on 5.5.5 can carry the same specification and are not the same image. The
+# specification keeps its own field beside it.
+LABEL dev.jethome.matter.ref="${ESP_MATTER_REF}" \
+      dev.jethome.matter.version="${ESP_MATTER_VERSION}" \
+      dev.jethome.idf.version="${IDF_VERSION}" \
+      org.opencontainers.image.version="idf-${IDF_VERSION}-matter-${ESP_MATTER_VERSION}" \
+      org.opencontainers.image.base.name="${BASE_IMAGE}" \
+      org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
+      org.opencontainers.image.description="ESP-Matter SDK for Matter protocol development on ESP32" \
+      org.opencontainers.image.licenses="MIT"
+
+# `base.name` is the one label here that a reader cannot reconstruct from
+# anywhere else: CI passes BASE_IMAGE as a digest reference resolved from the
+# esp-idf legs of this very run, so the published image records the exact base it
+# was built on rather than the tag that pointed there at the time. A local build
+# records the tag from the ARG default instead, which is the honest answer for
+# what a local build used.
 
 # Install ESP-Matter (without host tools to reduce image size)
 # Source ESP-IDF environment first to activate Python venv with pip

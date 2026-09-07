@@ -132,7 +132,17 @@ Two things worth knowing before pinning:
   The commit is readable from the image without starting it:
 
   ```bash
-  docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' <image>
+  docker image inspect --format '{{index .Config.Labels "dev.jethome.matter.ref"}}' <image>
+  ```
+
+  It is a *pin*, not this image's own revision, which is why it is labelled
+  `dev.jethome.matter.ref` rather than `org.opencontainers.image.revision`. That
+  field is annotated on the published index instead, and carries the
+  `jethome-dev` commit the image was built from, in full:
+
+  ```bash
+  docker buildx imagetools inspect ghcr.io/jethome-iot/jethome-dev-esp-matter:<tag> \
+    --format '{{ json .Manifest.annotations }}'
   ```
 
   The ESP-IDF underneath is readable the same way, on an image already pulled:
