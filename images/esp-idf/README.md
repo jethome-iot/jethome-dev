@@ -45,14 +45,14 @@ image built on this one, so it always describes the container you are in.
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Revision** | `idf-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Commit** | `sha-<short-commit>` | The newest build of that commit — rewritten if the commit is rebuilt |
 
 **Several ESP-IDF versions are published at once**, each under its own
 `idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
 chosen in [`images/versions.json`](../versions.json) — that file is also where you
 can see which versions currently exist. Pin the version tag if the release matters
-to you, and `idf-v<version>-sha-<short-commit>` for the newest build of a commit — a rebuild
-of that commit moves it, so it is not the exact build: the version
+to you, and `idf-v<version>-r<run-id>.<attempt>` when you need one exact build: the version
 tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**

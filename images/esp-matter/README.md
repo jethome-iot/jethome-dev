@@ -89,7 +89,8 @@ own record of what it deployed rather than against the files on disk.
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
 | **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Revision** | `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Commit** | `sha-<short-commit>` | The newest build of that commit — rewritten if the commit is rebuilt |
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
@@ -107,8 +108,8 @@ Two things worth knowing before pinning:
 
 - `latest` moves when the primary does, which happens on a version bump. Pin the
   version tag if the Matter specification matters to you, and
-  `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` for the newest build of a
-  commit, which a rebuild of that commit moves —
+  `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` when you need one exact
+  build —
   the version tag is rewritten on every rebuild.
 - **The tag names the Matter specification, and the build is pinned to a commit.**
   ESP-Matter publishes no git tags — only moving `release/*` branches, where a
