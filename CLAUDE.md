@@ -49,9 +49,12 @@ before changing anything here.
   since `workflow_dispatch` is offered only for workflows already on `master`.
 - Two jobs per image: `<image>-build` (one leg per variant × platform) then
   `<image>-manifest`. Tags per variant: `<prefix>-<version>` (moves on every
-  rebuild) and `<prefix>-<version>-sha-<short-commit>` (immutable, the only thing to
+  rebuild), `<prefix>-<version>-sha-<short-commit>` (the build made from that
+  commit) and `<prefix>-<version>-r<run-id>.<attempt>` (**one build**, and what to
   roll back to). The **primary** variant additionally gets `latest` and the bare
-  `sha-<short-commit>`.
+  `sha-<short-commit>`. The revision name exists because nothing else distinguishes
+  a rebuild of the same commit: the commit is identical and, with no build cache,
+  the image is not. Only platformio publishes it so far — the other images follow.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
@@ -108,9 +111,10 @@ before changing anything here.
 - Three of those checks are about the *shape* of a tag rather than its contents.
   A tag must be a legal Docker reference of at most 100 characters — 128 is the
   registry limit, and the margin leaves room for the suffixes the manifest jobs
-  append (today the longest is `-sha-<7hex>`, 12 characters). It must not be
-  shaped like a name those jobs publish on their own — `latest`, a bare
-  `sha-<7hex>`, or `<tag>-sha-<7hex>`. The bare pair is the dangerous one: a
+  append (the longest is now the revision name, `-r<run_id>.<attempt>`, 15
+  characters at today's 11-digit run IDs). It must not be shaped like a name those
+  jobs publish on their own — `latest`, a bare `sha-<7hex>`, `<tag>-sha-<7hex>`,
+  or `<tag>-r<digits>.<digits>`. The bare pair is the dangerous one: a
   variant tagged `sha-1234567` is nobody's prefix, so the prefix rule never sees
   it, and it is silently overwritten the day a commit's short SHA is `1234567`.
   Behind those sits a uniqueness check over the names an image actually

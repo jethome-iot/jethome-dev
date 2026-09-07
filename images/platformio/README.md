@@ -35,14 +35,30 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 
 | Tag Type | Example | Usage |
 |----------|---------|-------|
-| **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `pio-v<version>` | Pin to specific PlatformIO version (recommended for CI/CD) |
-| **Commit** | `sha-<short-commit>` | Pin to exact git commit (debugging); the commit is the first 7 characters, e.g. `sha-9c281e3` |
+| **Latest** | `latest` | Newest build. Moves on every rebuild |
+| **Version** | `pio-v<version>` | Newest build of that PlatformIO version. Also moves on every rebuild |
+| **Revision** | `pio-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
+| **Commit** | `pio-v<version>-sha-<short-commit>` | The **latest** build of that commit — rewritten if the commit is rebuilt |
+| **Commit, primary** | `sha-<short-commit>` | The same, under the name every image of this repo shares |
+
+**Reading a tag:** `-r<digits>.<digits>` names one build and is never reused, so
+it is the name to pin when you need the exact image you were running. The others
+all move: `latest` and `pio-v<version>` on every rebuild, and `-sha-<7hex>`
+whenever that same commit is rebuilt.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
-- **CI/CD**: Use version tags (`pio-v<version>`) for reproducibility
-- **Debugging**: Use commit tags (`sha-<short-commit>`) to reproduce exact build
+- **CI/CD**: Use version tags (`pio-v<version>`) for the newest build of a version,
+  or a revision tag (`pio-v<version>-r<run-id>.<attempt>`) to stay on exactly one
+- **Rolling back**: Use a revision tag. Both the version tag and the commit tag are
+  rewritten by a rebuild, so neither can name the build you were running
+- **Debugging**: Use commit tags to reproduce the build made from a given commit
+
+None of these names is guaranteed to exist forever: nothing in the registry is
+immutable by enforcement, and old versions have been deleted by hand before —
+including a sweep that removed roughly nine months of them. A revision tag is the
+name to pin, and the digest (`…@sha256:<digest>`) is the only identity that cannot
+change at all.
 
 ### Pull Image
 

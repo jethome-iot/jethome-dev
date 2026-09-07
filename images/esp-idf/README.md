@@ -51,7 +51,8 @@ image built on this one, so it always describes the container you are in.
 `idf-v<version>` tag; `latest` and the bare `sha-<short-commit>` follow the primary one,
 chosen in [`images/versions.json`](../versions.json) — that file is also where you
 can see which versions currently exist. Pin the version tag if the release matters
-to you, and `idf-v<version>-sha-<short-commit>` if you need the exact build: the version
+to you, and `idf-v<version>-sha-<short-commit>` for the newest build of a commit — a rebuild
+of that commit moves it, so it is not the exact build: the version
 tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
