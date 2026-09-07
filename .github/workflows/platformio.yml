@@ -258,26 +258,31 @@ jobs:
             echo "::warning::short SHA is ${#SHA_SHORT} characters; check-versions.sh assumes 7"
           fi
 
-          # An odd array means some entry lacks its `-t`, and `imagetools create`
-          # reads every non-flag argument as a SOURCE - so that entry would be
-          # merged into the published index, folding whatever a mutable tag points
-          # at into this image. That one FAILS: publishing a corrupted index is
-          # worse than publishing nothing, which is not true of the count and the
-          # ordering below.
-          if [ "$(( ${#tags[@]} % 2 ))" -ne 0 ]; then
-            echo "::error::${#tags[@]} arguments is odd - an entry is missing its -t and would be merged as a source"
-            exit 1
-          fi
-          # The count itself is only a warning: being wrong here publishes a name
-          # too many or too few, which is a nuisance, not a corrupted image.
+          # `tags` must alternate `-t <name>` strictly, and this FAILS rather than
+          # warns: `imagetools create` reads every non-flag argument as a SOURCE,
+          # so any entry that is not a flag and not preceded by one gets merged
+          # into the published index - folding whatever a mutable tag points at
+          # into this image. Publishing a corrupted index is worse than publishing
+          # nothing, which is not true of the count below.
+          #
+          # Checking parity alone was not enough: two names added without their
+          # flags leave the array even and the count unchanged. Anything this
+          # array needs beyond `-t <name>` pairs - a boolean flag, say - belongs
+          # in the command line, not in here.
+          i=0
+          while [ "${i}" -lt "${#tags[@]}" ]; do
+            if [ "${tags[${i}]}" != "-t" ]; then
+              echo "::error::tags[${i}] is '${tags[${i}]}', expected -t; a stray argument would be merged as a source"
+              exit 1
+            fi
+            i=$(( i + 2 ))
+          done
+          # The count is only a warning: being wrong here publishes a name too many
+          # or too few, which is a nuisance, not a corrupted image.
           expected=5
           [ "${PRIMARY}" = "true" ] || expected=3
-          flags=0
-          for arg in "${tags[@]}"; do
-            [ "${arg}" = "-t" ] && flags=$((flags + 1))
-          done
-          if [ "${flags}" -ne "${expected}" ]; then
-            echo "::warning::built ${flags} names, expected ${expected}"
+          if [ "$(( ${#tags[@]} / 2 ))" -ne "${expected}" ]; then
+            echo "::warning::built $(( ${#tags[@]} / 2 )) names, expected ${expected}"
           fi
           # Positive index rather than `${tags[-1]}`: negative subscripts need
           # bash 4.3. This step assumes bash throughout - arrays, substring

@@ -54,10 +54,12 @@ before changing anything here.
   roll back to). The **primary** variant additionally gets `latest` and the bare
   `sha-<short-commit>`. The revision name exists because nothing else distinguishes
   a rebuild of the same commit: the commit is identical and, with no build cache,
-  the image is not. every image publishes it. Note the scope of `run_id`: it is shared by every job of
-  one workflow file, so esp-idf and esp-matter of one run carry the same stamp, while
-  host and platformio have their own — the stamp is not a cross-image coordinate, and
-  the commit remains the only thing that is.
+  the image is not. Every image publishes it. Note what the stamp does and does not
+  identify: `run_id` is shared by every job of one workflow *file*, so esp-idf and
+  esp-matter usually carry the same one, while host and platformio have their own —
+  but `run_attempt` is per job, so "Re-run failed jobs" gives the restarted job a
+  higher attempt than its neighbour. The stamp names one build of one image, and
+  nothing more; the commit is still the only cross-image coordinate.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
