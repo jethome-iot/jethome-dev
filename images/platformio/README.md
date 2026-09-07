@@ -43,7 +43,7 @@ This image provides a ready-to-use PlatformIO environment with ESP32 platform su
 
 **Reading a tag:** `-r<digits>.<digits>` names one build and is never reused, so
 it is the name to pin when you need the exact image you were running. The others
-all move: `latest` and `pio-v<version>` on every rebuild, and `-sha-<7 hex>`
+all move: `latest` and `pio-v<version>` on every rebuild, and `-sha-<7hex>`
 whenever that same commit is rebuilt.
 
 **Tag Recommendations:**

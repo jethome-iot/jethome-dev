@@ -272,9 +272,11 @@ jobs:
           if [ "${flags}" -ne "${expected}" ] || [ "${#tags[@]}" -ne "$(( expected * 2 ))" ]; then
             echo "::warning::built ${flags} names in ${#tags[@]} arguments, expected ${expected} in $(( expected * 2 ))"
           fi
-          if [ "${tags[-1]}" != "${IMAGE}:${TAG}" ]; then
-            echo "::error::the version tag must be last, for GHCR's primary-tag display"
-            exit 1
+          # Positive index rather than `${tags[-1]}`: negative subscripts need
+          # bash 4.3, and this is the only line in the file that would care which
+          # shell runs it.
+          if [ "${tags[$(( ${#tags[@]} - 1 ))]}" != "${IMAGE}:${TAG}" ]; then
+            echo "::warning::the version tag is not last; GHCR will show a different one as the package's primary tag"
           fi
 
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"
