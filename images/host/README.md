@@ -254,6 +254,11 @@ dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.vers
 dev.jethome.lychee.version, …docker-cli.version
 ```
 
+Alongside them the image carries the standard OCI identity labels —
+`org.opencontainers.image.version` (this variant's published tag),
+`.base.name`, `.source`, `.description` and `.licenses`. Those describe the
+image; the `dev.jethome.*` ones above are what a consumer asserts against.
+
 The Python environment carries its own snapshot at `/opt/qa-packages.txt`
 (`pip freeze` as of the build), which includes the transitive dependencies the
 labels do not name.
