@@ -91,7 +91,9 @@ before changing anything here.
   skip `esp-matter-build` entirely even for a base that succeeded. Each leg resolves
   its own artifact and fails by itself when it is missing, which is the right blast
   radius. No job is named `build`. Every job that touches GHCR
-  needs its own `permissions: contents: read` + `packages: write`; `lint.yml` and
+  needs its own `permissions: contents: read` + `packages: write`; the `ledger`
+  job is the single exception in the other direction — `contents: write` and no
+  registry access at all, which is the whole of its blast radius; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - **Nothing is handed between those jobs by tag.** A build leg pushes by digest and
   carries no tag of its own (`outputs: type=image,…,push-by-digest=true`); the
@@ -169,6 +171,30 @@ before changing anything here.
   provenance one and `imagetools create` copies it verbatim — so enabling it is a
   cost decision (build time, and one more child per leg in a registry whose
   version count is the thing that gets unreadable), not a compatibility one.
+- **A build ledger lives on the orphan branch `builds`, written by a `ledger` job
+  in each build workflow.** It answers the direction the registry cannot: *which
+  images came out of commit X*. A tag answers the other way and only until someone
+  rewrites or deletes it; an index annotation dies with the index; a run log
+  expires, and GHCR has already served 410 for one. The record is
+  `<short-commit>/<image>-r<run-id>.<attempt>.json` — keyed by **revision, not by
+  commit**, because a rebuild of the same commit produces different images and
+  keying by commit alone would have the second run overwrite the first's record,
+  which answers the question wrongly rather than not at all. Each file carries the
+  commit in full, the run, and per variant its published names and the digest of
+  the index they were written onto. The names are built from the very array passed
+  to `imagetools create`, so a published name and a recorded one cannot drift.
+  - **Orphan, and not a directory in master**, for two independent reasons. The
+    "Master" ruleset carries a `pull_request` rule with no bypass actors, which
+    closes direct pushes to everyone including `GITHUB_TOKEN`. And every build
+    workflow is gated on `branches: [master, dev]`, so a commit on `builds`
+    triggers nothing at all — a stronger guarantee than the `paths:` argument a
+    directory in master would have had to rely on.
+  - **Races are re-applied, not rebased.** Three workflows can finish within
+    seconds of each other on one commit and all three push here. On a rejected
+    push the job re-fetches, rebuilds its files on the new tip and pushes again,
+    five times over; every run writes paths no other run writes, so there is
+    nothing to merge and nothing a rebase over a shallow clone could get wrong.
+    Verified against a local bare repository, competing push included.
 - The digest artifacts keep **7 days**, not 1. They are consumed inside the run
   that made them, so the retention buys nothing during a normal build — it buys
   the re-run: a manifest job that failed on Friday could not be restarted on

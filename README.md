@@ -234,6 +234,13 @@ is rewritten when its commit is rebuilt, and the revision tag
 image's own README, linked in [Current Images](#current-images), for the full
 table and for usage examples.
 
+Which images came out of a given commit is recorded outside the registry, on the
+orphan branch [`builds`](../../tree/builds): one file per image per build, naming
+the commit, the run, the published names and the digest of the index they were
+written onto. CI writes it after each publish. It answers the direction a tag
+cannot — a tag says what a name points at now, the ledger says what a commit
+produced — and it outlives the registry, which is the point.
+
 **No name in the registry is guaranteed forever.** GHCR enforces no immutability,
 and old versions have been deleted by hand before — a single sweep took roughly
 nine months of them. Pin a revision tag to stay on one build, and

@@ -413,6 +413,186 @@ jobs:
             # another run is allowed to have taken meanwhile.
             digest=$(printf '%s' "${published}" | jq -er '.digest')
             echo "published ${IMAGE}:${TAG}-${STAMP} as ${digest}, revision ${got}"
+            digest="${digest#sha256:}"
           else
             echo "::warning::could not read back ${IMAGE}:${TAG}-${STAMP}; annotations unverified"
+            digest=""
           fi
+
+          # The ledger record for this variant, written here because this is the
+          # only place that knows all of it: the names actually passed to
+          # `imagetools create`, and the digest they were written onto. It travels
+          # to the registrar job as an artifact, the same way the build legs' digests
+          # travel to this one - a matrix leg cannot set a job output, they would
+          # overwrite one another.
+          #
+          # `names` is built from the array rather than restated, so a name that is
+          # published and a name that is recorded cannot drift apart. An empty
+          # digest is a record of a publish whose read-back did not happen; the
+          # registrar says so rather than dropping the entry, because the names were
+          # still written.
+          mkdir -p /tmp/ledger
+          i=1
+          names=()
+          while [ "${i}" -lt "${#create_args[@]}" ]; do
+            [ "${create_args[$(( i - 1 ))]}" = "-t" ] && names+=("${create_args[${i}]##*:}")
+            i=$(( i + 2 ))
+          done
+          jq -n \
+            --arg image "${IMAGE##*/}" --arg tag "${TAG}" --arg primary "${PRIMARY}" \
+            --arg digest "${digest}" --arg created "${CREATED}" \
+            --args '{image: $image, tag: $tag, primary: ($primary == "true"),
+                     digest: (if $digest == "" then null else "sha256:" + $digest end),
+                     created: $created, names: $ARGS.positional}' \
+            "${names[@]}" > "/tmp/ledger/${IMAGE##*/}-${TAG}.json"
+
+      - name: ⬆️ Upload ledger record
+        uses: actions/upload-artifact@v7
+        with:
+          name: ledger-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.tag }}
+          path: /tmp/ledger/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── the build ledger ────────────────────────────────────────────────────────
+  #
+  # What this answers is the question the registry cannot: "which images were
+  # published from commit X". A tag answers the other direction and only until
+  # someone rewrites or deletes it, an index annotation dies with the index it is
+  # written on, and a run log expires - GHCR has already served 410 for one. So the
+  # record lives outside the registry, in git, where nothing in this pipeline can
+  # reach it.
+  #
+  # It is written to an ORPHAN BRANCH, not to master: the "Master" ruleset carries
+  # a `pull_request` rule with no bypass actors, which closes direct pushes to
+  # anyone including GITHUB_TOKEN. `builds` is outside that ruleset - it targets
+  # `refs/heads/master` alone - and outside the build triggers too, since every
+  # build workflow is gated on `branches: [master, dev]`, so a ledger commit
+  # rebuilds nothing. That is a stronger guarantee than a `paths:` argument, and it
+  # is why the branch is preferable to a directory in master even setting the
+  # ruleset aside.
+  #
+  # The price, stated plainly: this is the only job in the repository holding
+  # `contents: write`. It writes one directory of the orphan branch and nothing
+  # else, and it touches no registry at all.
+  ledger:
+    name: 📒 Build ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [prepare, platformio-manifest]
+    # `!cancelled()` with an explicit prepare check, like every job downstream of a
+    # multi-variant matrix: one variant failing must not withhold the record of the
+    # ones that published. Missing records are reported by the step below, which is
+    # the right blast radius.
+    if: >-
+      ${{ !cancelled()
+      && needs.prepare.result == 'success'
+      && github.repository_owner == 'jethome-iot'
+      && github.ref_name == 'master' }}
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v7
+
+      - name: ⬇️ Download ledger records
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ledger-*
+          merge-multiple: true
+          path: /tmp/ledger
+
+      - name: 📒 Record this run on the builds branch
+        run: |
+          set -euo pipefail
+          records=$(find /tmp/ledger -type f -name '*.json' | wc -l | tr -d ' ')
+          if [ "${records}" -eq 0 ]; then
+            echo "::error::no ledger records - every manifest leg failed, or none uploaded one"
+            exit 1
+          fi
+
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+
+          # One file per image per REVISION, not per commit: a rebuild of the same
+          # commit is a different set of images, which is the whole reason the
+          # revision name exists. Keyed by commit alone, the second build would
+          # overwrite the first one's record and the ledger would answer the
+          # question wrongly rather than not at all.
+          # Cleared, not just created: everything below copies what this step
+          # produced, and a leftover file from an earlier run on a reused runner
+          # would otherwise be recorded as part of this one.
+          rm -rf /tmp/out && mkdir -p /tmp/out
+          images=()
+          for image in $(jq -r '.image' /tmp/ledger/*.json | sort -u); do
+            images+=("${image}")
+            jq -s \
+              --arg commit "${GITHUB_SHA}" --arg image "${image}" \
+              --arg run_id "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
+              --arg url "${RUN_URL}" \
+              '{ commit: $commit, image: $image,
+                 run_id: $run_id, run_attempt: ($attempt | tonumber), run_url: $url,
+                 variants: (map(select(.image == $image)) | map(del(.image)) | sort_by(.tag)) }' \
+              /tmp/ledger/*.json > "/tmp/out/${image}.json"
+            missing=$(jq -r '[.variants[] | select(.digest == null)] | length' "/tmp/out/${image}.json")
+            [ "${missing}" -eq 0 ] \
+              || echo "::warning::${image}: ${missing} variant(s) recorded without a digest - their read-back did not happen"
+          done
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Re-applied rather than rebased on a rejected push. Three workflows can
+          # finish within seconds of each other on one commit, and all three push
+          # here; a rebase over a shallow clone is a way to get that wrong, while
+          # redoing the work is idempotent - every run writes paths no other run
+          # writes, so there is nothing to merge.
+          for attempt in 1 2 3 4 5; do
+            if git fetch --depth=1 origin builds 2>/dev/null; then
+              git checkout -q -B builds FETCH_HEAD
+            else
+              # First write ever: an orphan branch, and the code checkout cleared
+              # out of it. `git rm -rf .` empties index and worktree together, which
+              # `checkout --orphan` deliberately does not do - it keeps the index.
+              git checkout -q --orphan builds
+              git rm -rqf . >/dev/null 2>&1 || true
+              cat > README.md <<'LEDGER'
+          # Build ledger
+
+          Written by CI, one commit per workflow run. Not part of the source tree -
+          this is an orphan branch with no history in common with `master`, and
+          nothing here is built or tested.
+
+          Layout: `<short-commit>/<image>-r<run-id>.<attempt>.json`. Keyed by
+          revision rather than by commit, because a rebuild of the same commit
+          produces different images.
+
+          Each file records the commit in full, the run that built it, and for every
+          variant its published names and the digest of the index they were written
+          onto. That digest is what the registry cannot be asked for later: tags are
+          rewritten and deleted, and an index annotation dies with its index.
+          LEDGER
+            fi
+
+            mkdir -p "${SHA_SHORT}"
+            for image in "${images[@]}"; do
+              cp "/tmp/out/${image}.json" "${SHA_SHORT}/${image}-${STAMP}.json"
+            done
+
+            git add -A
+            if git diff --cached --quiet; then
+              echo "already recorded: ${SHA_SHORT}/*-${STAMP}.json"
+              exit 0
+            fi
+            git commit -q -m "${SHA_SHORT} ${STAMP}: ${images[*]}"
+
+            if git push -q origin builds; then
+              echo "recorded ${#images[@]} file(s) under ${SHA_SHORT}/: ${images[*]}"
+              exit 0
+            fi
+            echo "push rejected on attempt ${attempt}; another workflow reached the branch first"
+            sleep "$(( attempt * 5 ))"
+          done
+          echo "::error::could not write the ledger after 5 attempts"
+          exit 1
