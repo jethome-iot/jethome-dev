@@ -57,7 +57,7 @@ consumer can assert the image agrees with its own pins instead of assuming it
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `ubuntu-<version>` | Pin to a specific Ubuntu base (recommended for CI/CD) |
+| **Version** | `ubuntu-<version>` | Newest build on that Ubuntu base. Moves on every rebuild |
 | **Commit** | `sha-<short-commit>` | The newest build of that commit, under the name every image of this repo shares — rewritten if the commit is rebuilt |
 | **Revision** | `ubuntu-<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `ubuntu-<version>-sha-<short-commit>` | The **latest** build of that commit — rewritten if the commit is rebuilt |
@@ -83,7 +83,7 @@ that cannot change at all.
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-host:latest
 
-# Specific Ubuntu base (recommended for CI/CD)
+# A specific Ubuntu base - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-host:ubuntu-<version>
 ```
 
@@ -367,11 +367,21 @@ that updates stopped. A `regex:` versioning makes them readable:
 }
 ```
 
-The anchors are what keep the derived names out. Without them the same pattern
-would also match `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>`,
-and Renovate would offer a rebuild of an older commit as an upgrade. Checked
-against the live tag list: the pattern above matches the version tags and nothing
-else.
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
 
 `pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
 beside it, so what actually runs is the one identity nothing can move.

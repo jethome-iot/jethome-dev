@@ -88,7 +88,7 @@ own record of what it deployed rather than against the files on disk.
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
+| **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Newest build of that IDF + Matter combination. Moves on every rebuild |
 | **Revision** | `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` | The newest build of that commit for THIS combination — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
@@ -175,7 +175,7 @@ Two things worth knowing before pinning:
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
 
-# Specific version (recommended for CI/CD)
+# A specific combination - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:idf-v<idf-ver>-matter-v<matter-ver>
 ```
 
@@ -336,7 +336,7 @@ thing from it than its siblings do:
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-esp-matter"],
-      "versioning": "regex:^idf-v(?<compatibility>\\d+\\.\\d+\\.\\d+)-matter-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
+      "versioning": "regex:^idf-v(?<compatibility>\\d+\\.\\d+)(?:\\.\\d+)?-matter-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
       "pinDigests": true
     }
   ]
@@ -345,19 +345,41 @@ thing from it than its siblings do:
 
 The ESP-IDF version goes into `compatibility`, not into the version itself, and
 that is the point: **Renovate never proposes an update that changes a
-compatibility value.** A project pinned to a given ESP-IDF line therefore gets
-Matter upgrades built on that same line, and is never offered one built on an
-older ESP-IDF — which would be a downgrade of the SDK wearing an upgrade's
-version number. The Matter patch
-level is optional in the pattern because upstream publishes both `v<major>.<minor>`
-and `v<major>.<minor>.<patch>` specifications; a missing part defaults to zero, so
-they order correctly against each other.
+compatibility value.** So a project on an image built for one ESP-IDF line gets
+Matter upgrades on that same line, and is never offered one built on a different
+SDK line — which, going backwards, would be an SDK downgrade wearing a higher
+Matter number.
 
-The anchors are what keep the derived names out. Without them the same pattern
-would also match `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>`,
-and Renovate would offer a rebuild of an older commit as an upgrade. Checked
-against the live tag list: the pattern above matches the version tags and nothing
-else.
+`compatibility` deliberately captures only `<major>.<minor>` of the ESP-IDF
+version, with its patch matched and discarded. Capturing the patch too would make
+every SDK patch bump a new compatibility value, and Renovate would then silently
+stop offering anything at all to whoever was on the previous one — the same
+silence this block exists to remove. This repository does bump that patch, so
+that is not a hypothetical. The cost is the honest one: moving to a **new** ESP-IDF
+minor line stays a manual edit, which is the right default for a change of that
+size.
+
+Both patch levels are optional in the pattern, for the same reason on each side:
+Espressif's first release of a line has no patch (`v5.5`, `v6.0`, `v6.1`), and
+upstream Matter publishes both `v<major>.<minor>` and `v<major>.<minor>.<patch>`
+specifications. A missing part defaults to zero, so they order correctly against
+each other.
+
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
 
 `pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
 beside it, so what actually runs is the one identity nothing can move.

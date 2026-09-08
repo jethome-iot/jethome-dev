@@ -44,7 +44,7 @@ image built on this one, so it always describes the container you are in.
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
+| **Version** | `idf-v<version>` | Newest build of that ESP-IDF version. Moves on every rebuild |
 | **Revision** | `idf-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `idf-v<version>-sha-<short-commit>` | The newest build of that commit for THIS version — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
@@ -133,7 +133,7 @@ the images under it.
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
 
-# Specific version (recommended for CI/CD)
+# A specific version - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version>
 ```
 
@@ -254,8 +254,8 @@ build:
 ### Keeping the Pin Current
 
 Renovate skips these tags out of the box, and does it silently: its Docker
-versioning expects a bare `<major>.<minor>.<patch>`, not `idf-v<version>`, so every tag here
-parses to nothing and is dropped — no error, no pull request, no signal that
+versioning expects a bare `<major>.<minor>.<patch>`, not `idf-v<version>`, so every
+tag here parses to nothing and is dropped — no error, no pull request, no signal that
 updates stopped. A `regex:` versioning makes them readable:
 
 ```json
@@ -264,18 +264,33 @@ updates stopped. A `regex:` versioning makes them readable:
     {
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-esp-idf"],
-      "versioning": "regex:^idf-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+      "versioning": "regex:^idf-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
       "pinDigests": true
     }
   ]
 }
 ```
 
-The anchors are what keep the derived names out. Without them the same pattern
-would also match `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>`,
-and Renovate would offer a rebuild of an older commit as an upgrade. Checked
-against the live tag list: the pattern above matches the version tags and nothing
-else.
+The patch part is optional because Espressif's own tags make it optional: the first
+release of a line is `v<major>.<minor>` with no patch — `v5.5`, `v6.0`, `v6.1` all
+exist — and a required `\d+\.\d+\.\d+` would stop matching the day this image is
+built on one, silently, which is the failure this whole block is about.
+
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
 
 `pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
 beside it, so what actually runs is the one identity nothing can move.

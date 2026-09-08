@@ -237,8 +237,11 @@ table and for usage examples.
 **No name in the registry is guaranteed forever.** GHCR enforces no immutability,
 and old versions have been deleted by hand before — a single sweep took roughly
 nine months of them. Pin a revision tag to stay on one build, and
-`…@sha256:<digest>` where the pin has to survive anything at all: the digest is
-the only identity that cannot be moved or reused.
+`…@sha256:<digest>` where the pin must not be moved under you: the digest is the
+only identity that cannot be reassigned to different content. Deletion is the one
+thing it does not survive — a version removed from the registry is a 404 by digest
+exactly as by tag, so what protects a build that must keep running is a copy of the
+image, not a name for it.
 
 ## Use Cases
 

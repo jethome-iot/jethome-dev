@@ -491,7 +491,7 @@ before changing anything here.
 
 ## Adding an image
 
-Four places, none of them checked automatically:
+Five places, none of them checked automatically:
 
 1. `images/<name>/` with a `Dockerfile` and a `README.md`.
 2. A row in the root README's image table.
@@ -499,6 +499,9 @@ Four places, none of them checked automatically:
    repo — two jobs added to that family's workflow, plus `images/<name>/**` in its
    push **and** pull_request `paths:` filters.
 4. A `FROM`-edge link in the base image's README, where there is a base image.
+5. A `renovate.json` block in that README, anchored to the tag shape the image
+   actually publishes (see Documentation). Without it a consumer's Renovate skips
+   every tag of the new package, and says nothing.
 
 ## Local workflow
 
