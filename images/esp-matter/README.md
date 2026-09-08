@@ -324,9 +324,9 @@ services:
 
 ### Keeping the Pin Current
 
-Renovate skips these tags out of the box, and does it silently: nothing in its
-Docker versioning parses `idf-v<idf-ver>-matter-v<matter-ver>`, so every tag in
-this package is dropped — no error, no pull request, no signal that updates
+Renovate skips these tags out of the box, and does it silently: its Docker
+versioning reads a bare version number and nothing else, and this image's tag is
+two of them inside a sentence, so every tag in this package is dropped — no error, no pull request, no signal that updates
 stopped. A `regex:` versioning makes them readable, and this image needs one more
 thing from it than its siblings do:
 

@@ -232,8 +232,9 @@ build:
 ### Keeping the Pin Current
 
 Renovate skips these tags out of the box, and does it silently: its Docker
-versioning expects a bare `<major>.<minor>.<patch>`, not `pio-v<version>`, so every tag here
-parses to nothing and is dropped — no error, no pull request, no signal that
+versioning reads a bare version number and nothing else. The part-count is not
+the problem — it takes `1`, `1.1` and `1.1.0` alike — the `pio-v` in front of it
+is, so every tag here parses to nothing and is dropped — no error, no pull request, no signal that
 updates stopped. A `regex:` versioning makes them readable:
 
 ```json

@@ -475,9 +475,10 @@ before changing anything here.
   is a second source of truth that goes stale silently — the esp-matter copy had
   already lost `gcovr` before it was replaced by a link.
 - **Every image README carries a `renovate.json` block, and it is a tag-shape
-  contract nothing enforces.** Renovate's docker versioning parses a bare
-  `<major>.<minor>.<patch>`, so *every* tag this repository publishes resolves to
-  nothing under the default scheme and is skipped — with no error and no pull
+  contract nothing enforces.** Renovate's docker versioning reads a bare
+  version number and nothing else — the part-count is not the problem, the
+  `idf-v`/`pio-v`/`ubuntu-` in front of it is — so *every* tag this repository
+  publishes resolves to nothing under the default scheme and is skipped — with no error and no pull
   request, which is why the gap went unnoticed. The blocks give each package a
   `versioning: "regex:…"` anchored at both ends, so the version tags match and the
   derived names (`-sha-…`, `-r…`) do not; esp-matter additionally puts the ESP-IDF
