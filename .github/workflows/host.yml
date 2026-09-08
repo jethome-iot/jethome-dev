@@ -382,6 +382,48 @@ jobs:
 
           docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
 
+          # The ledger record, written HERE - the first moment anything is
+          # published, and before the verification below, which can exit non-zero.
+          # A revision that reached the registry and then failed its read-back is
+          # exactly the one worth having recorded: the names are live whatever this
+          # job's exit status says, and a ledger that omits them describes a
+          # registry that does not exist. Written only on a successful create, so
+          # the record exists if and only if something was published.
+          #
+          # It travels to the registrar as an artifact, the same way the build legs'
+          # digests travel to this job - a matrix leg cannot set a job output, they
+          # would overwrite one another.
+          #
+          # `run_attempt` is carried in the record rather than read by the registrar
+          # from its own environment. Re-running the registrar alone starts a new
+          # attempt, while the artifacts it reads still describe the one that
+          # published; taking the value from the environment would file this
+          # publication under a revision that was never published, contradicting the
+          # `names` in the same file.
+          #
+          # `names` is built from the array rather than restated, so a name that is
+          # published and a name that is recorded cannot drift apart.
+          # Cleared, not just created, and the upload takes `*.json`: this leg
+          # uploads what it wrote, not whatever the directory happens to hold. The
+          # registrar takes the same precaution with /tmp/out, and for the same
+          # reason - a reused runner.
+          rm -rf /tmp/ledger && mkdir -p /tmp/ledger
+          record="/tmp/ledger/${IMAGE##*/}-${TAG}.json"
+          i=1
+          names=()
+          while [ "${i}" -lt "${#create_args[@]}" ]; do
+            [ "${create_args[$(( i - 1 ))]}" = "-t" ] && names+=("${create_args[${i}]##*:}")
+            i=$(( i + 2 ))
+          done
+          jq -n \
+            --arg image "${IMAGE##*/}" --arg tag "${TAG}" --arg primary "${PRIMARY}" \
+            --arg run_id "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg created "${CREATED}" \
+            --args '{image: $image, tag: $tag, primary: ($primary == "true"),
+                     run_id: $run_id, run_attempt: ($attempt | tonumber),
+                     digest: null, created: $created, names: $ARGS.positional}' \
+            "${names[@]}" > "${record}"
+
           # Read back what was published, by the one name this run alone holds.
           # Deliberately not `${IMAGE}:${TAG}`: concurrent master runs are allowed
           # to overwrite the version tag and `latest` - that is why `concurrency`
@@ -415,45 +457,30 @@ jobs:
             # another run is allowed to have taken meanwhile.
             digest=$(printf '%s' "${published}" | jq -er '.digest')
             echo "published ${IMAGE}:${TAG}-${STAMP} as ${digest}, revision ${got}"
-            digest="${digest#sha256:}"
+            # The record already exists; this is the one field only the read-back
+            # can supply. It stays null when that read did not happen - a publish
+            # whose digest is unknown, which the registrar reports rather than
+            # drops, because the names were written either way.
+            patched=$(mktemp)
+            jq --arg d "${digest}" '.digest = $d' "${record}" > "${patched}"
+            mv "${patched}" "${record}"
           else
             echo "::warning::could not read back ${IMAGE}:${TAG}-${STAMP}; annotations unverified"
-            digest=""
           fi
 
-          # The ledger record for this variant, written here because this is the
-          # only place that knows all of it: the names actually passed to
-          # `imagetools create`, and the digest they were written onto. It travels
-          # to the registrar job as an artifact, the same way the build legs' digests
-          # travel to this one - a matrix leg cannot set a job output, they would
-          # overwrite one another.
-          #
-          # `names` is built from the array rather than restated, so a name that is
-          # published and a name that is recorded cannot drift apart. An empty
-          # digest is a record of a publish whose read-back did not happen; the
-          # registrar says so rather than dropping the entry, because the names were
-          # still written.
-          mkdir -p /tmp/ledger
-          i=1
-          names=()
-          while [ "${i}" -lt "${#create_args[@]}" ]; do
-            [ "${create_args[$(( i - 1 ))]}" = "-t" ] && names+=("${create_args[${i}]##*:}")
-            i=$(( i + 2 ))
-          done
-          jq -n \
-            --arg image "${IMAGE##*/}" --arg tag "${TAG}" --arg primary "${PRIMARY}" \
-            --arg digest "${digest}" --arg created "${CREATED}" \
-            --args '{image: $image, tag: $tag, primary: ($primary == "true"),
-                     digest: (if $digest == "" then null else "sha256:" + $digest end),
-                     created: $created, names: $ARGS.positional}' \
-            "${names[@]}" > "/tmp/ledger/${IMAGE##*/}-${TAG}.json"
-
+      # Runs even when the step above failed: a revision can reach the registry and
+      # then fail its read-back, and that record is precisely the one the ledger
+      # must not lose. `ignore` rather than `error` because the record exists if and
+      # only if `imagetools create` succeeded - a leg that published nothing has
+      # nothing to record, which is not a fault of the ledger. Losing every record
+      # is still caught, by the registrar, which fails on an empty set.
       - name: ⬆️ Upload ledger record
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: ledger-${{ env.HOST_IMAGE_NAME }}-${{ matrix.tag }}
-          path: /tmp/ledger/*
-          if-no-files-found: error
+          path: /tmp/ledger/*.json
+          if-no-files-found: ignore
           retention-days: 7
 
   # ── the build ledger ────────────────────────────────────────────────────────
@@ -496,6 +523,13 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v7
+        with:
+          # Stated rather than inherited. This is the only job in the repository
+          # that pushes, and it pushes with the credential this action leaves in
+          # the checkout; the action's default is not something a floating major
+          # promises to keep, and if it changed the push would simply stop
+          # authenticating.
+          persist-credentials: true
 
       - name: ⬇️ Download ledger records
         uses: actions/download-artifact@v8
@@ -507,40 +541,69 @@ jobs:
       - name: 📒 Record this run on the builds branch
         run: |
           set -euo pipefail
-          records=$(find /tmp/ledger -type f -name '*.json' | wc -l | tr -d ' ')
-          if [ "${records}" -eq 0 ]; then
-            echo "::error::no ledger records - every manifest leg failed, or none uploaded one"
+          # The directory is created here, not assumed: `download-artifact` makes
+          # none when the pattern matches nothing, and with `if-no-files-found:
+          # ignore` upstream that is now an ordinary outcome of a failed build. A
+          # `find` over a missing path exits non-zero, and under pipefail that
+          # killed the step with a bare "No such file or directory" - the error
+          # below could never print. Counted with the same non-recursive glob every
+          # reader here uses, so the guard covers what is actually read.
+          mkdir -p /tmp/ledger
+          shopt -s nullglob
+          records=(/tmp/ledger/*.json)
+          if [ "${#records[@]}" -eq 0 ]; then
+            echo "::error::no ledger records - every manifest leg failed to publish, or none uploaded one"
             exit 1
           fi
 
           SHA_SHORT="${GITHUB_SHA:0:7}"
-          STAMP="r${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
 
           # One file per image per REVISION, not per commit: a rebuild of the same
           # commit is a different set of images, which is the whole reason the
           # revision name exists. Keyed by commit alone, the second build would
           # overwrite the first one's record and the ledger would answer the
           # question wrongly rather than not at all.
-          # Cleared, not just created: everything below copies what this step
-          # produced, and a leftover file from an earlier run on a reused runner
-          # would otherwise be recorded as part of this one.
+          #
+          # The revision comes out of the RECORDS, never out of this job's own
+          # environment. Re-running the registrar alone starts a new attempt while
+          # the artifacts still describe the one that published, and a partial
+          # re-run can hand this job records from two different attempts at once.
+          # Grouping by (image, run_id, attempt) is what makes both cases come out
+          # right instead of filing a publication under a revision nobody published.
+          #
+          # /tmp/out is cleared, not just created: everything below copies what this
+          # step produced, and a leftover file from an earlier run on a reused
+          # runner would otherwise be recorded as part of this one.
           rm -rf /tmp/out && mkdir -p /tmp/out
-          images=()
-          for image in $(jq -r '.image' /tmp/ledger/*.json | sort -u); do
-            images+=("${image}")
+          # Assigned before the loop rather than piped into it. `jq -s` is
+          # all-or-nothing over its inputs, so one unparseable record fails the
+          # whole slurp - and inside a process substitution that failure is
+          # invisible to both `set -e` and `pipefail`. The loop would then read
+          # nothing, copy nothing, and the "no changes" branch below would report
+          # `already recorded` and exit 0: a green job that wrote no ledger at all.
+          groups=$(jq -sr '[ .[] | "\(.image) \(.run_id) \(.run_attempt)" ] | unique[]' "${records[@]}")
+          files=()
+          while read -r image run_id attempt; do
+            stamp="r${run_id}.${attempt}"
+            out="/tmp/out/${image}-${stamp}.json"
+            files+=("${image}-${stamp}")
             jq -s \
               --arg commit "${GITHUB_SHA}" --arg image "${image}" \
-              --arg run_id "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
-              --arg url "${RUN_URL}" \
-              '{ commit: $commit, image: $image,
-                 run_id: $run_id, run_attempt: ($attempt | tonumber), run_url: $url,
-                 variants: (map(select(.image == $image)) | map(del(.image)) | sort_by(.tag)) }' \
-              /tmp/ledger/*.json > "/tmp/out/${image}.json"
-            missing=$(jq -r '[.variants[] | select(.digest == null)] | length' "/tmp/out/${image}.json")
+              --arg run_id "${run_id}" --argjson attempt "${attempt}" \
+              --arg url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${run_id}/attempts/${attempt}" \
+              '[ .[] | select(.image == $image and .run_id == $run_id and .run_attempt == $attempt) ] as $v
+               | { commit: $commit, image: $image,
+                   run_id: $run_id, run_attempt: $attempt, run_url: $url,
+                   variants: ($v | map(del(.image, .run_id, .run_attempt)) | sort_by(.tag)) }' \
+              /tmp/ledger/*.json > "${out}"
+            missing=$(jq -r '[.variants[] | select(.digest == null)] | length' "${out}")
             [ "${missing}" -eq 0 ] \
-              || echo "::warning::${image}: ${missing} variant(s) recorded without a digest - their read-back did not happen"
-          done
+              || echo "::warning::${image} ${stamp}: ${missing} variant(s) recorded without a digest - the read-back either did not happen or did not agree"
+          done <<< "${groups}"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::${#records[@]} record(s) read but no group came out of them"
+            exit 1
+          fi
 
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -551,8 +614,25 @@ jobs:
           # redoing the work is idempotent - every run writes paths no other run
           # writes, so there is nothing to merge.
           for attempt in 1 2 3 4 5; do
-            if git fetch --depth=1 origin builds 2>/dev/null; then
+            # Every attempt starts from the same state. Without this, a first push
+            # that failed for any reason other than a race - no permission, a 5xx,
+            # a network blip - left a local `builds` behind, and attempt 2 died on
+            # `a branch named 'builds' already exists` after one retry rather than
+            # the five this loop advertises.
+            git checkout -q --detach
+            git branch -qD builds >/dev/null 2>&1 || true
+            # `ls-remote --exit-code` tells "the branch is not there" (2) apart from
+            # "the remote would not answer" (anything else); a bare `fetch
+            # 2>/dev/null` conflated the two, so a rejected token looked exactly
+            # like a first run.
+            probe=0
+            git ls-remote --exit-code --heads origin builds >/dev/null || probe=$?
+            if [ "${probe}" -eq 0 ]; then
+              git fetch --depth=1 origin builds
               git checkout -q -B builds FETCH_HEAD
+            elif [ "${probe}" -ne 2 ]; then
+              echo "::error::cannot read ${GITHUB_REPOSITORY} to find out whether the builds branch exists"
+              exit 1
             else
               # First write ever: an orphan branch, and the code checkout cleared
               # out of it. `git rm -rf .` empties index and worktree together, which
@@ -566,7 +646,9 @@ jobs:
           this is an orphan branch with no history in common with `master`, and
           nothing here is built or tested.
 
-          Layout: `<short-commit>/<image>-r<run-id>.<attempt>.json`. Keyed by
+          Layout: `<short-commit>/<package>-r<run-id>.<attempt>.json`, where the
+          package is the GHCR one (`jethome-dev-esp-idf`), not the directory under
+          `images/`. Keyed by
           revision rather than by commit, because a rebuild of the same commit
           produces different images.
 
@@ -578,22 +660,25 @@ jobs:
             fi
 
             mkdir -p "${SHA_SHORT}"
-            for image in "${images[@]}"; do
-              cp "/tmp/out/${image}.json" "${SHA_SHORT}/${image}-${STAMP}.json"
+            for name in "${files[@]}"; do
+              cp "/tmp/out/${name}.json" "${SHA_SHORT}/${name}.json"
             done
 
             git add -A
             if git diff --cached --quiet; then
-              echo "already recorded: ${SHA_SHORT}/*-${STAMP}.json"
+              echo "already recorded: ${files[*]}"
               exit 0
             fi
-            git commit -q -m "${SHA_SHORT} ${STAMP}: ${images[*]}"
+            git commit -q -m "${SHA_SHORT}: ${files[*]}"
 
             if git push -q origin builds; then
-              echo "recorded ${#images[@]} file(s) under ${SHA_SHORT}/: ${images[*]}"
+              echo "recorded ${#files[@]} file(s) under ${SHA_SHORT}/: ${files[*]}"
               exit 0
             fi
-            echo "push rejected on attempt ${attempt}; another workflow reached the branch first"
+            # Not necessarily a race: a ruleset, a revoked permission and a 5xx all
+            # land here too. git's own message is above this line; this one only
+            # says what happens next.
+            echo "push failed on attempt ${attempt} of 5; re-reading the branch and rebuilding on its tip"
             sleep "$(( attempt * 5 ))"
           done
           echo "::error::could not write the ledger after 5 attempts"

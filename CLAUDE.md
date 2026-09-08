@@ -92,8 +92,9 @@ before changing anything here.
   its own artifact and fails by itself when it is missing, which is the right blast
   radius. No job is named `build`. Every job that touches GHCR
   needs its own `permissions: contents: read` + `packages: write`; the `ledger`
-  job is the single exception in the other direction — `contents: write` and no
-  registry access at all, which is the whole of its blast radius; `lint.yml` and
+  jobs — one per build workflow, so three of them — are the exception in the other
+  direction: `contents: write` and no registry access at all, which is the whole of
+  their blast radius; `lint.yml` and
   `runner-smoke.yml` touch nothing and declare the minimum they need instead.
 - **Nothing is handed between those jobs by tag.** A build leg pushes by digest and
   carries no tag of its own (`outputs: type=image,…,push-by-digest=true`); the
@@ -176,8 +177,9 @@ before changing anything here.
   images came out of commit X*. A tag answers the other way and only until someone
   rewrites or deletes it; an index annotation dies with the index; a run log
   expires, and GHCR has already served 410 for one. The record is
-  `<short-commit>/<image>-r<run-id>.<attempt>.json` — keyed by **revision, not by
-  commit**, because a rebuild of the same commit produces different images and
+  `<short-commit>/<package>-r<run-id>.<attempt>.json`, where `<package>` is the
+  GHCR package name (`jethome-dev-esp-idf`) rather than the roster directory —
+  keyed by **revision, not by commit**, because a rebuild of the same commit produces different images and
   keying by commit alone would have the second run overwrite the first's record,
   which answers the question wrongly rather than not at all. Each file carries the
   commit in full, the run, and per variant its published names and the digest of
@@ -195,6 +197,18 @@ before changing anything here.
     five times over; every run writes paths no other run writes, so there is
     nothing to merge and nothing a rebase over a shallow clone could get wrong.
     Verified against a local bare repository, competing push included.
+  - **The revision comes out of the records, never out of the registrar's own
+    environment.** Re-running the registrar alone starts a new attempt while the
+    artifacts it reads still describe the one that published, and a partial re-run
+    hands it records from two attempts at once; both are grouped by
+    `(image, run_id, attempt)` taken from the records, so a publication is never
+    filed under a revision nobody published. The record is also written the moment
+    `imagetools create` returns — before the read-back, which can fail — because a
+    revision that reached the registry and then failed verification is exactly the
+    one worth having recorded.
+  - This is the one job whose `uses:` majors carry write access to refs rather than
+    to a package, so the action-pinning rule below is worth re-reading before
+    bumping a major that lands here.
 - The digest artifacts keep **7 days**, not 1. They are consumed inside the run
   that made them, so the retention buys nothing during a normal build — it buys
   the re-run: a manifest job that failed on Friday could not be restarted on
