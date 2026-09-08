@@ -79,12 +79,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # from its own tree, and nothing here can read another repository at build time.
 # The LABELs at the bottom are what let the consumer verify the two agree instead
 # of assuming it.
-ARG RUFF_VERSION=0.15.20
-ARG MYPY_VERSION=2.1.0
+ARG RUFF_VERSION=0.16.5
+ARG MYPY_VERSION=2.3.1
 ARG PYTEST_VERSION=9.1.1
 ARG JSONSCHEMA_VERSION=4.26.0
-ARG CLANG_FORMAT_VERSION=22.1.5
-ARG CLANG_TIDY_VERSION=22.1.0
+ARG CLANG_FORMAT_VERSION=23.1.0
+ARG CLANG_TIDY_VERSION=22.1.8
 ENV VIRTUAL_ENV=/opt/qa-venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 RUN python3 -m venv "${VIRTUAL_ENV}" \
