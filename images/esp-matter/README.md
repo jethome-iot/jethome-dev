@@ -99,7 +99,9 @@ The commit in every tag above is the **first 7 characters** of the SHA, e.g.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
-- **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
+- **CI/CD**: the version tag (`idf-v<idf-ver>-matter-v<matter-ver>`) to track the
+  newest build of a combination, or a revision tag to stay on exactly one. The
+  version tag is not a reproducible pin — it is rewritten on every rebuild
 - **Rolling back**: use a revision tag
   (`idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>`) — it names one build
   and is never reused
@@ -319,6 +321,53 @@ services:
     working_dir: /workspace
     command: idf.py build
 ```
+
+### Keeping the Pin Current
+
+Renovate skips these tags out of the box, and does it silently: nothing in its
+Docker versioning parses `idf-v<idf-ver>-matter-v<matter-ver>`, so every tag in
+this package is dropped — no error, no pull request, no signal that updates
+stopped. A `regex:` versioning makes them readable, and this image needs one more
+thing from it than its siblings do:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-esp-matter"],
+      "versioning": "regex:^idf-v(?<compatibility>\\d+\\.\\d+\\.\\d+)-matter-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
+      "pinDigests": true
+    }
+  ]
+}
+```
+
+The ESP-IDF version goes into `compatibility`, not into the version itself, and
+that is the point: **Renovate never proposes an update that changes a
+compatibility value.** A project pinned to a given ESP-IDF line therefore gets
+Matter upgrades built on that same line, and is never offered one built on an
+older ESP-IDF — which would be a downgrade of the SDK wearing an upgrade's
+version number. The Matter patch
+level is optional in the pattern because upstream publishes both `v<major>.<minor>`
+and `v<major>.<minor>.<patch>` specifications; a missing part defaults to zero, so
+they order correctly against each other.
+
+The anchors are what keep the derived names out. Without them the same pattern
+would also match `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>`,
+and Renovate would offer a rebuild of an older commit as an upgrade. Checked
+against the live tag list: the pattern above matches the version tags and nothing
+else.
+
+`pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
+beside it, so what actually runs is the one identity nothing can move.
+
+**Dependabot is not an alternative here.** It does not read a workflow's
+`container:` at all — [dependabot/dependabot-core#5819][dd] has been open since
+2022 — so an image pinned in a job container is invisible to it whatever
+ecosystems are configured. Renovate reads both `container:` and `services:`.
+
+[dd]: https://github.com/dependabot/dependabot-core/issues/5819
 
 ## Reading the Image's Git Trees as Another User
 

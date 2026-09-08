@@ -229,6 +229,42 @@ build:
     expire_in: 1 week
 ```
 
+### Keeping the Pin Current
+
+Renovate skips these tags out of the box, and does it silently: its Docker
+versioning expects a bare `<major>.<minor>.<patch>`, not `pio-v<version>`, so every tag here
+parses to nothing and is dropped — no error, no pull request, no signal that
+updates stopped. A `regex:` versioning makes them readable:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-platformio"],
+      "versioning": "regex:^pio-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+      "pinDigests": true
+    }
+  ]
+}
+```
+
+The anchors are what keep the derived names out. Without them the same pattern
+would also match `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>`,
+and Renovate would offer a rebuild of an older commit as an upgrade. Checked
+against the live tag list: the pattern above matches the version tags and nothing
+else.
+
+`pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
+beside it, so what actually runs is the one identity nothing can move.
+
+**Dependabot is not an alternative here.** It does not read a workflow's
+`container:` at all — [dependabot/dependabot-core#5819][dd] has been open since
+2022 — so an image pinned in a job container is invisible to it whatever
+ecosystems are configured. Renovate reads both `container:` and `services:`.
+
+[dd]: https://github.com/dependabot/dependabot-core/issues/5819
+
 ### Local Development
 
 ```bash

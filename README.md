@@ -227,8 +227,18 @@ Every image is published to GitHub Container Registry (GHCR) as its own package,
 named after its directory under `images/`:
 `ghcr.io/jethome-iot/jethome-dev-<image>`.
 
-See the image's own README, linked in [Current Images](#current-images), for its
-available tags and usage examples.
+Each image publishes several names for the same object, and they do not all mean
+the same thing: `latest` and the version tag move on every rebuild, the commit tag
+is rewritten when its commit is rebuilt, and the revision tag
+(`<version>-r<run-id>.<attempt>`) names one build and is never reused. See the
+image's own README, linked in [Current Images](#current-images), for the full
+table and for usage examples.
+
+**No name in the registry is guaranteed forever.** GHCR enforces no immutability,
+and old versions have been deleted by hand before — a single sweep took roughly
+nine months of them. Pin a revision tag to stay on one build, and
+`…@sha256:<digest>` where the pin has to survive anything at all: the digest is
+the only identity that cannot be moved or reused.
 
 ## Use Cases
 
@@ -239,7 +249,8 @@ available tags and usage examples.
 
 ## Features
 
-- ✅ Reproducible builds across all machines — images are pinned by version tags
+- ✅ The same environment on every machine — every image is published under a name
+  that identifies one build, and by a digest that identifies it permanently
 - ✅ Multi-architecture: every image is published for `linux/amd64` and `linux/arm64`
 - ✅ Multiple ESP32 chip variants supported by a single image
 - ✅ Images kept minimal — toolchains that are not needed at build time download on
