@@ -184,7 +184,13 @@ before changing anything here.
   which answers the question wrongly rather than not at all. Each file carries the
   commit in full, the run, and per variant its published names and the digest of
   the index they were written onto. The names are built from the very array passed
-  to `imagetools create`, so a published name and a recorded one cannot drift.
+  to `imagetools create`, so a published name and a recorded one cannot drift. Two
+  fields qualify the rest: `create_ok: false` says the tag write stopped partway,
+  so the names are what was *attempted* — `imagetools create` writes them one at a
+  time and `latest` goes first, which makes the half-done case the dangerous one —
+  and `digest: null` says the index was never read back. The record is written for
+  a failed create too, because a publish that moved names and then stopped is
+  precisely the one nobody should have to guess about.
   - **Orphan, and not a directory in master**, for two independent reasons. The
     "Master" ruleset carries a `pull_request` rule with no bypass actors, which
     closes direct pushes to everyone including `GITHUB_TOKEN`. And every build

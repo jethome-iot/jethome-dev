@@ -378,7 +378,13 @@ jobs:
             exit 1
           fi
 
-          docker buildx imagetools create "${create_args[@]}" "${refs[@]}"
+          # Not `set -e`'s to decide. `imagetools create` writes the tags as
+          # sequential PUTs and stops at the first error, so a failure here can
+          # still have moved names - `latest` is written first, which makes the
+          # half-done case the dangerous one. The record below is written either
+          # way, and carries which case it was.
+          create_ok=true
+          docker buildx imagetools create "${create_args[@]}" "${refs[@]}" || create_ok=false
 
           # The ledger record, written HERE - the first moment anything is
           # published, and before the verification below, which can exit non-zero.
@@ -417,10 +423,21 @@ jobs:
             --arg image "${IMAGE##*/}" --arg tag "${TAG}" --arg primary "${PRIMARY}" \
             --arg run_id "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
             --arg created "${CREATED}" \
+            --arg create_ok "${create_ok}" \
             --args '{image: $image, tag: $tag, primary: ($primary == "true"),
                      run_id: $run_id, run_attempt: ($attempt | tonumber),
+                     create_ok: ($create_ok == "true"),
                      digest: null, created: $created, names: $ARGS.positional}' \
-            "${names[@]}" > "${record}"
+            "${names[@]}" > "${record}" \
+            || { echo "::error::published, but the ledger record could not be written - this publication will not be recorded"; exit 1; }
+
+          # Only now, because everything below reads back what was published and
+          # there is nothing coherent to read back from a write that stopped
+          # halfway.
+          if [ "${create_ok}" != "true" ]; then
+            echo "::error::imagetools create failed. It writes tags one at a time and stops at the first error, so some names may already be live - recorded with create_ok:false, which means 'names' is what was attempted rather than what landed."
+            exit 1
+          fi
 
           # Read back what was published, by the one name this run alone holds.
           # Deliberately not `${IMAGE}:${TAG}`: concurrent master runs are allowed
@@ -466,6 +483,13 @@ jobs:
             echo "::warning::could not read back ${IMAGE}:${TAG}-${STAMP}; annotations unverified"
           fi
 
+      # The attempt is part of the name because artifacts are immutable from
+      # upload-artifact v4 on: re-uploading a name fails. Without it, re-running a
+      # manifest job - the very thing the digest artifacts' 7-day retention exists
+      # to make possible - would die here on a duplicate. With it, both attempts'
+      # records survive side by side and the registrar files each under the
+      # revision that published it.
+      #
       # Runs even when the step above failed: a revision can reach the registry and
       # then fail its read-back, and that record is precisely the one the ledger
       # must not lose. `ignore` rather than `error` because the record exists if and
@@ -476,7 +500,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ledger-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.tag }}
+          name: ledger-${{ env.PLATFORMIO_IMAGE_NAME }}-${{ matrix.tag }}-${{ github.run_attempt }}
           path: /tmp/ledger/*.json
           if-no-files-found: ignore
           retention-days: 7
@@ -499,9 +523,10 @@ jobs:
   # is why the branch is preferable to a directory in master even setting the
   # ruleset aside.
   #
-  # The price, stated plainly: this is the only job in the repository holding
-  # `contents: write`. It writes one directory of the orphan branch and nothing
-  # else, and it touches no registry at all.
+  # The price, stated plainly: these jobs - one per build workflow, so three of
+  # them - are the only ones in the repository holding `contents: write`. Each
+  # writes one directory of the orphan branch and nothing else, and touches no
+  # registry at all.
   ledger:
     name: 📒 Build ledger
     runs-on: ubuntu-latest
@@ -522,8 +547,9 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v7
         with:
-          # Stated rather than inherited. This is the only job in the repository
-          # that pushes, and it pushes with the credential this action leaves in
+          # Stated rather than inherited. The three ledger jobs are the only ones
+          # in the repository that push, and they push with the credential this
+          # action leaves in
           # the checkout; the action's default is not something a floating major
           # promises to keep, and if it changed the push would simply stop
           # authenticating.
@@ -550,7 +576,7 @@ jobs:
           shopt -s nullglob
           records=(/tmp/ledger/*.json)
           if [ "${#records[@]}" -eq 0 ]; then
-            echo "::error::no ledger records - every manifest leg failed to publish, or none uploaded one"
+            echo "::error::no ledger records: no manifest leg got as far as publishing. This job is a symptom - the cause is in the manifest jobs above."
             exit 1
           fi
 
@@ -617,7 +643,10 @@ jobs:
             # a network blip - left a local `builds` behind, and attempt 2 died on
             # `a branch named 'builds' already exists` after one retry rather than
             # the five this loop advertises.
-            git checkout -q --detach
+            # Guarded: `--detach` is fatal on an unborn HEAD. `actions/checkout`
+            # never leaves one, but the failure is a hard stop with a message
+            # about branches rather than about the ledger, and the guard is a line.
+            git rev-parse -q --verify HEAD >/dev/null && git checkout -q --detach
             git branch -qD builds >/dev/null 2>&1 || true
             # `ls-remote --exit-code` tells "the branch is not there" (2) apart from
             # "the remote would not answer" (anything else); a bare `fetch
@@ -636,7 +665,12 @@ jobs:
               # out of it. `git rm -rf .` empties index and worktree together, which
               # `checkout --orphan` deliberately does not do - it keeps the index.
               git checkout -q --orphan builds
-              git rm -rqf . >/dev/null 2>&1 || true
+              # Not silenced, and not `|| true`. `--orphan` keeps the index it
+              # inherited, so this is the only thing standing between the ledger
+              # branch and a full copy of master's tree - committed silently, and
+              # then carried forward by every later run that fetches this tip.
+              git rm -rqf . \
+                || { echo "::error::could not clear the worktree for the orphan branch"; exit 1; }
               cat > README.md <<'LEDGER'
           # Build ledger
 
@@ -654,6 +688,12 @@ jobs:
           variant its published names and the digest of the index they were written
           onto. That digest is what the registry cannot be asked for later: tags are
           rewritten and deleted, and an index annotation dies with its index.
+
+          Two fields qualify the rest. `create_ok: false` means the tag write
+          stopped partway - the names are what was attempted, not what landed, and
+          the registry is the only place that can say which. `digest: null` means
+          the published index was never read back, either because the registry was
+          unreachable or because the read disagreed and failed the job.
           LEDGER
             fi
 
@@ -677,7 +717,8 @@ jobs:
             # land here too. git's own message is above this line; this one only
             # says what happens next.
             echo "push failed on attempt ${attempt} of 5; re-reading the branch and rebuilding on its tip"
-            sleep "$(( attempt * 5 ))"
+            # Not after the last one: there is nothing left to back off for.
+            [ "${attempt}" -lt 5 ] && sleep "$(( attempt * 5 ))"
           done
           echo "::error::could not write the ledger after 5 attempts"
           exit 1
