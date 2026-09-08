@@ -236,12 +236,13 @@ table and for usage examples.
 
 Which images came out of a given commit is recorded outside the registry, on the
 orphan branch [`builds`](https://github.com/jethome-iot/jethome-dev/tree/builds):
-one file per image per build, naming
-the commit, the run, the published names and — when the published index could be
-read back — the digest they were written onto. CI writes it after each publish,
-and records a publish whose write stopped partway or whose read-back did not
-happen rather than dropping it; the file says which case it was. It answers the direction a tag
-cannot — a tag says what a name points at now, the ledger says what a commit
+one file per image per build, naming the commit, the run, the published names
+and — when the published index could be verified — the digest they were written
+onto. CI writes it after each publish, and does not drop the awkward cases: a
+write that stopped partway is recorded with the names it *attempted*, and an
+index that could not be verified with no digest. Each file says which case it
+is, so a reader never has to take a listed tag as proof it was published. It
+answers the direction a tag cannot — a tag says what a name points at now, the ledger says what a commit
 produced — and it outlives the registry, which is the point.
 
 **No name in the registry is guaranteed forever.** GHCR enforces no immutability,

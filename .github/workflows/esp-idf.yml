@@ -474,7 +474,13 @@ jobs:
           # registrar takes the same precaution with /tmp/out, and for the same
           # reason - a reused runner.
           rm -rf /tmp/ledger && mkdir -p /tmp/ledger
-          record="/tmp/ledger/${IMAGE##*/}-${TAG}.json"
+          # The stamp is in the FILE name, not only in the artifact name. The
+          # registrar downloads every `ledger-*` with `merge-multiple: true`, which
+          # unpacks them all into one directory - so two attempts sharing a basename
+          # would have one silently overwrite the other, before the grouping by
+          # attempt ever sees them. Putting the attempt in the artifact name alone
+          # was not enough, and this is what makes it so.
+          record="/tmp/ledger/${IMAGE##*/}-${TAG}-${STAMP}.json"
           i=1
           names=()
           while [ "${i}" -lt "${#create_args[@]}" ]; do
@@ -931,7 +937,13 @@ jobs:
           # registrar takes the same precaution with /tmp/out, and for the same
           # reason - a reused runner.
           rm -rf /tmp/ledger && mkdir -p /tmp/ledger
-          record="/tmp/ledger/${IMAGE##*/}-${TAG}.json"
+          # The stamp is in the FILE name, not only in the artifact name. The
+          # registrar downloads every `ledger-*` with `merge-multiple: true`, which
+          # unpacks them all into one directory - so two attempts sharing a basename
+          # would have one silently overwrite the other, before the grouping by
+          # attempt ever sees them. Putting the attempt in the artifact name alone
+          # was not enough, and this is what makes it so.
+          record="/tmp/ledger/${IMAGE##*/}-${TAG}-${STAMP}.json"
           i=1
           names=()
           while [ "${i}" -lt "${#create_args[@]}" ]; do

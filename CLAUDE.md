@@ -188,7 +188,9 @@ before changing anything here.
   fields qualify the rest: `create_ok: false` says the tag write stopped partway,
   so the names are what was *attempted* — `imagetools create` writes them one at a
   time and `latest` goes first, which makes the half-done case the dangerous one —
-  and `digest: null` says the index was never read back. The record is written for
+  and `digest: null` says the published index could not be *verified* — the read
+  did not happen at all, or it happened and disagreed, both of which stop before
+  the digest is recorded. The record is written for
   a failed create too, because a publish that moved names and then stopped is
   precisely the one nobody should have to guess about.
   - **Orphan, and not a directory in master**, for two independent reasons. The
