@@ -237,8 +237,10 @@ table and for usage examples.
 Which images came out of a given commit is recorded outside the registry, on the
 orphan branch [`builds`](https://github.com/jethome-iot/jethome-dev/tree/builds):
 one file per image per build, naming
-the commit, the run, the published names and the digest of the index they were
-written onto. CI writes it after each publish. It answers the direction a tag
+the commit, the run, the published names and — when the published index could be
+read back — the digest they were written onto. CI writes it after each publish,
+and records a publish whose write stopped partway or whose read-back did not
+happen rather than dropping it; the file says which case it was. It answers the direction a tag
 cannot — a tag says what a name points at now, the ledger says what a commit
 produced — and it outlives the registry, which is the point.
 

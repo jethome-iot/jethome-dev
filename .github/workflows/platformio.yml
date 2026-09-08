@@ -674,9 +674,12 @@ jobs:
               cat > README.md <<'LEDGER'
           # Build ledger
 
-          Written by CI, one commit per workflow run. Not part of the source tree -
-          this is an orphan branch with no history in common with `master`, and
-          nothing here is built or tested.
+          Written by CI: one commit per registrar run that has something new to
+          add. A re-run keeps the same run id and raises the attempt, so one run
+          can leave several commits here; a registrar that finds every record
+          already present leaves none. Not part of the source tree - this is an
+          orphan branch with no history in common with `master`, and nothing here
+          is built or tested.
 
           Layout: `<short-commit>/<package>-r<run-id>.<attempt>.json`, where the
           package is the GHCR one (`jethome-dev-esp-idf`), not the directory under
