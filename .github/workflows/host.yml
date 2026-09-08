@@ -393,8 +393,9 @@ jobs:
           # A revision that reached the registry and then failed its read-back is
           # exactly the one worth having recorded: the names are live whatever this
           # job's exit status says, and a ledger that omits them describes a
-          # registry that does not exist. Written only on a successful create, so
-          # the record exists if and only if something was published.
+          # registry that does not exist. Written after EVERY create attempt, the
+          # failed ones included - `create_ok` is what says which kind it was, and
+          # a create that stopped halfway is the case where the names matter most.
           #
           # It travels to the registrar as an artifact, the same way the build legs'
           # digests travel to this job - a matrix leg cannot set a job output, they
@@ -480,10 +481,11 @@ jobs:
             # another run is allowed to have taken meanwhile.
             digest=$(printf '%s' "${published}" | jq -er '.digest')
             echo "published ${IMAGE}:${TAG}-${STAMP} as ${digest}, revision ${got}"
-            # The record already exists; this is the one field only the read-back
-            # can supply. It stays null when that read did not happen - a publish
-            # whose digest is unknown, which the registrar reports rather than
-            # drops, because the names were written either way.
+            # The record already exists; this is the one field only a VERIFIED
+            # read-back can supply. It stays null whenever the index could not be
+            # verified - the read did not happen, or it happened and disagreed,
+            # since both of those exit above this line. The registrar reports such
+            # a record rather than dropping it: the names were written either way.
             patched=$(mktemp)
             jq --arg d "${digest}" '.digest = $d' "${record}" > "${patched}"
             mv "${patched}" "${record}"
@@ -499,11 +501,12 @@ jobs:
       # revision that published it.
       #
       # Runs even when the step above failed: a revision can reach the registry and
-      # then fail its read-back, and that record is precisely the one the ledger
-      # must not lose. `ignore` rather than `error` because the record exists if and
-      # only if `imagetools create` succeeded - a leg that published nothing has
-      # nothing to record, which is not a fault of the ledger. Losing every record
-      # is still caught, by the registrar, which fails on an empty set.
+      # then fail its read-back - or its create can stop partway - and those records
+      # are precisely the ones the ledger must not lose. `ignore` rather than
+      # `error` because a leg can fail before it gets as far as writing one at all
+      # (no digests, a bad argument list), and a leg that published nothing has
+      # nothing to record - not a fault of the ledger. Losing EVERY record is still
+      # caught, by the registrar, which fails on an empty set.
       - name: ⬆️ Upload ledger record
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -703,8 +706,9 @@ jobs:
           Two fields qualify the rest. `create_ok: false` means the tag write
           stopped partway - the names are what was attempted, not what landed, and
           the registry is the only place that can say which. `digest: null` means
-          the published index was never read back, either because the registry was
-          unreachable or because the read disagreed and failed the job.
+          the published index could not be *verified*: either the read did not
+          happen, or it happened and disagreed - both stop before the digest is
+          recorded.
           LEDGER
             fi
 
