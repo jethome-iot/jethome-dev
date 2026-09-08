@@ -88,7 +88,7 @@ own record of what it deployed rather than against the files on disk.
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Pin to specific IDF + Matter combination (recommended for CI/CD) |
+| **Version** | `idf-v<idf-ver>-matter-v<matter-ver>` | Newest build of that IDF + Matter combination. Moves on every rebuild |
 | **Revision** | `idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `idf-v<idf-ver>-matter-v<matter-ver>-sha-<short-commit>` | The newest build of that commit for THIS combination — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
@@ -99,7 +99,9 @@ The commit in every tag above is the **first 7 characters** of the SHA, e.g.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
-- **CI/CD**: Use version tags (`idf-v<idf-ver>-matter-v<matter-ver>`) for reproducibility
+- **CI/CD**: the version tag (`idf-v<idf-ver>-matter-v<matter-ver>`) to track the
+  newest build of a combination, or a revision tag to stay on exactly one. The
+  version tag is not a reproducible pin — it is rewritten on every rebuild
 - **Rolling back**: use a revision tag
   (`idf-v<idf-ver>-matter-v<matter-ver>-r<run-id>.<attempt>`) — it names one build
   and is never reused
@@ -173,7 +175,7 @@ Two things worth knowing before pinning:
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:latest
 
-# Specific version (recommended for CI/CD)
+# A specific combination - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-matter:idf-v<idf-ver>-matter-v<matter-ver>
 ```
 
@@ -319,6 +321,75 @@ services:
     working_dir: /workspace
     command: idf.py build
 ```
+
+### Keeping the Pin Current
+
+Renovate skips these tags out of the box, and does it silently: its Docker
+versioning reads a bare version number and nothing else, and this image's tag is
+two of them inside a sentence, so every tag in this package is dropped — no error, no pull request, no signal that updates
+stopped. A `regex:` versioning makes them readable, and this image needs one more
+thing from it than its siblings do:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-esp-matter"],
+      "versioning": "regex:^idf-v(?<compatibility>\\d+\\.\\d+)(?:\\.\\d+)?-matter-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
+      "pinDigests": true
+    }
+  ]
+}
+```
+
+The ESP-IDF version goes into `compatibility`, not into the version itself, and
+that is the point: **Renovate never proposes an update that changes a
+compatibility value.** So a project on an image built for one ESP-IDF line gets
+Matter upgrades on that same line, and is never offered one built on a different
+SDK line — which, going backwards, would be an SDK downgrade wearing a higher
+Matter number.
+
+`compatibility` deliberately captures only `<major>.<minor>` of the ESP-IDF
+version, with its patch matched and discarded. Capturing the patch too would make
+every SDK patch bump a new compatibility value, and Renovate would then silently
+stop offering anything at all to whoever was on the previous one — the same
+silence this block exists to remove. This repository does bump that patch, so
+that is not a hypothetical. The cost is the honest one: moving to a **new** ESP-IDF
+minor line stays a manual edit, which is the right default for a change of that
+size.
+
+Both patch levels are optional in the pattern, for the same reason on each side:
+Espressif's first release of a line has no patch (`v5.5`, `v6.0`, `v6.1`), and
+upstream Matter publishes both `v<major>.<minor>` and `v<major>.<minor>.<patch>`
+specifications. A missing part defaults to zero, so they order correctly against
+each other.
+
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
+
+`pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
+beside it, so what actually runs is the one identity nothing can move.
+
+**Dependabot is not an alternative here.** It does not read a workflow's
+`container:` at all — [dependabot/dependabot-core#5819][dd] has been open since
+2022 — so an image pinned in a job container is invisible to it whatever
+ecosystems are configured. Renovate reads both `container:` and `services:`.
+
+[dd]: https://github.com/dependabot/dependabot-core/issues/5819
 
 ## Reading the Image's Git Trees as Another User
 

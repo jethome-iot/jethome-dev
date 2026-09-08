@@ -474,10 +474,25 @@ before changing anything here.
   README for what it inherits and lists only its own additions. A copied inventory
   is a second source of truth that goes stale silently — the esp-matter copy had
   already lost `gcovr` before it was replaced by a link.
+- **Every image README carries a `renovate.json` block, and it is a tag-shape
+  contract nothing enforces.** Renovate's docker versioning reads a bare
+  version number and nothing else — the part-count is not the problem, the
+  `idf-v`/`pio-v`/`ubuntu-` in front of it is — so *every* tag this repository
+  publishes resolves to nothing under the default scheme and is skipped — with no error and no pull
+  request, which is why the gap went unnoticed. The blocks give each package a
+  `versioning: "regex:…"` anchored at both ends, so the version tags match and the
+  derived names (`-sha-…`, `-r…`) do not; esp-matter additionally puts the ESP-IDF
+  version in the `compatibility` group, which Renovate never changes across an
+  update, so a Matter bump can never drag the SDK backwards. Change a tag's shape
+  and those regexes are wrong: `lint.yml` does not read Markdown and Dependabot
+  does not read these files at all, so nothing will say so. **Dependabot is not a
+  fallback for consumers either** — it does not read a workflow's `container:`
+  (dependabot/dependabot-core#5819, open since 2022), so an image pinned in a job
+  container is invisible to it; Renovate reads `container:` and `services:` both.
 
 ## Adding an image
 
-Four places, none of them checked automatically:
+Five places, none of them checked automatically:
 
 1. `images/<name>/` with a `Dockerfile` and a `README.md`.
 2. A row in the root README's image table.
@@ -485,6 +500,9 @@ Four places, none of them checked automatically:
    repo — two jobs added to that family's workflow, plus `images/<name>/**` in its
    push **and** pull_request `paths:` filters.
 4. A `FROM`-edge link in the base image's README, where there is a base image.
+5. A `renovate.json` block in that README, anchored to the tag shape the image
+   actually publishes (see Documentation). Without it a consumer's Renovate skips
+   every tag of the new package, and says nothing.
 
 ## Local workflow
 

@@ -44,7 +44,7 @@ image built on this one, so it always describes the container you are in.
 | Tag Type | Example | Usage |
 |----------|---------|-------|
 | **Latest** | `latest` | Always points to newest build (floating) |
-| **Version** | `idf-v<version>` | Pin to specific ESP-IDF base version (recommended for CI/CD) |
+| **Version** | `idf-v<version>` | Newest build of that ESP-IDF version. Moves on every rebuild |
 | **Revision** | `idf-v<version>-r<run-id>.<attempt>` | One build. Never moves, never reused |
 | **Version + commit** | `idf-v<version>-sha-<short-commit>` | The newest build of that commit for THIS version — the only commit name a non-primary variant gets |
 | **Commit, primary** | `sha-<short-commit>` | The same for the primary variant only — pulling it from a non-primary variant gives you the primary's image |
@@ -62,7 +62,10 @@ tag itself is rewritten on every rebuild.
 
 **Tag Recommendations:**
 - **Development**: Use `latest` for convenience
-- **CI/CD**: Use version tags (`idf-v<version>`) for reproducibility
+- **CI/CD**: the version tag (`idf-v<version>`) to track the newest build of a
+  version, or a revision tag (`idf-v<version>-r<run-id>.<attempt>`) to stay on
+  exactly one. The version tag is not a reproducible pin — it is rewritten on
+  every rebuild
 - **Rolling back**: use a revision tag (`idf-v<version>-r<run-id>.<attempt>`) — it
   names one build and is never reused
 - **Debugging**: commit tags name the newest build made from a given commit, which
@@ -130,7 +133,7 @@ the images under it.
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
 
-# Specific version (recommended for CI/CD)
+# A specific version - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v<version>
 ```
 
@@ -247,6 +250,58 @@ build:
       - build/*.bin
     expire_in: 1 week
 ```
+
+### Keeping the Pin Current
+
+Renovate skips these tags out of the box, and does it silently: its Docker
+versioning reads a bare version number and nothing else. The part-count is not
+the problem — it takes `1`, `1.1` and `1.1.0` alike — the `idf-v` in front of it
+is, so every tag here parses to nothing and is dropped — no error, no pull request, no signal that
+updates stopped. A `regex:` versioning makes them readable:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-esp-idf"],
+      "versioning": "regex:^idf-v(?<major>\\d+)\\.(?<minor>\\d+)(?:\\.(?<patch>\\d+))?$",
+      "pinDigests": true
+    }
+  ]
+}
+```
+
+The patch part is optional because Espressif's own tags make it optional: the first
+release of a line is `v<major>.<minor>` with no patch — `v5.5`, `v6.0`, `v6.1` all
+exist — and a required `\d+\.\d+\.\d+` would stop matching the day this image is
+built on one, silently, which is the failure this whole block is about.
+
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
+
+`pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
+beside it, so what actually runs is the one identity nothing can move.
+
+**Dependabot is not an alternative here.** It does not read a workflow's
+`container:` at all — [dependabot/dependabot-core#5819][dd] has been open since
+2022 — so an image pinned in a job container is invisible to it whatever
+ecosystems are configured. Renovate reads both `container:` and `services:`.
+
+[dd]: https://github.com/dependabot/dependabot-core/issues/5819
 
 ### Local Development with Docker Compose
 

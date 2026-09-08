@@ -104,7 +104,7 @@ fields by their Go name, not by the lower-case name the JSON carries.
 # Latest build
 docker pull ghcr.io/jethome-iot/jethome-dev-platformio:latest
 
-# Specific version (recommended for CI/CD)
+# A specific version - its newest build
 docker pull ghcr.io/jethome-iot/jethome-dev-platformio:pio-v<version>
 ```
 
@@ -228,6 +228,53 @@ build:
       - .pio/build/*/firmware.bin
     expire_in: 1 week
 ```
+
+### Keeping the Pin Current
+
+Renovate skips these tags out of the box, and does it silently: its Docker
+versioning reads a bare version number and nothing else. The part-count is not
+the problem — it takes `1`, `1.1` and `1.1.0` alike — the `pio-v` in front of it
+is, so every tag here parses to nothing and is dropped — no error, no pull request, no signal that
+updates stopped. A `regex:` versioning makes them readable:
+
+```json
+{
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/jethome-iot/jethome-dev-platformio"],
+      "versioning": "regex:^pio-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+      "pinDigests": true
+    }
+  ]
+}
+```
+
+The anchors are what keep the derived names out, and the reason is not that a
+derived name would look like a *newer* version — it would not. Without the
+anchors, `<version>-sha-<short-commit>` and `<version>-r<run-id>.<attempt>` parse
+to the **same** version as the plain tag, and Renovate, choosing among names that
+compare equal, can rewrite the pin onto one of them. That is how a pin ends up on
+a mutable commit tag by itself. Checked against the live tag list: the pattern
+above matches the version tags and nothing else.
+
+**The config only produces updates for a dependency pinned to a version tag.**
+`latest` does not parse under it and neither does a revision tag, both by design —
+so a job pinned to either gets no pull requests at all, which is the silence this
+block is about. That is correct for a revision tag, which names one build that
+nothing can update; it is not what anyone wants from `latest`. The CI examples
+above pin `latest` for brevity — a job that wants updates pins the version tag
+instead.
+
+`pinDigests` keeps the tag in place for readability and appends `@sha256:<digest>`
+beside it, so what actually runs is the one identity nothing can move.
+
+**Dependabot is not an alternative here.** It does not read a workflow's
+`container:` at all — [dependabot/dependabot-core#5819][dd] has been open since
+2022 — so an image pinned in a job container is invisible to it whatever
+ecosystems are configured. Renovate reads both `container:` and `services:`.
+
+[dd]: https://github.com/dependabot/dependabot-core/issues/5819
 
 ### Local Development
 
