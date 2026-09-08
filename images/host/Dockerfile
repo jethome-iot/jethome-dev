@@ -241,8 +241,27 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 # it assert the image agrees, so a drift between the two repositories surfaces as
 # a named test failure rather than as a gate that quietly started meaning
 # something else.
+#
+# `image.version` is among them because a LABEL is inherited through FROM: ubuntu
+# sets it to `24.04`, so every published host image announced itself as version
+# 24.04 until this line existed - the base's version, not this image's. It is
+# assembled from the same ARG the variant's tag is checked against, so a version
+# bump cannot move one without the other - though check-versions.sh matches the
+# tag on a token boundary rather than for equality, so the two would differ under
+# a tag carrying more than the version. The manifest job annotates the published
+# index with the same field, taking the tag verbatim; annotations are not
+# inherited at all, and these labels are what an image already pulled reports and
+# what a local ./scripts/build.sh produces.
+
+# Re-declared after FROM: an ARG stated before it is out of scope below, so the
+# label would expand to the empty string - silently, since Docker does not object
+# to an undefined variable.
+ARG UBUNTU_BASE_TAG
+
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
       org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
+      org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
+      org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.paho.version="${PAHO_VERSION}" \
       dev.jethome.paho.ref="${PAHO_REF}" \
       dev.jethome.clang-tidy.version="${CLANG_TIDY_VERSION}" \

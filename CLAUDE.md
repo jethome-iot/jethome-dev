@@ -62,6 +62,27 @@ before changing anything here.
   attempt in which only the failed job publishes, so its neighbour keeps the name
   it got in the previous one. The stamp names one build of one image and nothing
   more; the commit is still the only cross-image coordinate.
+- **The manifest jobs also annotate the index they publish**, and that is a
+  different mechanism from a `LABEL`, not a second copy of one. A label is
+  inherited through `FROM`, so an image that forgets to override one reports its
+  base's value — `org.opencontainers.image.version` read `24.04` on esp-idf and on
+  host, inherited from ubuntu, for as long as those images existed. An annotation
+  is written onto *this* index and inherits nothing. The set is `revision`
+  (the **full 40 hex**, where the tags carry 7 — and the only place the commit
+  survives for a consumer who pinned by digest and therefore kept no tag),
+  `source`, `url`, `created`, `version` (the variant's own tag) and `title`.
+  There is deliberately no `licenses`: OCI defines it as the licence of the
+  software *contained*, and these images carry GCC under GPL-3.0, a
+  distribution's worth of packages and ESP-IDF under Apache-2.0 — `MIT` is this
+  repository's own licence and would hand a licence scanner a wrong answer, while
+  an expression covering what is actually inside is not something a manifest job
+  can compute. Only `index:` is written: `imagetools create` offers no `manifest:`
+  level at all, and `manifest-descriptor:` would annotate every platform entry
+  identically — so anything that genuinely differs per platform stays a Dockerfile
+  `LABEL`, which is where `image.base.name` lives. The job then reads the index
+  back **by the revision name**, never by `<tag>`: a concurrent master run is
+  allowed to take the version tag, so re-reading a mutable name can return another
+  run's index, which is inconclusive rather than a mismatch.
 - **Any job downstream of a multi-variant build runs under `!cancelled()`** with an
   explicit `prepare` check, never the implicit `success()` over `needs`. One build
   job covers every variant of an image, so a legacy variant failing marks the whole
@@ -137,7 +158,17 @@ before changing anything here.
   action's default, which differs between public and private repositories and has
   moved across majors. It writes every build-arg value and the GitHub event
   payload into a **public** attestation, so an `ARG` carrying anything sensitive
-  would leak there — weigh that before adding one.
+  would leak there — weigh that before adding one. Two things about it were
+  measured against a local registry rather than reasoned about: the provenance
+  `subject[].name` reads `pkg:docker/<image>@latest?platform=…` on every image
+  here and **cannot** be fixed by naming a tag in `name=` — buildx refuses that
+  outright (`can't push tagged ref … by digest`), because `push-by-digest=true`
+  supplies no tag and `@latest` is the placeholder it fills in; the digest beside
+  it is correct and is what identifies the image. And `sbom: true` *would* survive
+  this scheme — the SPDX predicate lands in the same attestation manifest as the
+  provenance one and `imagetools create` copies it verbatim — so enabling it is a
+  cost decision (build time, and one more child per leg in a registry whose
+  version count is the thing that gets unreadable), not a compatibility one.
 - The digest artifacts keep **7 days**, not 1. They are consumed inside the run
   that made them, so the retention buys nothing during a normal build — it buys
   the re-run: a manifest job that failed on Friday could not be restarted on
@@ -154,7 +185,12 @@ before changing anything here.
   release — `release/v1.5` carried specification v1.5 at one commit and v1.5.1 at
   another. Each variant carries `pin.ESP_MATTER_REF` (a full SHA) and
   `upstream_branch` (where it came from); the Dockerfile fetches that commit
-  shallowly rather than cloning the branch, and records it as an OCI label. `pin`
+  shallowly rather than cloning the branch, and records it as `dev.jethome.matter.ref`
+  — a pin, so it gets a name that says pin. It sat in
+  `org.opencontainers.image.revision` until the index annotations arrived: OCI
+  pairs that field with `image.source`, and with `source` now naming this
+  repository the pair would have claimed jethome-dev's revision is an esp-matter
+  commit. `pin`
   reaches the build as a build-arg like `args`, but the checker validates it
   differently — a SHA can never appear in the tag. Advance pins with
   `./scripts/update-matter-ref.sh --write`, then check the branch's own README for

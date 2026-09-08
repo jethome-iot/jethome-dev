@@ -105,6 +105,25 @@ tag like `v5.3` — cannot be checked that way (an alias never equals the releas
 it resolves to), so the build says the assertion was skipped and the label
 repeats the alias. Publish exact versions; aliases are a local convenience.
 
+Beside it the image carries the OCI identity labels —
+`org.opencontainers.image.version` (this variant's published tag), `.base.name`,
+`.source` and `.description`. And the published index carries annotations, which
+are a different mechanism rather than a second copy: a label is inherited through
+`FROM`, an annotation is written onto the index this repository publishes and
+inherits nothing. `org.opencontainers.image.revision` there is the `jethome-dev`
+commit the image was built from, in full 40 hex where the tags carry 7:
+
+```bash
+docker buildx imagetools inspect \
+  ghcr.io/jethome-iot/jethome-dev-esp-idf@sha256:<digest> \
+  --format '{{ json .Manifest.Annotations }}'
+```
+
+The capital `A` is not a typo: `--format` is a Go template and reaches struct
+fields by their Go name, not by the lower-case name the JSON carries. Note that
+this one needs no platform key — the annotations are on the index itself, not on
+the images under it.
+
 ### Pull Image
 
 ```bash
