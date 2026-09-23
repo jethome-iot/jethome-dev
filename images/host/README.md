@@ -251,6 +251,9 @@ The image records what it was built with as OCI labels, so a project that pins t
 same tools can assert the two agree rather than trusting the tag:
 
 ```bash
+# inspect reads the local copy only, and on a missing image jq gets empty input
+# and prints nothing - pull first
+docker pull ghcr.io/jethome-iot/jethome-dev-host:latest
 docker inspect --format '{{json .Config.Labels}}' \
   ghcr.io/jethome-iot/jethome-dev-host:latest | jq .
 ```
@@ -539,10 +542,13 @@ docker run --rm -e PAHO="$PAHO" "$IMAGE" bash -c '
   cmake --build /tmp/smoke >/dev/null &&
   ctest --test-dir /tmp/smoke --output-on-failure'
 
-# clang's ASan: the probe must fail, and fail with this report
+# clang's ASan: the probe must fail, with this report, and the report must name the
+# source file - raw addresses there mean the symbolizer is missing
 docker run --rm -e CLANG="$CLANG" "$IMAGE" bash -c '
   clang++-$CLANG -fsanitize=address -g /opt/smoke-src/use-after-scope.cpp -o /tmp/uas &&
-  { /tmp/uas 2>&1 || true; } | grep "ERROR: AddressSanitizer: stack-use-after-scope"'
+  { ! /tmp/uas > /tmp/uas.log 2>&1; } &&
+  grep "ERROR: AddressSanitizer: stack-use-after-scope" /tmp/uas.log &&
+  grep -q "use-after-scope\.cpp:" /tmp/uas.log'
 ```
 
 ### Multi-Platform Support
