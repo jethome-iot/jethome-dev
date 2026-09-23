@@ -40,9 +40,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 # can `find_package(GTest)` and link - the verification layer at the bottom
 # proves it rather than assuming it.
 #
-# The sanitizer runtimes are not listed: libasan, libubsan and libtsan come with
-# g++ itself (/usr/lib/gcc/<triple>/13/), so `-fsanitize=address` works out of the
-# box and naming them here would only pin what build-essential already decides.
+# GCC's sanitizer runtimes are not listed: libasan, libubsan and libtsan come with
+# g++ itself (/usr/lib/gcc/<triple>/13/), so `g++ -fsanitize=address` works out of
+# the box and naming them here would only pin what build-essential already
+# decides. clang's are a different package entirely - see the layer below.
 #
 # git is not incidental either - a checkout mounted into this image is asked for
 # `git ls-files` (which files a format gate covers) and `git describe` (the
@@ -63,6 +64,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
       python3-venv \
     && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── clang, for a second AddressSanitizer ──────────────────────────────────────
+#
+# Not a second build toolchain: GCC stays what `cc` and `c++` resolve to, and
+# clang is reached only by its versioned name. It is here for one class of bug
+# GCC's ASan cannot see. GCC keeps every local of a function's outermost block
+# alive until the block ends - including while the destructors of objects declared
+# *earlier* run, by which time C++ has already ended those locals' lifetimes.
+# clang poisons each variable when its own lifetime ends, so a callback reading a
+# dead local from a destructor is `stack-use-after-scope` under clang and a clean
+# run under GCC, `-fsanitize-address-use-after-scope` or not. smoke/use-after-scope.cpp
+# is that case in a dozen lines, and the verification layer asserts clang catches it.
+#
+# Three packages, each for a reason:
+#   clang-N            the compiler. It links this image's libstdc++ - no libc++
+#                      is installed - so a clang-built leg differs from the GCC
+#                      one in the compiler alone;
+#   libclang-rt-N-dev  compiler-rt, i.e. clang's ASan runtime. It is not GCC's
+#                      libasan and has to match the compiler's own version;
+#   llvm-N             for llvm-symbolizer; without it a report is raw addresses.
+#
+# From the base archive, with no extra apt source: the major is therefore the one
+# UBUNTU_BASE_TAG ships, exactly as build-essential decides GCC's, and a base bump
+# moves this default with it. CLANG_VERSION is a major and nothing finer - the
+# point release is apt's to choose (see ./scripts/check-pins.sh on why apt goes
+# unpinned), and the label below is built from this ARG, so it names the major
+# too: a LABEL cannot read what apt resolved at build time.
+ARG CLANG_VERSION=18
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      clang-${CLANG_VERSION} \
+      libclang-rt-${CLANG_VERSION}-dev \
+      llvm-${CLANG_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -259,11 +294,12 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.paho.version="${PAHO_VERSION}" \
       dev.jethome.paho.ref="${PAHO_REF}" \
+      dev.jethome.clang.version="${CLANG_VERSION}" \
       dev.jethome.clang-tidy.version="${CLANG_TIDY_VERSION}" \
       dev.jethome.clang-format.version="${CLANG_FORMAT_VERSION}" \
       dev.jethome.ruff.version="${RUFF_VERSION}" \
@@ -386,6 +422,33 @@ RUN set -eu; \
 # directory, an unusable system header - fail this layer.
     clang-tidy --quiet "--checks=-*,bugprone-*" -p /tmp/smoke-build /opt/smoke-src/smoke.cpp; \
     rm -rf /tmp/smoke-build; \
+# clang is asserted by what it catches, not by the fact that it answers: the
+# property this image promises is that clang's ASan sees the use-after-scope GCC's
+# misses. One run covers a missing compiler, a missing runtime and a runtime whose
+# version does not match the compiler - each fails to build or to report. The
+# report must also name the probe's source file, which only a working
+# llvm-symbolizer puts there, and the binary must link libstdc++, which is what
+# keeps a clang leg comparable with the GCC one.
+    "clang++-${CLANG_VERSION}" --version; \
+    "llvm-symbolizer-${CLANG_VERSION}" --version; \
+    "clang++-${CLANG_VERSION}" -fsanitize=address -g \
+      /opt/smoke-src/use-after-scope.cpp -o /tmp/use-after-scope; \
+    ldd /tmp/use-after-scope > /tmp/use-after-scope.ldd; \
+    grep -q 'libstdc++\.so' /tmp/use-after-scope.ldd \
+      || { cat /tmp/use-after-scope.ldd; \
+           echo "clang++-${CLANG_VERSION} did not link libstdc++" >&2; exit 1; }; \
+    if /tmp/use-after-scope > /tmp/use-after-scope.log 2>&1; then \
+      cat /tmp/use-after-scope.log; \
+      echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1; \
+    fi; \
+    cat /tmp/use-after-scope.log; \
+    grep -q 'ERROR: AddressSanitizer: stack-use-after-scope' /tmp/use-after-scope.log \
+      || { echo "clang's ASan failed the probe without reporting stack-use-after-scope" >&2; \
+           exit 1; }; \
+    grep -q 'use-after-scope\.cpp:' /tmp/use-after-scope.log \
+      || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
+           exit 1; }; \
+    rm -f /tmp/use-after-scope /tmp/use-after-scope.ldd /tmp/use-after-scope.log; \
     echo "jethome host image verified"
 
 CMD ["/bin/bash"]

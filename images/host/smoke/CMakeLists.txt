@@ -9,6 +9,9 @@
 # It is compiled inside the image and its build tree is deleted afterwards. The
 # sources are not: they stay at /opt/smoke-src, so the same check can be re-run
 # against a published image without this repository at hand.
+#
+# use-after-scope.cpp beside it is deliberately not built here: it must fail under
+# clang's ASan, and the Dockerfile compiles and runs it on its own.
 cmake_minimum_required(VERSION 3.22)
 project(jethome_host_smoke CXX)
 
