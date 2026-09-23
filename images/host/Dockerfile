@@ -40,9 +40,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 # can `find_package(GTest)` and link - the verification layer at the bottom
 # proves it rather than assuming it.
 #
-# The sanitizer runtimes are not listed: libasan, libubsan and libtsan come with
-# g++ itself (/usr/lib/gcc/<triple>/13/), so `-fsanitize=address` works out of the
-# box and naming them here would only pin what build-essential already decides.
+# GCC's sanitizer runtimes are not listed: libasan, libubsan and libtsan come with
+# g++ itself (/usr/lib/gcc/<triple>/13/), so `g++ -fsanitize=address` works out of
+# the box and naming them here would only pin what build-essential already
+# decides. clang's are a different package entirely - see the layer below.
 #
 # git is not incidental either - a checkout mounted into this image is asked for
 # `git ls-files` (which files a format gate covers) and `git describe` (the
@@ -63,6 +64,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
       python3-venv \
     && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── clang, for a second AddressSanitizer ──────────────────────────────────────
+#
+# Not a second build toolchain: GCC stays what `cc` and `c++` resolve to, and
+# clang is reached only by its versioned name. It is here for one class of bug
+# GCC's ASan cannot see. GCC keeps every local of a function's outermost block
+# alive until the block ends - including while the destructors of objects declared
+# *earlier* run, by which time C++ has already ended those locals' lifetimes.
+# clang poisons each variable when its own lifetime ends, so a callback reading a
+# dead local from a destructor is `stack-use-after-scope` under clang and a clean
+# run under GCC, `-fsanitize-address-use-after-scope` or not. smoke/use-after-scope.cpp
+# is that case in a dozen lines, and the verification layer asserts clang catches it.
+#
+# Three packages, each for a reason:
+#   clang-N            the compiler. It links this image's libstdc++ - no libc++
+#                      is installed - so a clang-built leg differs from the GCC
+#                      one in the compiler alone;
+#   libclang-rt-N-dev  compiler-rt, i.e. clang's ASan runtime. It is not GCC's
+#                      libasan and has to match the compiler's own version;
+#   llvm-N             for llvm-symbolizer; without it a report is raw addresses.
+#
+# From the base archive, with no extra apt source, so the default names the major
+# the archive of UBUNTU_BASE_TAG carries - 18 for 24.04. Nothing moves it for you:
+# a base bump edits this default by hand, in the same change. Forgetting fails
+# loudly where the new archive has no clang-18, and quietly where it still carries
+# one beside a newer default - the build then passes on the old major, which is
+# why the bump is named here. CLANG_VERSION is a major and nothing finer - the
+# point release is apt's to choose (see ./scripts/check-pins.sh on why apt goes
+# unpinned), and the label below is built from this ARG, so it names the major
+# too: a LABEL cannot read what apt resolved at build time.
+ARG CLANG_VERSION=18
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      clang-${CLANG_VERSION} \
+      libclang-rt-${CLANG_VERSION}-dev \
+      llvm-${CLANG_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -259,11 +297,12 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.paho.version="${PAHO_VERSION}" \
       dev.jethome.paho.ref="${PAHO_REF}" \
+      dev.jethome.clang.version="${CLANG_VERSION}" \
       dev.jethome.clang-tidy.version="${CLANG_TIDY_VERSION}" \
       dev.jethome.clang-format.version="${CLANG_FORMAT_VERSION}" \
       dev.jethome.ruff.version="${RUFF_VERSION}" \
@@ -281,14 +320,15 @@ WORKDIR /workspace
 # still leaves a green build until something asks it for its version, and a
 # library that installed as a stub still links until something calls it.
 #
-# smoke/ is a two-file CMake project that the layer configures, builds with Ninja
+# smoke/ holds a two-file CMake project that the layer configures, builds with Ninja
 # and runs under ctest. It covers what a version print cannot: that
 # `find_package(GTest)` resolves, that GMock links, that libpaho-mqtt3a is found
 # by name, and that the paho actually loaded reports the version this Dockerfile
 # pins - the pin and the artifact disagreeing fails the build here rather than
 # shipping an image that contradicts its own label. Its build tree is deleted; the
 # sources stay at /opt/smoke-src, so the same check can be re-run against a
-# published image (the README says how).
+# published image (the README says how). Beside it sits use-after-scope.cpp, which
+# is not part of that project and must *fail* - see the clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
@@ -386,6 +426,47 @@ RUN set -eu; \
 # directory, an unusable system header - fail this layer.
     clang-tidy --quiet "--checks=-*,bugprone-*" -p /tmp/smoke-build /opt/smoke-src/smoke.cpp; \
     rm -rf /tmp/smoke-build; \
+# clang is asserted by what it catches, not by the fact that it answers: the
+# property this image promises is that clang's ASan sees the use-after-scope GCC's
+# misses. One run covers a missing compiler, a missing runtime and a runtime whose
+# version does not match the compiler - each fails to build or to report. The
+# report must also name the probe's source file, which only a working
+# llvm-symbolizer puts there.
+#
+# Two things around it keep a clang leg comparable with the GCC one. clang takes
+# its libstdc++ headers from the newest GCC installation it finds, so a dependency
+# pulling in a newer libstdc++-N-dev would have it compile against other headers
+# than g++ does while every link still succeeded - the installation it selected
+# has to be the one `gcc` is. And `cc`/`c++` stay GCC: an alternative registered
+# by some future clang package would move every plain `cmake -S . -B build` onto
+# clang without a word.
+    "clang++-${CLANG_VERSION}" --version; \
+    "llvm-symbolizer-${CLANG_VERSION}" --version; \
+    gcc_major="$(gcc -dumpversion)"; \
+    "clang++-${CLANG_VERSION}" -v -E -x c++ /dev/null > /tmp/clang-gcc.txt 2>&1; \
+    grep -q "^Selected GCC installation: .*/${gcc_major}\$" /tmp/clang-gcc.txt \
+      || { cat /tmp/clang-gcc.txt; \
+           echo "clang++-${CLANG_VERSION} did not select GCC ${gcc_major}'s libstdc++" >&2; \
+           exit 1; }; \
+    for default_compiler in cc c++; do \
+      case "$("${default_compiler}" --version)" in \
+        *clang*) echo "${default_compiler} resolves to clang - it must stay GCC" >&2; exit 1 ;; \
+      esac; \
+    done; \
+    "clang++-${CLANG_VERSION}" -fsanitize=address -g \
+      /opt/smoke-src/use-after-scope.cpp -o /tmp/use-after-scope; \
+    if /tmp/use-after-scope > /tmp/use-after-scope.log 2>&1; then \
+      cat /tmp/use-after-scope.log; \
+      echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1; \
+    fi; \
+    cat /tmp/use-after-scope.log; \
+    grep -q 'ERROR: AddressSanitizer: stack-use-after-scope' /tmp/use-after-scope.log \
+      || { echo "clang's ASan failed the probe without reporting stack-use-after-scope" >&2; \
+           exit 1; }; \
+    grep -q 'use-after-scope\.cpp:' /tmp/use-after-scope.log \
+      || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
+           exit 1; }; \
+    rm -f /tmp/use-after-scope /tmp/use-after-scope.log /tmp/clang-gcc.txt; \
     echo "jethome host image verified"
 
 CMD ["/bin/bash"]

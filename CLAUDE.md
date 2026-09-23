@@ -202,8 +202,10 @@ before changing anything here.
   default is the sole source of truth and is bumped there — today
   `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION` and `UNITY_VERSION` in
   `images/platformio/Dockerfile`, and every tool pin in `images/host/Dockerfile`
-  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, and `LYCHEE_VERSION` and
-  `DOCKER_VERSION` with their per-architecture checksums). host passes one arg and
+  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, `LYCHEE_VERSION` and
+  `DOCKER_VERSION` with their per-architecture checksums, and `CLANG_VERSION` — a
+  major rather than a pin, naming which `clang-<N>` the base archive is asked for,
+  so it moves with `UBUNTU_BASE_TAG`). host passes one arg and
   one only, `UBUNTU_BASE_TAG`, because that is the single value its tag can name.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
@@ -338,9 +340,16 @@ before changing anything here.
   same rule one step further, because a version print cannot reach what it
   promises: its layer asserts that `clang-format` and `clang-tidy` *report* the
   numbers pip was told to install (the wrapper and the wheel are two different
-  things), and then configures, builds and `ctest`s `images/host/smoke/` — two
-  files that prove `find_package(GTest)` resolves, that GMock links, and that the
-  paho which loads reports the version pinned beside its commit. Its own freeze
+  things), and then configures, builds and `ctest`s `images/host/smoke/` — a
+  project that proves `find_package(GTest)` resolves, that GMock links, and that the
+  paho which loads reports the version pinned beside its commit. Beside it sits
+  `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
+  the use-after-scope GCC's ASan cannot see, so the layer requires that report —
+  symbolized — rather than a version print, which would pass with the runtime or
+  the symbolizer missing, and asserts that clang selected the GCC installation
+  `gcc` is (so both compile against one libstdc++) and that `cc`/`c++` stay GCC. The
+  symbolizer is found at `/usr/lib/llvm-<N>/bin/`, not through `PATH`, so hiding it
+  from `PATH` proves nothing; removing it fails the layer. Its own freeze
   goes to `/opt/qa-packages.txt`.
 - **A version an image installs by name is a version this repository chose**, and
   `./scripts/check-pins.sh` enforces that per package manager, because the price of

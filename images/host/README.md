@@ -29,8 +29,14 @@ consumer can assert the image agrees with its own pins instead of assuming it
   `/opt/qa-venv` that is first on `PATH`
 
 **Build Tools:**
-- build-essential (gcc, g++, make) — the sanitizer runtimes (`libasan`,
-  `libubsan`, `libtsan`) come with it, so `-fsanitize=…` builds need nothing extra
+- build-essential (gcc, g++, make) — the default compiler. GCC's sanitizer
+  runtimes (`libasan`, `libubsan`, `libtsan`) come with it, so `-fsanitize=…`
+  builds need nothing extra
+- clang from the Ubuntu archive, with its own sanitizer runtime (compiler-rt) and
+  `llvm-symbolizer` — reached by its versioned name only (`clang++-<version>`,
+  the version in the `dev.jethome.clang.version` label), for a second ASan build
+  that catches what GCC's misses (see [Sanitizer Builds](#sanitizer-builds)). It
+  links the same libstdc++ as GCC
 - cmake, ninja-build, pkg-config
 - ccache, wired into CMake builds through `CMAKE_{C,CXX}_COMPILER_LAUNCHER`, with
   its cache at `/opt/ccache`
@@ -245,16 +251,24 @@ The image records what it was built with as OCI labels, so a project that pins t
 same tools can assert the two agree rather than trusting the tag:
 
 ```bash
+# inspect reads the local copy only, and on a missing image jq gets empty input
+# and prints nothing - pull first
+docker pull ghcr.io/jethome-iot/jethome-dev-host:latest
 docker inspect --format '{{json .Config.Labels}}' \
   ghcr.io/jethome-iot/jethome-dev-host:latest | jq .
 ```
 
 ```text
 dev.jethome.paho.version, dev.jethome.paho.ref        # tag and the exact commit
+dev.jethome.clang.version                             # the compiler's major only
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
 dev.jethome.lychee.version, …docker-cli.version
 ```
+
+`dev.jethome.clang.version` is coarser than its neighbours on purpose: clang comes
+from the Ubuntu archive, which picks the point release, and the major is what the
+Ubuntu base decides. Everything else in that list is an exact version.
 
 Alongside them the image carries the standard OCI identity labels —
 `org.opencontainers.image.version` (this variant's published tag),
@@ -279,6 +293,8 @@ labels do not name.
   spelled as `docker run` needs nothing else; one spelled as a compose file does.
   `docker build` still works, because the daemon builds — it falls back to the
   classic builder, so BuildKit-only Dockerfile features are out.
+- **No libc++.** clang links the image's libstdc++, the same one GCC does, so a
+  clang build differs from a GCC build in the compiler alone.
 - **No cross-compilers and no target SDKs.** Firmware targets are the job of the
   other images in [the repository index](../../README.md#current-images).
 - **No TLS in the MQTT client.** Paho is built with `PAHO_WITH_SSL=FALSE`, so
@@ -405,6 +421,38 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \
            cmake --build build-asan'
 ```
 
+**A second ASan build with clang.** GCC keeps every local of a function's
+outermost block alive until that block ends — including while the destructors of
+objects declared *earlier* run, although C++ has ended those locals' lifetimes by
+then. So a callback, timer or posted closure that reads such a local from a
+destructor passes under GCC's ASan, with `-fsanitize-address-use-after-scope` or
+without it. clang's ASan reports it as `stack-use-after-scope`. A build of the same
+tree with clang catches that class; the GCC build stays, being the one the product
+ships:
+
+```bash
+IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
+# inspect reads the local copy only: without the pull a fresh machine gets an
+# empty CLANG and a compiler named `clang-`
+docker pull "$IMAGE"
+CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
+
+docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace -e CLANG="$CLANG" "$IMAGE" \
+  bash -c 'cmake -S . -B build-asan-clang -G Ninja \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DCMAKE_C_COMPILER=clang-$CLANG \
+             -DCMAKE_CXX_COMPILER=clang++-$CLANG \
+             -DCMAKE_CXX_FLAGS="-fsanitize=address" && \
+           cmake --build build-asan-clang && \
+           ctest --test-dir build-asan-clang --output-on-failure'
+```
+
+The compiler is named by its major, read from the image's own label, because
+clang is present only under its versioned name — `cc` and `c++` are GCC. The
+image's build proves the pairing works: its last layer compiles
+[`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
+fails unless the report says `stack-use-after-scope` and names the source line.
+
 ## Environment Variables
 
 ```
@@ -446,6 +494,9 @@ Available build arguments (defaults: see the Dockerfile):
   Python QA tools
 - `CLANG_FORMAT_VERSION`, `CLANG_TIDY_VERSION` — the LLVM tools; the verification
   layer asserts the installed binaries report these numbers
+- `CLANG_VERSION` — the clang major taken from the Ubuntu archive
+  (`clang-<version>`, `libclang-rt-<version>-dev`, `llvm-<version>`). It has to be a
+  major that base ships, so it moves together with `UBUNTU_BASE_TAG`
 - `PAHO_VERSION`, `PAHO_REF`, `PAHO_REPO` — the MQTT client's tag, exact commit and
   origin. `PAHO_VERSION` is what the built library is checked against, so it and
   `PAHO_REF` are bumped together
@@ -464,10 +515,15 @@ version in the freeze,
 then configures, builds and `ctest`s the small CMake project in
 [`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
 links, that CMake took the ccache launcher, and that the Paho library loaded
-reports the pinned version. It finishes by running `clang-tidy` over that
+reports the pinned version. It then runs `clang-tidy` over that
 project's own source against the compile database the build wrote, so an analyzer
 that answers `--version` but cannot find its resource directory fails the image
-instead of the user's first run.
+instead of the user's first run. Last, it builds
+[`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
+requires a symbolized `stack-use-after-scope` report — the one assertion that
+catches a missing compiler, a missing or mismatched runtime, and a missing
+symbolizer alike — after checking that clang takes its libstdc++ from the same GCC
+installation `gcc` is, and that `cc` and `c++` are still GCC.
 
 The sources stay in the image at `/opt/smoke-src`, so the same check runs against
 a published image:
@@ -475,13 +531,24 @@ a published image:
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
 # The version to check against comes from the image's own label, so this does not
-# repeat a number that lives in the Dockerfile
+# repeat a number that lives in the Dockerfile. inspect reads the local copy
+# only, hence the pull
+docker pull "$IMAGE"
 PAHO=$(docker inspect --format '{{index .Config.Labels "dev.jethome.paho.version"}}' "$IMAGE")
+CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
 docker run --rm -e PAHO="$PAHO" "$IMAGE" bash -c '
   cmake -S /opt/smoke-src -B /tmp/smoke -G Ninja -DPAHO_EXPECTED_VERSION="$PAHO" >/dev/null &&
   cmake --build /tmp/smoke >/dev/null &&
   ctest --test-dir /tmp/smoke --output-on-failure'
+
+# clang's ASan: the probe must fail, with this report, and the report must name the
+# source file - raw addresses there mean the symbolizer is missing
+docker run --rm -e CLANG="$CLANG" "$IMAGE" bash -c '
+  clang++-$CLANG -fsanitize=address -g /opt/smoke-src/use-after-scope.cpp -o /tmp/uas &&
+  { ! /tmp/uas > /tmp/uas.log 2>&1; } &&
+  grep "ERROR: AddressSanitizer: stack-use-after-scope" /tmp/uas.log &&
+  grep -q "use-after-scope\.cpp:" /tmp/uas.log'
 ```
 
 ### Multi-Platform Support
