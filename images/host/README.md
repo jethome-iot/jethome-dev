@@ -429,6 +429,9 @@ ships:
 
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
+# inspect reads the local copy only: without the pull a fresh machine gets an
+# empty CLANG and a compiler named `clang-`
+docker pull "$IMAGE"
 CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
 docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace -e CLANG="$CLANG" "$IMAGE" \
@@ -514,9 +517,10 @@ project's own source against the compile database the build wrote, so an analyze
 that answers `--version` but cannot find its resource directory fails the image
 instead of the user's first run. Last, it builds
 [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
-requires a symbolized `stack-use-after-scope` report from a binary linked against
-libstdc++ — the one assertion that catches a missing compiler, a missing or
-mismatched runtime, and a missing symbolizer alike.
+requires a symbolized `stack-use-after-scope` report — the one assertion that
+catches a missing compiler, a missing or mismatched runtime, and a missing
+symbolizer alike — after checking that clang takes its libstdc++ from the same GCC
+installation `gcc` is, and that `cc` and `c++` are still GCC.
 
 The sources stay in the image at `/opt/smoke-src`, so the same check runs against
 a published image:
@@ -524,13 +528,21 @@ a published image:
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
 # The version to check against comes from the image's own label, so this does not
-# repeat a number that lives in the Dockerfile
+# repeat a number that lives in the Dockerfile. inspect reads the local copy
+# only, hence the pull
+docker pull "$IMAGE"
 PAHO=$(docker inspect --format '{{index .Config.Labels "dev.jethome.paho.version"}}' "$IMAGE")
+CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
 docker run --rm -e PAHO="$PAHO" "$IMAGE" bash -c '
   cmake -S /opt/smoke-src -B /tmp/smoke -G Ninja -DPAHO_EXPECTED_VERSION="$PAHO" >/dev/null &&
   cmake --build /tmp/smoke >/dev/null &&
   ctest --test-dir /tmp/smoke --output-on-failure'
+
+# clang's ASan: the probe must fail, and fail with this report
+docker run --rm -e CLANG="$CLANG" "$IMAGE" bash -c '
+  clang++-$CLANG -fsanitize=address -g /opt/smoke-src/use-after-scope.cpp -o /tmp/uas &&
+  { /tmp/uas 2>&1 || true; } | grep "ERROR: AddressSanitizer: stack-use-after-scope"'
 ```
 
 ### Multi-Platform Support

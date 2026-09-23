@@ -87,9 +87,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #                      libasan and has to match the compiler's own version;
 #   llvm-N             for llvm-symbolizer; without it a report is raw addresses.
 #
-# From the base archive, with no extra apt source: the major is therefore the one
-# UBUNTU_BASE_TAG ships, exactly as build-essential decides GCC's, and a base bump
-# moves this default with it. CLANG_VERSION is a major and nothing finer - the
+# From the base archive, with no extra apt source, so the default names the major
+# the archive of UBUNTU_BASE_TAG carries - 18 for 24.04. Nothing moves it for you:
+# a base bump edits this default by hand, in the same change. Forgetting fails
+# loudly where the new archive has no clang-18, and quietly where it still carries
+# one beside a newer default - the build then passes on the old major, which is
+# why the bump is named here. CLANG_VERSION is a major and nothing finer - the
 # point release is apt's to choose (see ./scripts/check-pins.sh on why apt goes
 # unpinned), and the label below is built from this ARG, so it names the major
 # too: a LABEL cannot read what apt resolved at build time.
@@ -317,14 +320,15 @@ WORKDIR /workspace
 # still leaves a green build until something asks it for its version, and a
 # library that installed as a stub still links until something calls it.
 #
-# smoke/ is a two-file CMake project that the layer configures, builds with Ninja
+# smoke/ holds a two-file CMake project that the layer configures, builds with Ninja
 # and runs under ctest. It covers what a version print cannot: that
 # `find_package(GTest)` resolves, that GMock links, that libpaho-mqtt3a is found
 # by name, and that the paho actually loaded reports the version this Dockerfile
 # pins - the pin and the artifact disagreeing fails the build here rather than
 # shipping an image that contradicts its own label. Its build tree is deleted; the
 # sources stay at /opt/smoke-src, so the same check can be re-run against a
-# published image (the README says how).
+# published image (the README says how). Beside it sits use-after-scope.cpp, which
+# is not part of that project and must *fail* - see the clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
@@ -427,16 +431,30 @@ RUN set -eu; \
 # misses. One run covers a missing compiler, a missing runtime and a runtime whose
 # version does not match the compiler - each fails to build or to report. The
 # report must also name the probe's source file, which only a working
-# llvm-symbolizer puts there, and the binary must link libstdc++, which is what
-# keeps a clang leg comparable with the GCC one.
+# llvm-symbolizer puts there.
+#
+# Two things around it keep a clang leg comparable with the GCC one. clang takes
+# its libstdc++ headers from the newest GCC installation it finds, so a dependency
+# pulling in a newer libstdc++-N-dev would have it compile against other headers
+# than g++ does while every link still succeeded - the installation it selected
+# has to be the one `gcc` is. And `cc`/`c++` stay GCC: an alternative registered
+# by some future clang package would move every plain `cmake -S . -B build` onto
+# clang without a word.
     "clang++-${CLANG_VERSION}" --version; \
     "llvm-symbolizer-${CLANG_VERSION}" --version; \
+    gcc_major="$(gcc -dumpversion)"; \
+    "clang++-${CLANG_VERSION}" -v -E -x c++ /dev/null > /tmp/clang-gcc.txt 2>&1; \
+    grep -q "^Selected GCC installation: .*/${gcc_major}\$" /tmp/clang-gcc.txt \
+      || { cat /tmp/clang-gcc.txt; \
+           echo "clang++-${CLANG_VERSION} did not select GCC ${gcc_major}'s libstdc++" >&2; \
+           exit 1; }; \
+    for default_compiler in cc c++; do \
+      case "$("${default_compiler}" --version)" in \
+        *clang*) echo "${default_compiler} resolves to clang - it must stay GCC" >&2; exit 1 ;; \
+      esac; \
+    done; \
     "clang++-${CLANG_VERSION}" -fsanitize=address -g \
       /opt/smoke-src/use-after-scope.cpp -o /tmp/use-after-scope; \
-    ldd /tmp/use-after-scope > /tmp/use-after-scope.ldd; \
-    grep -q 'libstdc++\.so' /tmp/use-after-scope.ldd \
-      || { cat /tmp/use-after-scope.ldd; \
-           echo "clang++-${CLANG_VERSION} did not link libstdc++" >&2; exit 1; }; \
     if /tmp/use-after-scope > /tmp/use-after-scope.log 2>&1; then \
       cat /tmp/use-after-scope.log; \
       echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1; \
@@ -448,7 +466,7 @@ RUN set -eu; \
     grep -q 'use-after-scope\.cpp:' /tmp/use-after-scope.log \
       || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
            exit 1; }; \
-    rm -f /tmp/use-after-scope /tmp/use-after-scope.ldd /tmp/use-after-scope.log; \
+    rm -f /tmp/use-after-scope /tmp/use-after-scope.log /tmp/clang-gcc.txt; \
     echo "jethome host image verified"
 
 CMD ["/bin/bash"]

@@ -345,8 +345,9 @@ before changing anything here.
   paho which loads reports the version pinned beside its commit. Beside it sits
   `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
   the use-after-scope GCC's ASan cannot see, so the layer requires that report —
-  symbolized, from a binary linked against libstdc++ — rather than a version
-  print, which would pass with the runtime or the symbolizer missing. The
+  symbolized — rather than a version print, which would pass with the runtime or
+  the symbolizer missing, and asserts that clang selected the GCC installation
+  `gcc` is (so both compile against one libstdc++) and that `cc`/`c++` stay GCC. The
   symbolizer is found at `/usr/lib/llvm-<N>/bin/`, not through `PATH`, so hiding it
   from `PATH` proves nothing; removing it fails the layer. Its own freeze
   goes to `/opt/qa-packages.txt`.
