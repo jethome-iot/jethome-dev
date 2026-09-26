@@ -579,8 +579,8 @@ requires a symbolized `stack-use-after-scope` report — the one assertion that
 catches a missing compiler, a missing or mismatched runtime, and a missing
 symbolizer alike — after checking that clang takes its libstdc++ from the same GCC
 installation `gcc` is, and that `cc` and `c++` are still GCC. It ends by requiring
-`/home/build` to be as empty as it started, since anything a root-run build
-caches there would be unwritable for the uid you run the image as.
+`/home/build` and `/tmp` to be as empty as they started, since anything a root-run
+build caches there would be unwritable for the uid you run the image as.
 
 The sources stay in the image at `/opt/smoke-src`, so the same check runs against
 a published image:

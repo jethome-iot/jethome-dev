@@ -293,7 +293,12 @@ RUN set -eu; \
 # in the cache is not checked again. So the image holds no package-manager
 # version of its own to fall out of step with a consumer's: the project picks
 # it, and its first run downloads it into the corepack cache under $HOME.
-    corepack enable
+#
+# NODE_DISABLE_COMPILE_CACHE because corepack turns on Node's module compile
+# cache, which lands in /tmp/node-compile-cache - root-owned when a build layer
+# writes it, and so read-only to every `-u $(id -u)` run after. The verification
+# layer sets it for the same reason and checks that /tmp stays empty.
+    NODE_DISABLE_COMPILE_CACHE=1 corepack enable
 
 # The shims ask before that first download - `pnpm` sets
 # COREPACK_ENABLE_DOWNLOAD_PROMPT=1 unless the environment already did - and the
@@ -441,8 +446,10 @@ RUN set -eu; \
 # /opt/ccache/tmp root-owned and every later `-u $(id -u)` run failing with
 # "failed to create temporary file ... Permission denied". Disabling the cache for
 # this layer keeps the directory as `mkdir` left it: empty and 1777. The launcher
-# is still exercised, since ccache is what CMake invokes either way.
+# is still exercised, since ccache is what CMake invokes either way. Node's
+# compile cache is turned off for the same reason, see the Node layer.
     CCACHE_DISABLE=1; export CCACHE_DISABLE; \
+    NODE_DISABLE_COMPILE_CACHE=1; export NODE_DISABLE_COMPILE_CACHE; \
     cmake --version; \
     ninja --version; \
     gcc --version; \
@@ -565,13 +572,16 @@ RUN set -eu; \
       || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
            exit 1; }; \
     rm -f /tmp/use-after-scope /tmp/use-after-scope.log /tmp/clang-gcc.txt; \
-# HOME leaves this layer as `mkdir` left it, for the reason the ccache directory
-# does: the layer runs as root, and whatever a tool caches under HOME here - npm's
-# logs, corepack's downloads - would be root's in every later `-u $(id -u)` run,
-# which could neither write into it nor, under the sticky bit, replace it.
-    home_left="$(ls -A "${HOME}")"; \
-    [ -z "${home_left}" ] \
-      || { echo "this layer left files in ${HOME}: ${home_left}" >&2; exit 1; }; \
+# HOME and /tmp leave this layer as empty as they came, for the reason the ccache
+# directory does: the layer runs as root, and whatever a tool caches there here -
+# npm's logs, corepack's downloads, Node's compile cache - would be root's in
+# every later `-u $(id -u)` run, which could neither write into it nor, under the
+# sticky bit, replace it.
+    for scratch in "${HOME}" /tmp; do \
+      left="$(ls -A "${scratch}")"; \
+      [ -z "${left}" ] \
+        || { echo "the build left files in ${scratch}: ${left}" >&2; exit 1; }; \
+    done; \
     echo "jethome host image verified"
 
 CMD ["/bin/bash"]
