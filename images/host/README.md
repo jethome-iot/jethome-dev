@@ -566,8 +566,9 @@ Available build arguments (defaults: see the Dockerfile):
 The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `jsonschema` to appear at its
-pinned version in the freeze and `pnpm` to resolve to corepack's shim,
-then configures, builds and `ctest`s the small CMake project in
+pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
+must refuse a `packageManager` URL even from a checkout whose `.corepack.env`
+re-enables one — then configures, builds and `ctest`s the small CMake project in
 [`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
 links, that CMake took the ccache launcher, and that the Paho library loaded
 reports the pinned version. It then runs `clang-tidy` over that

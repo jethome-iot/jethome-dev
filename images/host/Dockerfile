@@ -505,6 +505,24 @@ RUN set -eu; \
     pnpm_shim="$(command -v pnpm || true)"; \
     [ "$(readlink -f "${pnpm_shim}")" = /usr/local/lib/node_modules/corepack/dist/pnpm.js ] \
       || { echo "pnpm resolves to '${pnpm_shim}', not to corepack's shim" >&2; exit 1; }; \
+# The URL refusal the Node layer sets up rests on corepack letting the process
+# environment win over a checkout's .corepack.env - a precedence a corepack bump
+# could change without a word. So a checkout that re-enables custom URLs is
+# staged here and must be turned away. Offline: corepack refuses before it
+# fetches anything, and a corepack that stopped refusing fails the grep instead,
+# on a host that does not resolve.
+    probe="$(mktemp -d)"; \
+    echo '{"packageManager":"pnpm@https://example.invalid/pm.js"}' > "${probe}/package.json"; \
+    echo 'COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1' > "${probe}/.corepack.env"; \
+    if (cd "${probe}" && pnpm --version) > "${probe}/out.txt" 2>&1; then \
+      cat "${probe}/out.txt"; \
+      echo "pnpm ran a packageManager URL a .corepack.env enabled" >&2; exit 1; \
+    fi; \
+    grep -q 'Illegal use of URL for known package manager' "${probe}/out.txt" \
+      || { cat "${probe}/out.txt"; \
+           echo "pnpm failed on a packageManager URL, but not by refusing it" >&2; \
+           exit 1; }; \
+    rm -rf "${probe}"; \
     clang_format_reported="$(clang-format --version)"; \
     clang_tidy_reported="$(clang-tidy --version)"; \
     echo "${clang_format_reported}"; \
