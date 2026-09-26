@@ -275,18 +275,17 @@ RUN set -eu; \
     curl -sfL --proto '=https' --proto-redir '=https' \
       "https://nodejs.org/dist/v${NODE_VERSION}/${art}" -o "$art"; \
     echo "${sha}  ${art}" | sha256sum -c; \
-# Into /usr/local, so node, npm, npx and corepack resolve by bare name. The four
-# directories are named because the tarball's root also holds a README, a
-# CHANGELOG and the LICENSE, which --strip-components would drop loose into
-# /usr/local; the licence is kept, beside the docs Node ships under share/.
-# --no-same-owner because tar running as root restores the archive's own uid -
-# 1001, the release builder's - and not only on the files it creates: measured,
-# /usr/local/bin and /usr/local/lib themselves come out 1001-owned, so a caller
-# running this image as `-u 1001` could replace every binary in them.
+# Into /usr/local, so node, npm, npx and corepack resolve by bare name. The
+# members are named because the tarball's root also holds a README and a
+# CHANGELOG, which --strip-components would drop loose into /usr/local; the
+# LICENSE is taken in the same pass and moved beside the docs Node ships under
+# share/. --no-same-owner because tar running as root restores the archive's own
+# uid - 1001, the release builder's - and not only on the files it creates:
+# measured, /usr/local/bin and /usr/local/lib themselves come out 1001-owned, so
+# a caller running this image as `-u 1001` could replace every binary in them.
     tar -xz --strip-components=1 --no-same-owner -C /usr/local -f "$art" \
-      "${dir}/bin" "${dir}/include" "${dir}/lib" "${dir}/share"; \
-    tar -xz --strip-components=1 --no-same-owner -C /usr/local/share/doc/node \
-      -f "$art" "${dir}/LICENSE"; \
+      "${dir}/bin" "${dir}/include" "${dir}/lib" "${dir}/share" "${dir}/LICENSE"; \
+    mv /usr/local/LICENSE /usr/local/share/doc/node/LICENSE; \
     rm -f "$art"; \
 # corepack, not pnpm. `corepack enable` puts pnpm and yarn shims beside node, and
 # each runs the version the project's own `packageManager` field names, checked
@@ -298,8 +297,12 @@ RUN set -eu; \
 # The shims ask before that first download - `pnpm` sets
 # COREPACK_ENABLE_DOWNLOAD_PROMPT=1 unless the environment already did - and the
 # question waits on stdin when stdin is a terminal and CI is unset: `docker run
-# -it`, not a CI job. What gets downloaded is already fixed by the project's
-# packageManager and its hash, so the question leaves nothing to consent to.
+# -it`, not a CI job. What it would ask about is a pnpm or yarn release from the
+# npm registry at the version the project's packageManager names, checked against
+# the hash where the field carries one; a URL there is refused outright for
+# these two (measured - corepack wants COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1 for
+# that, which this image does not set). The project has already made the choice
+# the question would put, so it leaves nothing to consent to.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
 # ── running as the invoking user ──────────────────────────────────────────────

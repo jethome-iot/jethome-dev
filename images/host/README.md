@@ -158,7 +158,7 @@ shim, which runs the version the project's `package.json` names in
 the image, decides which pnpm runs, and a bump there needs no new image.
 
 ```bash
-docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \
+docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":/workspace \
   ghcr.io/jethome-iot/jethome-dev-host:latest \
   bash -c 'cd frontend && pnpm install --frozen-lockfile && pnpm run build'
 ```
@@ -167,8 +167,10 @@ The first `pnpm` in a container downloads that version from the npm registry, so
 it needs the network. It lands in corepack's cache under `$HOME`, which lives and
 dies with the container, so every `docker run --rm` fetches it again. The
 download prompt corepack would show in a terminal is off
-(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): the version is already fixed by the
-project, so the question has nothing left to ask.
+(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): what it would ask about is a pnpm or yarn
+release from the npm registry at the version the project already chose — a URL
+in `packageManager` is refused for these unless you set
+`COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1` yourself.
 
 ### Interactive Shell
 
@@ -292,16 +294,16 @@ dev.jethome.clang.version                             # the compiler's major onl
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
 dev.jethome.lychee.version, …docker-cli.version
-dev.jethome.node.version                              # no leading v, as in .nvmrc
+dev.jethome.node.version                              # exact version, no leading v
 ```
 
 `dev.jethome.clang.version` is coarser than its neighbours on purpose: clang comes
 from the Ubuntu archive, which picks the point release, and the major is what the
 Ubuntu base decides. Everything else in that list is an exact version.
-`dev.jethome.node.version` is written the way `.nvmrc` writes it, so a project can
-compare the two strings directly; `node --version` prints the same number with a
-`v` in front. npm and corepack come with that Node release and have no label of
-their own.
+`dev.jethome.node.version` is the bare number — `node --version` prints it with a
+`v` in front — so a project whose `.nvmrc` holds an exact version compares the two
+after stripping that file's optional `v` and any comment, which nvm allows there.
+npm and corepack come with that Node release and have no label of their own.
 
 Alongside them the image carries the standard OCI identity labels —
 `org.opencontainers.image.version` (this variant's published tag),
@@ -549,8 +551,9 @@ Available build arguments (defaults: see the Dockerfile):
 - `NODE_VERSION`, `NODE_SHA256_AMD64`, `NODE_SHA256_ARM64` — Node.js, from its
   release tarball, without the leading `v`. The sums are copied out of the
   release's signed `SHASUMS256.txt` once its signature checks out, never fetched
-  at build time. Node 24 is the last line bundling corepack, so a bump past it
-  also has to install corepack
+  at build time. Newer Node lines stop bundling corepack, so a bump onto one of
+  them also has to install it — the comment at `NODE_VERSION` in the Dockerfile
+  says from which line
 
 The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
