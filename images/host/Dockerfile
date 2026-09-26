@@ -2,9 +2,10 @@
 #
 # Builds and tests the POSIX target of a C++ firmware project on the machine it
 # runs on, and carries the QA gates that project runs beside the build: ruff,
-# mypy, pytest, clang-format, clang-tidy and lychee. It also carries the Docker
-# client — no daemon — so a suite that stands its own services up can do it
-# through a socket the caller mounts.
+# mypy, pytest, clang-format, clang-tidy and lychee, plus Node.js with corepack
+# for the gate of a web frontend living in the same tree. It also carries the
+# Docker client — no daemon — so a suite that stands its own services up can do
+# it through a socket the caller mounts.
 #
 # Why an image rather than a list of `apt-get install` lines in a CI job: a static
 # analyzer reads the *host's* standard library, not the project's. libc++ (macOS)
@@ -190,8 +191,8 @@ RUN set -eu; \
 # sha256sum's - which is what dash gives without `set -o pipefail`, an option it
 # does not have. That is the only shape a pipe may take in this file; anything
 # whose left-hand side can fail (`curl … | tar -xz`, say) would go green on a
-# failed download. The docker layer below carries the same pipe for the same
-# reason.
+# failed download. The docker and Node layers below carry the same pipe for the
+# same reason.
     echo "${sha}  ${art}" | sha256sum -c; \
     tar -xz --strip-components=1 -f "$art" "lychee-${triple}/lychee"; \
     install -m 0755 lychee /usr/local/bin/lychee; \
@@ -233,6 +234,104 @@ RUN set -eu; \
     tar -xz --strip-components=1 -f "$art" docker/docker; \
     install -m 0755 docker /usr/local/bin/docker; \
     rm -f "$art" docker
+
+# ── Node.js, for a web frontend's gate ────────────────────────────────────────
+#
+# A consumer whose tree carries a frontend (Vite, TypeScript, pnpm) runs its QA
+# gate - a frozen-lockfile install, lint, typecheck, the build - beside the C++
+# ones. With no Node here that gate either is skipped locally or runs on a bare CI
+# runner through actions/setup-node, which is a second description of the one
+# environment this image exists to be.
+#
+# From Node's own release tarball, in the shape of lychee and docker above: a
+# literal checksum per architecture, verified before anything is unpacked, and a
+# bump edits all three values by hand. Node does publish a SHASUMS256.txt beside
+# the tarballs, and it is signed - the two sums here were copied out of it after
+# its signature checked out against the Node release keys. Fetching it at build
+# time instead would verify the transfer only, for the reason given at lychee.
+# Not from apt: the 24.04 archive does not carry the LTS line a consumer pins. Not
+# from NodeSource either, which is an apt source and a signing key more to keep in
+# step. The .gz rather than the .xz, because gzip is in the base and xz-utils is
+# not.
+#
+# NODE_VERSION carries no leading `v`, so the label below reads exactly as a
+# consumer's .nvmrc does; the URL and the verification layer add the `v`.
+#
+# Node 24 is the last line that bundles corepack - from 25 on it is a separate
+# package, so a bump past 24 installs it explicitly, pinned. The verification
+# layer fails such a bump that forgets, rather than publishing an image whose
+# `pnpm` resolves to nothing.
+ARG NODE_VERSION=24.21.0
+ARG NODE_SHA256_AMD64=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+ARG NODE_SHA256_ARM64=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
+# An ARG, not an ENV, for DEBIAN_FRONTEND's reason: every RUN from here on sees
+# it, and no shell the user opens later does. corepack turns on Node's module
+# compile cache, which lands in /tmp/node-compile-cache - root-owned when a build
+# layer writes it, and so read-only to every `-u $(id -u)` run after. The
+# verification layer checks that /tmp leaves the build empty.
+ARG NODE_DISABLE_COMPILE_CACHE=1
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) arch=x64; sha="${NODE_SHA256_AMD64}" ;; \
+      arm64) arch=arm64; sha="${NODE_SHA256_ARM64}" ;; \
+      *) echo "no Node.js release for $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    dir="node-v${NODE_VERSION}-linux-${arch}"; \
+    art="${dir}.tar.gz"; \
+    curl -sfL --proto '=https' --proto-redir '=https' \
+      "https://nodejs.org/dist/v${NODE_VERSION}/${art}" -o "$art"; \
+    echo "${sha}  ${art}" | sha256sum -c; \
+# Into /usr/local, so node, npm, npx and corepack resolve by bare name. The
+# members are named because the tarball's root also holds a README and a
+# CHANGELOG, which --strip-components would drop loose into /usr/local; the
+# LICENSE is taken in the same pass and moved beside the docs Node ships under
+# share/. include/ is left out: those are the headers a native addon compiles
+# against, and node-gyp never reads them from here - this build of Node does not
+# look for headers under its prefix (use_prefix_to_find_headers is false), so
+# node-gyp downloads its own copy - which would leave 64 MB nobody opens.
+# --no-same-owner because tar running as root restores the archive's own uid -
+# 1001, the release builder's - and not only on the files it creates: measured,
+# /usr/local/bin and /usr/local/lib themselves come out 1001-owned, so a caller
+# running this image as `-u 1001` could replace every binary in them.
+    tar -xz --strip-components=1 --no-same-owner -C /usr/local -f "$art" \
+      "${dir}/bin" "${dir}/lib" "${dir}/share" "${dir}/LICENSE"; \
+    mv /usr/local/LICENSE /usr/local/share/doc/node/LICENSE; \
+    rm -f "$art"; \
+# corepack, not pnpm. `corepack enable` puts pnpm and yarn shims beside node, and
+# each runs the version the project's own `packageManager` field names, checking
+# the hash that field carries when it downloads that version - a version already
+# in the cache is not checked again. So the image holds no package-manager
+# version of its own to fall out of step with a consumer's: the project picks
+# it, and its first run downloads it into the corepack cache under $HOME. Yarn 2
+# and later goes one step further on its own: a `yarnPath` in the project's
+# .yarnrc.yml hands over to a file the checkout ships, which nothing here checks.
+    corepack enable
+
+# The shims ask before that first download - `pnpm` sets
+# COREPACK_ENABLE_DOWNLOAD_PROMPT=1 unless the environment already did - and the
+# question waits on stdin when stdin is a terminal and CI is unset: `docker run
+# -it`, not a CI job, so it never stood between a CI run and a download. It is
+# switched off. What it would ask about is the version packageManager names, or,
+# for a project naming none, the release corepack picks - the drift the README
+# warns about, and which the question never stopped in CI either.
+#
+# What the question did stand in front of, in a terminal, is a checkout steering
+# corepack itself. corepack reads a .corepack.env beside the package.json and
+# takes every COREPACK_* key in it that the environment does not set: a URL in
+# packageManager allowed through COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1, another
+# registry with COREPACK_NPM_REGISTRY and signature checks off with
+# COREPACK_INTEGRITY_KEYS=0, or a COREPACK_HOME pointing into the checkout at a
+# "cached" pnpm it ships itself, which runs with no download and no hash check at
+# all. Measured with the first: `pnpm --version` fetched a URL's code and ran it
+# without a word. So corepack is told not to read that file - COREPACK_ENV_FILE=0,
+# which the file cannot override, as the process environment wins over it. What
+# corepack does is then decided by packageManager and by the caller, who passes
+# any COREPACK_* setting the project needs with `-e`. That does not make an
+# untrusted checkout safe to build - `pnpm install` and `pnpm run` execute the
+# project's own scripts - it keeps `pnpm` meaning the release packageManager
+# names.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV COREPACK_ENV_FILE=0
 
 # ── running as the invoking user ──────────────────────────────────────────────
 #
@@ -297,7 +396,7 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI, Node.js with corepack" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.paho.version="${PAHO_VERSION}" \
@@ -310,7 +409,8 @@ LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-de
       dev.jethome.pytest.version="${PYTEST_VERSION}" \
       dev.jethome.jsonschema.version="${JSONSCHEMA_VERSION}" \
       dev.jethome.lychee.version="${LYCHEE_VERSION}" \
-      dev.jethome.docker-cli.version="${DOCKER_VERSION}"
+      dev.jethome.docker-cli.version="${DOCKER_VERSION}" \
+      dev.jethome.node.version="${NODE_VERSION}"
 
 WORKDIR /workspace
 
@@ -333,9 +433,9 @@ WORKDIR /workspace
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
 # clang-tidy" is precisely the state this image exists to rule out. The docker
-# client asserts for a different reason: its version is a label a consumer tests
-# its own tree against, so a binary disagreeing with the label has to fail here
-# rather than downstream. clang-tidy is
+# client and node assert for a different reason: each version is a label a
+# consumer tests its own tree against, so a binary disagreeing with its label has
+# to fail here rather than downstream. clang-tidy is
 # then *run*, over smoke.cpp and the compile database the build just wrote,
 # because a wheel whose binary cannot find its own resource directory answers
 # `--version` perfectly and then fails on the first real file - the same "some
@@ -360,7 +460,8 @@ RUN set -eu; \
 # /opt/ccache/tmp root-owned and every later `-u $(id -u)` run failing with
 # "failed to create temporary file ... Permission denied". Disabling the cache for
 # this layer keeps the directory as `mkdir` left it: empty and 1777. The launcher
-# is still exercised, since ccache is what CMake invokes either way.
+# is still exercised, since ccache is what CMake invokes either way. Node's
+# compile cache is off for the same reason, through the ARG at the Node layer.
     CCACHE_DISABLE=1; export CCACHE_DISABLE; \
     cmake --version; \
     ninja --version; \
@@ -400,6 +501,42 @@ RUN set -eu; \
         || { echo "${found} is in this image - it must carry the client only" >&2; \
              exit 1; }; \
     done; \
+# Equality again, and against the `v` Node prints and the ARG leaves out.
+    node_reported="$(node --version)"; \
+    echo "node ${node_reported}"; \
+    [ "${node_reported}" = "v${NODE_VERSION}" ] \
+      || { echo "node reports '${node_reported}', want v${NODE_VERSION}" >&2; exit 1; }; \
+    npm --version; \
+    corepack --version; \
+# `corepack enable` is what makes `pnpm` resolve at all, and it is a step of its
+# own that a bump can lose - past Node 24, where corepack stops coming with the
+# tarball, most easily. The shim has to be corepack's, not some other pnpm earlier
+# on PATH. It is not *run*: that would download a pnpm, whose version is the
+# project's to name, into a HOME this root-run layer must leave untouched (see
+# the end of this layer). `|| true` so a missing shim reaches the message below
+# instead of ending the layer at the assignment with a bare status 127.
+    pnpm_shim="$(command -v pnpm || true)"; \
+    [ "$(readlink -f "${pnpm_shim}")" = /usr/local/lib/node_modules/corepack/dist/pnpm.js ] \
+      || { echo "pnpm resolves to '${pnpm_shim}', not to corepack's shim" >&2; exit 1; }; \
+# COREPACK_ENV_FILE=0 is a promise that a checkout's .corepack.env is not read,
+# and nothing else in this layer would notice it being broken - by a corepack
+# bump renaming the switch, say. So a checkout whose .corepack.env re-enables
+# custom URLs is staged here, and its packageManager URL must be refused, which
+# happens only while the file goes unread. Offline: corepack refuses before it
+# fetches anything, and one that read the file fails the grep instead, on a host
+# that does not resolve.
+    probe="$(mktemp -d)"; \
+    echo '{"packageManager":"pnpm@https://example.invalid/pm.js"}' > "${probe}/package.json"; \
+    echo 'COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1' > "${probe}/.corepack.env"; \
+    if (cd "${probe}" && pnpm --version) > "${probe}/out.txt" 2>&1; then \
+      cat "${probe}/out.txt"; \
+      echo "pnpm ran a packageManager URL a .corepack.env enabled" >&2; exit 1; \
+    fi; \
+    grep -q 'Illegal use of URL for known package manager' "${probe}/out.txt" \
+      || { cat "${probe}/out.txt"; \
+           echo "pnpm failed on a packageManager URL, but not by refusing it" >&2; \
+           exit 1; }; \
+    rm -rf "${probe}"; \
     clang_format_reported="$(clang-format --version)"; \
     clang_tidy_reported="$(clang-tidy --version)"; \
     echo "${clang_format_reported}"; \
@@ -467,6 +604,16 @@ RUN set -eu; \
       || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
            exit 1; }; \
     rm -f /tmp/use-after-scope /tmp/use-after-scope.log /tmp/clang-gcc.txt; \
+# HOME and /tmp leave this layer as empty as they came, for the reason the ccache
+# directory does: the layer runs as root, and whatever a tool caches there here -
+# npm's logs, corepack's downloads, Node's compile cache - would be root's in
+# every later `-u $(id -u)` run, which could neither write into it nor, under the
+# sticky bit, replace it.
+    for scratch in "${HOME}" /tmp; do \
+      left="$(ls -A "${scratch}")"; \
+      [ -z "${left}" ] \
+        || { echo "the build left files in ${scratch}: ${left}" >&2; exit 1; }; \
+    done; \
     echo "jethome host image verified"
 
 CMD ["/bin/bash"]
