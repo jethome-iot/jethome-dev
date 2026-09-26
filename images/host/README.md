@@ -3,7 +3,8 @@
 Docker image for building, testing and QA-checking C++ projects **on the machine
 that runs them** — no cross-compiler, no target hardware. Ubuntu with GCC, CMake,
 Ninja, GTest/GMock and a from-source [Eclipse Paho MQTT C](https://github.com/eclipse-paho/paho.mqtt.c)
-client, plus the linters and analyzers a CI pipeline runs beside a build.
+client, plus the linters and analyzers a CI pipeline runs beside a build — and
+Node.js with corepack, for a web frontend that lives in the same tree.
 
 ## Overview
 
@@ -15,11 +16,11 @@ machine — a developer gets the CI verdict locally, on their own architecture,
 without waiting for a pull-request run to tell them.
 
 Everything it installs by name is pinned: the Python tools with `==`, the Paho
-client to a commit rather than a tag, and the `lychee` and `docker` binaries to a
-per-architecture SHA-256. The versions are recorded as image labels, so a
-consumer can assert the image agrees with its own pins instead of assuming it
-(see
-[Verifying the pins](#verifying-the-pins)).
+client to a commit rather than a tag, and the Node.js, `lychee` and `docker`
+releases to a per-architecture SHA-256. pnpm is left out by design — the project
+pins it, not the image (see [Frontend](#frontend)). The versions are recorded as
+image labels, so a consumer can assert the image agrees with its own pins instead
+of assuming it (see [Verifying the pins](#verifying-the-pins)).
 
 ## What's Inside
 
@@ -55,6 +56,13 @@ consumer can assert the image agrees with its own pins instead of assuming it
   daemon socket; there is no daemon in this image (see
   [Starting sibling containers](#starting-sibling-containers))
 - git, curl, jq
+
+**Frontend:**
+- Node.js, an LTS release from Node's own tarball, in `/usr/local` — `node`,
+  `npm`, `npx` and `corepack` by bare name; the version is in the
+  `dev.jethome.node.version` label
+- corepack enabled: `pnpm` and `yarn` are its shims, and each runs the version the
+  project's `packageManager` field names (see [Frontend](#frontend))
 
 ## Quick Start
 
@@ -141,6 +149,26 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \
   ghcr.io/jethome-iot/jethome-dev-host:latest \
   lychee --offline --include-fragments '**/*.md'
 ```
+
+### Frontend
+
+corepack is enabled and no pnpm is baked in: the `pnpm` on `PATH` is corepack's
+shim, which runs the version the project's `package.json` names in
+`packageManager` and verifies the hash that field carries. So the project, not
+the image, decides which pnpm runs, and a bump there needs no new image.
+
+```bash
+docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-host:latest \
+  bash -c 'cd frontend && pnpm install --frozen-lockfile && pnpm run build'
+```
+
+The first `pnpm` in a container downloads that version from the npm registry, so
+it needs the network. It lands in corepack's cache under `$HOME`, which lives and
+dies with the container, so every `docker run --rm` fetches it again. The
+download prompt corepack would show in a terminal is off
+(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): the version is already fixed by the
+project, so the question has nothing left to ask.
 
 ### Interactive Shell
 
@@ -264,11 +292,16 @@ dev.jethome.clang.version                             # the compiler's major onl
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
 dev.jethome.lychee.version, …docker-cli.version
+dev.jethome.node.version                              # no leading v, as in .nvmrc
 ```
 
 `dev.jethome.clang.version` is coarser than its neighbours on purpose: clang comes
 from the Ubuntu archive, which picks the point release, and the major is what the
 Ubuntu base decides. Everything else in that list is an exact version.
+`dev.jethome.node.version` is written the way `.nvmrc` writes it, so a project can
+compare the two strings directly; `node --version` prints the same number with a
+`v` in front. npm and corepack come with that Node release and have no label of
+their own.
 
 Alongside them the image carries the standard OCI identity labels —
 `org.opencontainers.image.version` (this variant's published tag),
@@ -293,6 +326,11 @@ labels do not name.
   spelled as `docker run` needs nothing else; one spelled as a compose file does.
   `docker build` still works, because the daemon builds — it falls back to the
   classic builder, so BuildKit-only Dockerfile features are out.
+- **No pnpm or yarn of its own.** Both are corepack shims, and the first run in
+  a container fetches the version the project names — from the network
+  ([Frontend](#frontend)). A project with no `packageManager` field gets
+  whatever corepack picks for it, which is exactly the drift the field exists to
+  stop.
 - **No libc++.** clang links the image's libstdc++, the same one GCC does, so a
   clang build differs from a GCC build in the compiler alone.
 - **No cross-compilers and no target SDKs.** Firmware targets are the job of the
@@ -462,6 +500,7 @@ CCACHE_DIR=/opt/ccache             # 1777; mount a volume to persist it
 CMAKE_C_COMPILER_LAUNCHER=ccache   # what actually puts ccache in the build
 CMAKE_CXX_COMPILER_LAUNCHER=ccache # override with -DCMAKE_CXX_COMPILER_LAUNCHER=
 CMAKE_EXPORT_COMPILE_COMMANDS=ON   # so clang-tidy -p <build-dir> just works
+COREPACK_ENABLE_DOWNLOAD_PROMPT=0  # pnpm's first download does not stop to ask
 ```
 
 Your project files live in `/workspace` (mount as volume).
@@ -507,11 +546,16 @@ Available build arguments (defaults: see the Dockerfile):
   client, taken from Docker's static release and verified the same way. Docker
   publishes no `.sha256` beside those tarballs, so both sums are literals here and
   a bump recomputes them
+- `NODE_VERSION`, `NODE_SHA256_AMD64`, `NODE_SHA256_ARM64` — Node.js, from its
+  release tarball, without the leading `v`. The sums are copied out of the
+  release's signed `SHASUMS256.txt` once its signature checks out, never fetched
+  at build time. Node 24 is the last line bundling corepack, so a bump past it
+  also has to install corepack
 
 The last layer of the build is a verification step, and it asserts rather than
-lists: it prints every tool's version, requires the two clang tools and the Docker
-client to report the pinned numbers and `jsonschema` to appear at its pinned
-version in the freeze,
+lists: it prints every tool's version, requires the two clang tools, the Docker
+client and `node` to report the pinned numbers, `jsonschema` to appear at its
+pinned version in the freeze and `pnpm` to resolve to corepack's shim,
 then configures, builds and `ctest`s the small CMake project in
 [`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
 links, that CMake took the ccache launcher, and that the Paho library loaded
@@ -523,7 +567,9 @@ instead of the user's first run. Last, it builds
 requires a symbolized `stack-use-after-scope` report — the one assertion that
 catches a missing compiler, a missing or mismatched runtime, and a missing
 symbolizer alike — after checking that clang takes its libstdc++ from the same GCC
-installation `gcc` is, and that `cc` and `c++` are still GCC.
+installation `gcc` is, and that `cc` and `c++` are still GCC. It ends by requiring
+`/home/build` to be as empty as it started, since anything a root-run build
+caches there would be unwritable for the uid you run the image as.
 
 The sources stay in the image at `/opt/smoke-src`, so the same check runs against
 a published image:
@@ -563,6 +609,7 @@ Silicon developer gets a native image rather than an emulated one.
 - [Eclipse Paho MQTT C](https://eclipse.dev/paho/index.php?page=clients/c/index.php)
 - [clang-tidy](https://clang.llvm.org/extra/clang-tidy/)
 - [lychee](https://lychee.cli.rs/)
+- [corepack](https://github.com/nodejs/corepack)
 
 ## License
 
