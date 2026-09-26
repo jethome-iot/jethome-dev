@@ -302,7 +302,9 @@ RUN set -eu; \
 # the hash that field carries when it downloads that version - a version already
 # in the cache is not checked again. So the image holds no package-manager
 # version of its own to fall out of step with a consumer's: the project picks
-# it, and its first run downloads it into the corepack cache under $HOME.
+# it, and its first run downloads it into the corepack cache under $HOME. Yarn 2
+# and later goes one step further on its own: a `yarnPath` in the project's
+# .yarnrc.yml hands over to a file the checkout ships, which nothing here checks.
     corepack enable
 
 # The shims ask before that first download - `pnpm` sets

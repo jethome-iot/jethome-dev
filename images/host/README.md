@@ -62,7 +62,9 @@ of assuming it (see [Verifying the pins](#verifying-the-pins)).
   `npm`, `npx` and `corepack` by bare name; the version is in the
   `dev.jethome.node.version` label
 - corepack enabled: `pnpm` and `yarn` are its shims, and each runs the version the
-  project's `packageManager` field names (see [Frontend](#frontend))
+  project's `packageManager` field names (see [Frontend](#frontend)). Yarn Berry
+  then hands over to a `yarnPath` in the project's `.yarnrc.yml` where one is set,
+  a file the checkout itself supplies
 
 ## Quick Start
 
