@@ -171,13 +171,16 @@ version already in that cache is not checked against a hash again.
 
 The download prompt corepack would show in a terminal is off
 (`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): what it would ask about is a release at the
-version the project already chose. A URL in `packageManager` — code corepack would
-download and run as the package manager — is refused instead:
-`COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0` is set in the image, where a checkout's own
-`.corepack.env` cannot switch it back on. Pass `-e
-COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1` if you do want one. None of this makes an
-untrusted checkout safe to build: `pnpm install` and `pnpm run` execute the
-project's own scripts.
+version the project already chose, and in CI it never asks at all.
+
+**A project's `.corepack.env` is not read** (`COREPACK_ENV_FILE=0`). corepack
+would otherwise take every `COREPACK_*` setting in it, and those can point it at
+code the checkout chose — a URL in `packageManager`, another registry with
+signature checks off, or a `COREPACK_HOME` inside the checkout holding a "cached"
+pnpm it ships itself. A setting the project genuinely needs, such as a registry
+mirror, is passed with `-e`, which is a decision taken outside the checkout. None
+of this makes an untrusted checkout safe to build: `pnpm install` and `pnpm run`
+execute the project's own scripts.
 
 ### Interactive Shell
 
@@ -340,6 +343,10 @@ labels do not name.
   ([Frontend](#frontend)). A project with no `packageManager` field gets
   whatever corepack picks for it, which is exactly the drift the field exists to
   stop.
+- **No Node headers.** `include/` is left out of the Node install: this Node
+  build does not look for headers under its own prefix, so node-gyp downloads
+  the matching set itself when a native addon compiles, and the copy here would
+  go unread.
 - **No libc++.** clang links the image's libstdc++, the same one GCC does, so a
   clang build differs from a GCC build in the compiler alone.
 - **No cross-compilers and no target SDKs.** Firmware targets are the job of the
@@ -510,7 +517,7 @@ CMAKE_C_COMPILER_LAUNCHER=ccache   # what actually puts ccache in the build
 CMAKE_CXX_COMPILER_LAUNCHER=ccache # override with -DCMAKE_CXX_COMPILER_LAUNCHER=
 CMAKE_EXPORT_COMPILE_COMMANDS=ON   # so clang-tidy -p <build-dir> just works
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0  # pnpm's first download does not stop to ask
-COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0 # a URL in packageManager is refused
+COREPACK_ENV_FILE=0                # a checkout's .corepack.env is not read
 ```
 
 Your project files live in `/workspace` (mount as volume).
@@ -567,8 +574,8 @@ The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `jsonschema` to appear at its
 pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
-must refuse a `packageManager` URL even from a checkout whose `.corepack.env`
-re-enables one — then configures, builds and `ctest`s the small CMake project in
+must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
+URL that file re-enables — then configures, builds and `ctest`s the small CMake project in
 [`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
 links, that CMake took the ccache launcher, and that the Paho library loaded
 reports the pinned version. It then runs `clang-tidy` over that

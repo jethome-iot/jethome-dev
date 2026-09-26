@@ -264,6 +264,12 @@ RUN set -eu; \
 ARG NODE_VERSION=24.21.0
 ARG NODE_SHA256_AMD64=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
 ARG NODE_SHA256_ARM64=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
+# An ARG, not an ENV, for DEBIAN_FRONTEND's reason: every RUN from here on sees
+# it, and no shell the user opens later does. corepack turns on Node's module
+# compile cache, which lands in /tmp/node-compile-cache - root-owned when a build
+# layer writes it, and so read-only to every `-u $(id -u)` run after. The
+# verification layer checks that /tmp leaves the build empty.
+ARG NODE_DISABLE_COMPILE_CACHE=1
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
       amd64) arch=x64; sha="${NODE_SHA256_AMD64}" ;; \
@@ -279,12 +285,16 @@ RUN set -eu; \
 # members are named because the tarball's root also holds a README and a
 # CHANGELOG, which --strip-components would drop loose into /usr/local; the
 # LICENSE is taken in the same pass and moved beside the docs Node ships under
-# share/. --no-same-owner because tar running as root restores the archive's own
-# uid - 1001, the release builder's - and not only on the files it creates:
-# measured, /usr/local/bin and /usr/local/lib themselves come out 1001-owned, so
-# a caller running this image as `-u 1001` could replace every binary in them.
+# share/. include/ is left out: those are the headers a native addon compiles
+# against, and node-gyp never reads them from here - this build of Node does not
+# look for headers under its prefix (use_prefix_to_find_headers is false), so
+# node-gyp downloads its own copy - which would leave 64 MB nobody opens.
+# --no-same-owner because tar running as root restores the archive's own uid -
+# 1001, the release builder's - and not only on the files it creates: measured,
+# /usr/local/bin and /usr/local/lib themselves come out 1001-owned, so a caller
+# running this image as `-u 1001` could replace every binary in them.
     tar -xz --strip-components=1 --no-same-owner -C /usr/local -f "$art" \
-      "${dir}/bin" "${dir}/include" "${dir}/lib" "${dir}/share" "${dir}/LICENSE"; \
+      "${dir}/bin" "${dir}/lib" "${dir}/share" "${dir}/LICENSE"; \
     mv /usr/local/LICENSE /usr/local/share/doc/node/LICENSE; \
     rm -f "$art"; \
 # corepack, not pnpm. `corepack enable` puts pnpm and yarn shims beside node, and
@@ -293,31 +303,33 @@ RUN set -eu; \
 # in the cache is not checked again. So the image holds no package-manager
 # version of its own to fall out of step with a consumer's: the project picks
 # it, and its first run downloads it into the corepack cache under $HOME.
-#
-# NODE_DISABLE_COMPILE_CACHE because corepack turns on Node's module compile
-# cache, which lands in /tmp/node-compile-cache - root-owned when a build layer
-# writes it, and so read-only to every `-u $(id -u)` run after. The verification
-# layer sets it for the same reason and checks that /tmp stays empty.
-    NODE_DISABLE_COMPILE_CACHE=1 corepack enable
+    corepack enable
 
 # The shims ask before that first download - `pnpm` sets
 # COREPACK_ENABLE_DOWNLOAD_PROMPT=1 unless the environment already did - and the
 # question waits on stdin when stdin is a terminal and CI is unset: `docker run
-# -it`, not a CI job. What it would ask about is a pnpm or yarn release at the
-# version the project's packageManager already names, so it is switched off.
+# -it`, not a CI job, so it never stood between a CI run and a download. It is
+# switched off. What it would ask about is the version packageManager names, or,
+# for a project naming none, the release corepack picks - the drift the README
+# warns about, and which the question never stopped in CI either.
 #
-# The one case the question did guard is a URL in packageManager, which corepack
-# downloads and runs as the package manager. It refuses a URL for pnpm, yarn and
-# npm unless COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1 - and a checkout can set that
-# itself, in a .corepack.env beside its package.json, which corepack loads before
-# resolving the spec. Measured: with the prompt off and such a file in the
-# checkout, `pnpm --version` fetched a URL's code and ran it without a word. The
-# variable is therefore pinned to 0 here, where that file cannot reach it -
-# corepack lets the process environment override the file. A caller who does
-# want a URL passes `-e COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1`, which is a
-# decision taken outside the checkout.
+# What the question did stand in front of, in a terminal, is a checkout steering
+# corepack itself. corepack reads a .corepack.env beside the package.json and
+# takes every COREPACK_* key in it that the environment does not set: a URL in
+# packageManager allowed through COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1, another
+# registry with COREPACK_NPM_REGISTRY and signature checks off with
+# COREPACK_INTEGRITY_KEYS=0, or a COREPACK_HOME pointing into the checkout at a
+# "cached" pnpm it ships itself, which runs with no download and no hash check at
+# all. Measured with the first: `pnpm --version` fetched a URL's code and ran it
+# without a word. So corepack is told not to read that file - COREPACK_ENV_FILE=0,
+# which the file cannot override, as the process environment wins over it. What
+# corepack does is then decided by packageManager and by the caller, who passes
+# any COREPACK_* setting the project needs with `-e`. That does not make an
+# untrusted checkout safe to build - `pnpm install` and `pnpm run` execute the
+# project's own scripts - it keeps `pnpm` meaning the release packageManager
+# names.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-ENV COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0
+ENV COREPACK_ENV_FILE=0
 
 # ── running as the invoking user ──────────────────────────────────────────────
 #
@@ -447,9 +459,8 @@ RUN set -eu; \
 # "failed to create temporary file ... Permission denied". Disabling the cache for
 # this layer keeps the directory as `mkdir` left it: empty and 1777. The launcher
 # is still exercised, since ccache is what CMake invokes either way. Node's
-# compile cache is turned off for the same reason, see the Node layer.
+# compile cache is off for the same reason, through the ARG at the Node layer.
     CCACHE_DISABLE=1; export CCACHE_DISABLE; \
-    NODE_DISABLE_COMPILE_CACHE=1; export NODE_DISABLE_COMPILE_CACHE; \
     cmake --version; \
     ninja --version; \
     gcc --version; \
@@ -505,12 +516,13 @@ RUN set -eu; \
     pnpm_shim="$(command -v pnpm || true)"; \
     [ "$(readlink -f "${pnpm_shim}")" = /usr/local/lib/node_modules/corepack/dist/pnpm.js ] \
       || { echo "pnpm resolves to '${pnpm_shim}', not to corepack's shim" >&2; exit 1; }; \
-# The URL refusal the Node layer sets up rests on corepack letting the process
-# environment win over a checkout's .corepack.env - a precedence a corepack bump
-# could change without a word. So a checkout that re-enables custom URLs is
-# staged here and must be turned away. Offline: corepack refuses before it
-# fetches anything, and a corepack that stopped refusing fails the grep instead,
-# on a host that does not resolve.
+# COREPACK_ENV_FILE=0 is a promise that a checkout's .corepack.env is not read,
+# and nothing else in this layer would notice it being broken - by a corepack
+# bump renaming the switch, say. So a checkout whose .corepack.env re-enables
+# custom URLs is staged here, and its packageManager URL must be refused, which
+# happens only while the file goes unread. Offline: corepack refuses before it
+# fetches anything, and one that read the file fails the grep instead, on a host
+# that does not resolve.
     probe="$(mktemp -d)"; \
     echo '{"packageManager":"pnpm@https://example.invalid/pm.js"}' > "${probe}/package.json"; \
     echo 'COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1' > "${probe}/.corepack.env"; \
