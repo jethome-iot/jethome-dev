@@ -288,8 +288,9 @@ RUN set -eu; \
     mv /usr/local/LICENSE /usr/local/share/doc/node/LICENSE; \
     rm -f "$art"; \
 # corepack, not pnpm. `corepack enable` puts pnpm and yarn shims beside node, and
-# each runs the version the project's own `packageManager` field names, checked
-# against the hash that field carries. So the image holds no package-manager
+# each runs the version the project's own `packageManager` field names, checking
+# the hash that field carries when it downloads that version - a version already
+# in the cache is not checked again. So the image holds no package-manager
 # version of its own to fall out of step with a consumer's: the project picks
 # it, and its first run downloads it into the corepack cache under $HOME.
     corepack enable
@@ -297,13 +298,21 @@ RUN set -eu; \
 # The shims ask before that first download - `pnpm` sets
 # COREPACK_ENABLE_DOWNLOAD_PROMPT=1 unless the environment already did - and the
 # question waits on stdin when stdin is a terminal and CI is unset: `docker run
-# -it`, not a CI job. What it would ask about is a pnpm or yarn release from the
-# npm registry at the version the project's packageManager names, checked against
-# the hash where the field carries one; a URL there is refused outright for
-# these two (measured - corepack wants COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1 for
-# that, which this image does not set). The project has already made the choice
-# the question would put, so it leaves nothing to consent to.
+# -it`, not a CI job. What it would ask about is a pnpm or yarn release at the
+# version the project's packageManager already names, so it is switched off.
+#
+# The one case the question did guard is a URL in packageManager, which corepack
+# downloads and runs as the package manager. It refuses a URL for pnpm, yarn and
+# npm unless COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1 - and a checkout can set that
+# itself, in a .corepack.env beside its package.json, which corepack loads before
+# resolving the spec. Measured: with the prompt off and such a file in the
+# checkout, `pnpm --version` fetched a URL's code and ran it without a word. The
+# variable is therefore pinned to 0 here, where that file cannot reach it -
+# corepack lets the process environment override the file. A caller who does
+# want a URL passes `-e COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1`, which is a
+# decision taken outside the checkout.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0
 
 # ── running as the invoking user ──────────────────────────────────────────────
 #

@@ -154,8 +154,9 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace \
 
 corepack is enabled and no pnpm is baked in: the `pnpm` on `PATH` is corepack's
 shim, which runs the version the project's `package.json` names in
-`packageManager` and verifies the hash that field carries. So the project, not
-the image, decides which pnpm runs, and a bump there needs no new image.
+`packageManager`, checking the hash that field carries when it downloads that
+version. So the project, not the image, decides which pnpm runs, and a bump there
+needs no new image.
 
 ```bash
 docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":/workspace \
@@ -165,12 +166,18 @@ docker run --rm -u $(id -u):$(id -g) -v "$(pwd)":/workspace \
 
 The first `pnpm` in a container downloads that version from the npm registry, so
 it needs the network. It lands in corepack's cache under `$HOME`, which lives and
-dies with the container, so every `docker run --rm` fetches it again. The
-download prompt corepack would show in a terminal is off
-(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): what it would ask about is a pnpm or yarn
-release from the npm registry at the version the project already chose — a URL
-in `packageManager` is refused for these unless you set
-`COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1` yourself.
+dies with the container, so every `docker run --rm` fetches it again — and a
+version already in that cache is not checked against a hash again.
+
+The download prompt corepack would show in a terminal is off
+(`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`): what it would ask about is a release at the
+version the project already chose. A URL in `packageManager` — code corepack would
+download and run as the package manager — is refused instead:
+`COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0` is set in the image, where a checkout's own
+`.corepack.env` cannot switch it back on. Pass `-e
+COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=1` if you do want one. None of this makes an
+untrusted checkout safe to build: `pnpm install` and `pnpm run` execute the
+project's own scripts.
 
 ### Interactive Shell
 
@@ -503,6 +510,7 @@ CMAKE_C_COMPILER_LAUNCHER=ccache   # what actually puts ccache in the build
 CMAKE_CXX_COMPILER_LAUNCHER=ccache # override with -DCMAKE_CXX_COMPILER_LAUNCHER=
 CMAKE_EXPORT_COMPILE_COMMANDS=ON   # so clang-tidy -p <build-dir> just works
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0  # pnpm's first download does not stop to ask
+COREPACK_ENABLE_UNSAFE_CUSTOM_URLS=0 # a URL in packageManager is refused
 ```
 
 Your project files live in `/workspace` (mount as volume).
