@@ -79,7 +79,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # clang poisons each variable when its own lifetime ends, so a callback reading a
 # dead local from a destructor is `stack-use-after-scope` under clang and a clean
 # run under GCC, `-fsanitize-address-use-after-scope` or not. smoke/use-after-scope.cpp
-# is that case in a dozen lines, and the verification layer asserts clang catches it.
+# is that case in a dozen lines, and smoke/verify-clang.sh, which the verification
+# layer runs, asserts clang catches it.
 #
 # Three packages, each for a reason:
 #   clang-N            the compiler. It links this image's libstdc++ - no libc++
@@ -391,9 +392,9 @@ WORKDIR /workspace
 # smoke/verify.sh covers what a version print cannot, with a small CMake project
 # beside it - what it checks and why is in its own comments, kept there because the
 # README runs the same script against a published image. Its build tree is
-# deleted; the sources stay at /opt/smoke-src. Beside them sits
-# use-after-scope.cpp, which is not part of that project and must *fail* - see the
-# clang block at the end.
+# deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
+# which builds use-after-scope.cpp - not part of that project - and requires it to
+# *fail*; see the clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
@@ -515,47 +516,11 @@ RUN set -eu; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
     sh /opt/smoke-src/verify.sh /tmp/smoke-build; \
     rm -rf /tmp/smoke-build; \
-# clang is asserted by what it catches, not by the fact that it answers: the
-# property this image promises is that clang's ASan sees the use-after-scope GCC's
-# misses. One run covers a missing compiler, a missing runtime and a runtime whose
-# version does not match the compiler - each fails to build or to report. The
-# report must also name the probe's source file, which only a working
-# llvm-symbolizer puts there.
-#
-# Two things around it keep a clang leg comparable with the GCC one. clang takes
-# its libstdc++ headers from the newest GCC installation it finds, so a dependency
-# pulling in a newer libstdc++-N-dev would have it compile against other headers
-# than g++ does while every link still succeeded - the installation it selected
-# has to be the one `gcc` is. And `cc`/`c++` stay GCC: an alternative registered
-# by some future clang package would move every plain `cmake -S . -B build` onto
-# clang without a word.
-    "clang++-${CLANG_VERSION}" --version; \
-    "llvm-symbolizer-${CLANG_VERSION}" --version; \
-    gcc_major="$(gcc -dumpversion)"; \
-    "clang++-${CLANG_VERSION}" -v -E -x c++ /dev/null > /tmp/clang-gcc.txt 2>&1; \
-    grep -q "^Selected GCC installation: .*/${gcc_major}\$" /tmp/clang-gcc.txt \
-      || { cat /tmp/clang-gcc.txt; \
-           echo "clang++-${CLANG_VERSION} did not select GCC ${gcc_major}'s libstdc++" >&2; \
-           exit 1; }; \
-    for default_compiler in cc c++; do \
-      case "$("${default_compiler}" --version)" in \
-        *clang*) echo "${default_compiler} resolves to clang - it must stay GCC" >&2; exit 1 ;; \
-      esac; \
-    done; \
-    "clang++-${CLANG_VERSION}" -fsanitize=address -g \
-      /opt/smoke-src/use-after-scope.cpp -o /tmp/use-after-scope; \
-    if /tmp/use-after-scope > /tmp/use-after-scope.log 2>&1; then \
-      cat /tmp/use-after-scope.log; \
-      echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1; \
-    fi; \
-    cat /tmp/use-after-scope.log; \
-    grep -q 'ERROR: AddressSanitizer: stack-use-after-scope' /tmp/use-after-scope.log \
-      || { echo "clang's ASan failed the probe without reporting stack-use-after-scope" >&2; \
-           exit 1; }; \
-    grep -q 'use-after-scope\.cpp:' /tmp/use-after-scope.log \
-      || { echo "the ASan report is not symbolized - llvm-symbolizer was not found" >&2; \
-           exit 1; }; \
-    rm -f /tmp/use-after-scope /tmp/use-after-scope.log /tmp/clang-gcc.txt; \
+# clang is asserted by what it catches - its ASan has to report the use-after-scope
+# GCC's misses, symbolized - and its leg is kept comparable with the GCC one.
+# smoke/verify-clang.sh holds all of it and says why, for the reason verify.sh
+# holds the smoke check: the README runs the same file against a published image.
+    sh /opt/smoke-src/verify-clang.sh "${CLANG_VERSION}"; \
 # HOME and /tmp leave this layer as empty as they came, for the reason the ccache
 # directory does: the layer runs as root, and whatever a tool caches there here -
 # npm's logs, corepack's downloads, Node's compile cache - would be root's in
