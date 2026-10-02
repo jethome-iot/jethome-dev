@@ -5,7 +5,9 @@
 // The pieces it touches are the ones clang-tidy then reads through this file:
 // std::string and std::function are where libstdc++ hides its `throw` behind
 // external `__throw_*`, which is the reason the image exists, and std::thread is
-// what pulls in the threads library a host test suite links.
+// what a host test suite starts. (Since glibc 2.34 pthread lives in libc itself,
+// so this cannot fail for want of -pthread; Threads::Threads is linked because
+// that is how a project spells it, and find_package(Threads) has to resolve.)
 #include <cstdio>
 #include <functional>
 #include <string>

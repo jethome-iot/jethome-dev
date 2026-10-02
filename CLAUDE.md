@@ -342,10 +342,10 @@ before changing anything here.
   numbers pip was told to install (the wrapper and the wheel are two different
   things), and then runs `images/host/smoke/verify.sh` — the one script the README
   also runs against a published image — which configures, builds and `ctest`s a
-  project linking nothing but the standard library and threads, proves CMake took
-  the ccache launcher and wrote the compile database, runs `clang-tidy` through it,
-  and asserts that no test framework or third-party library is back in the image
-  (why there is none: the comment at host's apt layer). Beside it sits
+  project linking nothing but the standard library, proves CMake took the ccache
+  launcher and wrote the compile database, runs `clang-tidy` through it, and
+  asserts that GoogleTest, GMock and paho, which the image dropped, are not back
+  (why: the comment at host's apt layer). Beside it sits
   `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
   the use-after-scope GCC's ASan cannot see, so the layer requires that report —
   symbolized — rather than a version print, which would pass with the runtime or

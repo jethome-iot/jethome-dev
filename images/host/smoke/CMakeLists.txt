@@ -3,8 +3,8 @@
 #
 # It is not a test suite for anything a user writes - it exists so the last layer
 # of the Dockerfile can prove, rather than assume, that an ordinary CMake project
-# configures, builds with Ninja through the ccache launcher, links the standard
-# library and threads, and runs under ctest - and that the build leaves behind the
+# configures, builds with Ninja through the ccache launcher, finds Threads, links,
+# starts a thread and runs under ctest - and that the build leaves behind the
 # compile database clang-tidy is then run against. It links nothing else because
 # the image carries nothing else to link (the Dockerfile's apt layer says why).
 #

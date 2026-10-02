@@ -388,28 +388,20 @@ WORKDIR /workspace
 # still leaves a green build until something asks it for its version, and a
 # toolchain that answers `--version` can still fail on the first real file.
 #
-# smoke/ holds a two-file CMake project and verify.sh, which configures it, builds
-# it with Ninja, runs it under ctest and then runs clang-tidy through the compile
-# database that build wrote. It covers what a version print cannot: that an
-# ordinary `cmake -S . -B build` compiles, links the standard library and threads,
-# and runs; that CMake took the ccache launcher and wrote the database; and that
-# none of the libraries the apt layer explains the absence of has come back. Its
-# build tree is deleted; the sources stay at /opt/smoke-src, so the README runs the
-# same script against a published image. Beside it sits use-after-scope.cpp, which
-# is not part of that project and must *fail* - see the clang block at the end.
+# smoke/verify.sh covers what a version print cannot, with a small CMake project
+# beside it - what it checks and why is in its own comments, kept there because the
+# README runs the same script against a published image. Its build tree is
+# deleted; the sources stay at /opt/smoke-src. Beside them sits
+# use-after-scope.cpp, which is not part of that project and must *fail* - see the
+# clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
 # clang-tidy" is precisely the state this image exists to rule out. The docker
 # client and node assert for a different reason: each version is a label a
 # consumer tests its own tree against, so a binary disagreeing with its label has
-# to fail here rather than downstream. clang-tidy is
-# then *run*, over smoke.cpp and the compile database the build just wrote,
-# because a wheel whose binary cannot find its own resource directory answers
-# `--version` perfectly and then fails on the first real file - the same "some
-# clang-tidy", one step further along. The ccache assertion is of the same kind:
-# it checks that CMake took the launcher, since a cache nothing is wired to is
-# indistinguishable from a working one until someone measures a rebuild.
+# to fail here rather than downstream. verify.sh then *runs* clang-tidy, the same
+# "some clang-tidy" one step further along.
 #
 # The freeze goes to a file rather than a pipe, so the image carries its own
 # snapshot and nothing can swallow a failure - and jsonschema is asserted from it

@@ -571,13 +571,13 @@ pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
 must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
 URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
 configures, builds and `ctest`s the small CMake project beside it — proving that
-an ordinary CMake project builds with Ninja, links the standard library and
-threads and runs, that CMake took the ccache launcher, and that it wrote the
-compile database. It then runs `clang-tidy` over that project's own source
+an ordinary CMake project builds with Ninja, finds Threads, links and runs a
+thread, that CMake took the ccache launcher, and that it wrote the compile
+database. It then runs `clang-tidy` over that project's own source
 against the compile database the build wrote, so an analyzer that answers
 `--version` but cannot find its resource directory fails the image instead of the
-user's first run, and checks that no test framework or third-party library has
-come back into the image. Last, it builds
+user's first run, and checks that none of the libraries this image dropped —
+GoogleTest, GMock, paho — has come back. Last, it builds
 [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
 requires a symbolized `stack-use-after-scope` report — the one assertion that
 catches a missing compiler, a missing or mismatched runtime, and a missing
