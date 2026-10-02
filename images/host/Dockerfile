@@ -36,10 +36,13 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # ── apt: the build, the host tests, and the tools the project's scripts call ──
 #
-# GTest and GMock arrive as libraries and headers already built (Ubuntu ships
-# .a archives plus the CMake package config), so a project consuming this image
-# can `find_package(GTest)` and link - the verification layer at the bottom
-# proves it rather than assuming it.
+# A toolchain and nothing a build links beyond the standard library: no test
+# framework, no third-party C/C++ library. A project consuming this image fetches
+# those at its own pins, and a system copy here would be a trap rather than a
+# convenience - a stray `find_package` or `find_library` in that project would pick
+# it up silently instead of failing, which is how a consumer's GoogleTest once
+# drifted from its pin. GTest, GMock and paho.mqtt.c lived here until their one
+# consumer stopped taking them from the machine.
 #
 # GCC's sanitizer runtimes are not listed: libasan, libubsan and libtsan come with
 # g++ itself (/usr/lib/gcc/<triple>/13/), so `g++ -fsanitize=address` works out of
@@ -56,8 +59,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ninja-build \
       ccache \
       pkg-config \
-      libgtest-dev \
-      libgmock-dev \
       git \
       ca-certificates \
       curl \
@@ -135,37 +136,6 @@ RUN python3 -m venv "${VIRTUAL_ENV}" \
       "clang-format==${CLANG_FORMAT_VERSION}" \
       "clang-tidy==${CLANG_TIDY_VERSION}" \
     && pip check
-
-# ── paho.mqtt.c, from the commit the consuming project pins ───────────────────
-#
-# The COMMIT, not the tag: a tag is a mutable ref, while the SHA is what makes the
-# checkout reproducible - the same rule this repository already applies to the
-# ESP-Matter pin. Git verifies the object against its hash, so no separate content
-# check is needed.
-#
-# The distro package is not used, and the CMake flags are the ones the project's
-# own CI action used: SSL off, because the framework links paho-mqtt3a alone and
-# has no TLS backend on POSIX yet, and HIGH_PERFORMANCE on, which is paho's
-# documented production mode. Building it any other way would make a test that
-# passes here mean nothing about CI.
-ARG PAHO_VERSION=v1.3.16
-ARG PAHO_REF=4a939ddb01eea581a32fd6f0adcfee51b91d2601
-ARG PAHO_REPO=https://github.com/eclipse-paho/paho.mqtt.c.git
-RUN set -eu; \
-    src="$(mktemp -d)"; \
-    git -C "$src" init -q; \
-    git -C "$src" fetch -q --depth 1 "${PAHO_REPO}" "${PAHO_REF}"; \
-    git -C "$src" checkout -q FETCH_HEAD; \
-    cmake -S "$src" -B "$src/build" -G Ninja \
-      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-      -DPAHO_BUILD_SHARED=TRUE \
-      -DPAHO_WITH_SSL=FALSE \
-      -DPAHO_HIGH_PERFORMANCE=TRUE \
-      -DPAHO_ENABLE_TESTING=FALSE; \
-    cmake --build "$src/build"; \
-    cmake --install "$src/build"; \
-    ldconfig; \
-    rm -rf "$src"
 
 # ── lychee, the offline markdown link checker ─────────────────────────────────
 #
@@ -396,11 +366,9 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, GTest/GMock, paho.mqtt.c, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI, Node.js with corepack" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI, Node.js with corepack" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
-      dev.jethome.paho.version="${PAHO_VERSION}" \
-      dev.jethome.paho.ref="${PAHO_REF}" \
       dev.jethome.clang.version="${CLANG_VERSION}" \
       dev.jethome.clang-tidy.version="${CLANG_TIDY_VERSION}" \
       dev.jethome.clang-format.version="${CLANG_FORMAT_VERSION}" \
@@ -418,17 +386,17 @@ WORKDIR /workspace
 #
 # Every line below is an assertion, not a listing. A tool that never installed
 # still leaves a green build until something asks it for its version, and a
-# library that installed as a stub still links until something calls it.
+# toolchain that answers `--version` can still fail on the first real file.
 #
 # smoke/ holds a two-file CMake project that the layer configures, builds with Ninja
-# and runs under ctest. It covers what a version print cannot: that
-# `find_package(GTest)` resolves, that GMock links, that libpaho-mqtt3a is found
-# by name, and that the paho actually loaded reports the version this Dockerfile
-# pins - the pin and the artifact disagreeing fails the build here rather than
-# shipping an image that contradicts its own label. Its build tree is deleted; the
-# sources stay at /opt/smoke-src, so the same check can be re-run against a
-# published image (the README says how). Beside it sits use-after-scope.cpp, which
-# is not part of that project and must *fail* - see the clang block at the end.
+# and runs under ctest. It covers what a version print cannot: that an ordinary
+# `cmake -S . -B build` compiles, links the standard library and threads, and runs -
+# and, through the two assertions after the configure, that CMake took the ccache
+# launcher and wrote the compile database clang-tidy is run against below. Its
+# build tree is deleted; the sources stay at /opt/smoke-src, so the same check can
+# be re-run against a published image (the README says how). Beside it sits
+# use-after-scope.cpp, which is not part of that project and must *fail* - see the
+# clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
@@ -553,9 +521,14 @@ RUN set -eu; \
     grep -qx "clang-tidy==${CLANG_TIDY_VERSION}" /opt/qa-packages.txt; \
     grep -qx "clang-format==${CLANG_FORMAT_VERSION}" /opt/qa-packages.txt; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
-    cmake -S /opt/smoke-src -B /tmp/smoke-build -G Ninja \
-      -DPAHO_EXPECTED_VERSION="${PAHO_VERSION}"; \
+    cmake -S /opt/smoke-src -B /tmp/smoke-build -G Ninja; \
     grep -qx "CMAKE_CXX_COMPILER_LAUNCHER:STRING=ccache" /tmp/smoke-build/CMakeCache.txt; \
+# Written because CMAKE_EXPORT_COMPILE_COMMANDS is set above, and asserted because
+# clang-tidy given a `-p` with no database in it falls back to compiling with no
+# flags at all - which, on this file, still passes.
+    [ -s /tmp/smoke-build/compile_commands.json ] \
+      || { echo "cmake wrote no compile database - clang-tidy -p has nothing to read" >&2; \
+           exit 1; }; \
     cmake --build /tmp/smoke-build; \
     ctest --test-dir /tmp/smoke-build --output-on-failure; \
 # Real analysis over a real file: `--checks=-*` alone exits 0 whatever happens,

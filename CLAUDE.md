@@ -202,12 +202,11 @@ before changing anything here.
   default is the sole source of truth and is bumped there — today
   `ESP32_PLATFORM_VERSION`, `NATIVE_PLATFORM_VERSION` and `UNITY_VERSION` in
   `images/platformio/Dockerfile`, and every tool pin in `images/host/Dockerfile`
-  (the QA versions, `PAHO_VERSION`/`PAHO_REF`, `LYCHEE_VERSION`,
-  `DOCKER_VERSION` and `NODE_VERSION` with their per-architecture checksums, and
-  `CLANG_VERSION` — a major rather than a pin, naming which `clang-<N>` the base
-  archive is asked for, so it moves with `UBUNTU_BASE_TAG`). host passes one arg
-  and one only, `UBUNTU_BASE_TAG`, because that is the single value its tag can
-  name.
+  (the QA versions, `LYCHEE_VERSION`, `DOCKER_VERSION` and `NODE_VERSION` with
+  their per-architecture checksums, and `CLANG_VERSION` — a major rather than a
+  pin, naming which `clang-<N>` the base archive is asked for, so it moves with
+  `UBUNTU_BASE_TAG`). host passes one arg and one only, `UBUNTU_BASE_TAG`, because
+  that is the single value its tag can name.
 - Every matrix carries `fail-fast: false`, so one platform leg failing does not
   cancel the other and truncate its log.
 - `concurrency` cancels superseded **pull-request** runs and groups nothing else:
@@ -342,9 +341,12 @@ before changing anything here.
   promises: its layer asserts that `clang-format` and `clang-tidy` *report* the
   numbers pip was told to install (the wrapper and the wheel are two different
   things), and then configures, builds and `ctest`s `images/host/smoke/` — a
-  project that proves `find_package(GTest)` resolves, that GMock links, and that the
-  paho which loads reports the version pinned beside its commit. Beside it sits
-  `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
+  project linking nothing but the standard library and threads, there to prove that
+  CMake took the ccache launcher and wrote the compile database, and to give
+  `clang-tidy` a real file to analyse through it. host carries no test framework and
+  no third-party library: its consumer fetches those at its own pins, and a system
+  copy would be what a stray `find_package` resolves to instead of failing. Beside
+  it sits `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
   the use-after-scope GCC's ASan cannot see, so the layer requires that report —
   symbolized — rather than a version print, which would pass with the runtime or
   the symbolizer missing, and asserts that clang selected the GCC installation
