@@ -41,19 +41,23 @@ grep -q "^Selected GCC installation: .*/${gcc_major}\$" "${work}/clang-gcc.txt" 
   || { cat "${work}/clang-gcc.txt"; \
        echo "clang++-${clang} did not select GCC ${gcc_major}'s libstdc++" >&2; \
        exit 1; }
+# Captured on a line of its own: inside `case` the command's status is lost, and
+# a cc that cannot run at all would print nothing, match nothing and pass.
 for default_compiler in cc c++; do
-  case "$("${default_compiler}" --version)" in
+  reported="$("${default_compiler}" --version)" \
+    || { echo "${default_compiler} does not run - it must stay GCC" >&2; exit 1; }
+  case "${reported}" in
     *clang*) echo "${default_compiler} resolves to clang - it must stay GCC" >&2; exit 1 ;;
   esac
 done
 
 "clang++-${clang}" -fsanitize=address -g "${src}/use-after-scope.cpp" \
   -o "${work}/use-after-scope"
-if "${work}/use-after-scope" > "${work}/use-after-scope.log" 2>&1; then
-  cat "${work}/use-after-scope.log"
-  echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1
-fi
+probe_status=0
+"${work}/use-after-scope" > "${work}/use-after-scope.log" 2>&1 || probe_status=$?
 cat "${work}/use-after-scope.log"
+[ "${probe_status}" -ne 0 ] \
+  || { echo "clang's ASan ran the use-after-scope probe clean" >&2; exit 1; }
 grep -q 'ERROR: AddressSanitizer: stack-use-after-scope' "${work}/use-after-scope.log" \
   || { echo "clang's ASan failed the probe without reporting stack-use-after-scope" >&2; \
        exit 1; }
