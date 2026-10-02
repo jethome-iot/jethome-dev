@@ -501,7 +501,8 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace -e CLANG="$CLANG" "$IM
 
 The compiler is named by its major, read from the image's own label, because
 clang is present only under its versioned name — `cc` and `c++` are GCC. The
-image's build proves the pairing works: its last layer compiles
+image's build proves the pairing works: its last layer runs
+[`smoke/verify-clang.sh`](./smoke/verify-clang.sh), which compiles
 [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
 fails unless the report says `stack-use-after-scope` and names the source line.
 
@@ -577,17 +578,19 @@ database. It then runs `clang-tidy` over that project's own source
 against the compile database the build wrote, so an analyzer that answers
 `--version` but cannot find its resource directory fails the image instead of the
 user's first run, and checks that none of the libraries this image dropped —
-GoogleTest, GMock, paho — has come back. Last, it builds
-[`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
-requires a symbolized `stack-use-after-scope` report — the one assertion that
-catches a missing compiler, a missing or mismatched runtime, and a missing
+GoogleTest, GMock, paho — has come back. Last, the layer runs
+[`smoke/verify-clang.sh`](./smoke/verify-clang.sh) with the clang major. That
+builds [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's
+ASan and requires a symbolized `stack-use-after-scope` report — the one assertion
+that catches a missing compiler, a missing or mismatched runtime, and a missing
 symbolizer alike — after checking that clang takes its libstdc++ from the same GCC
-installation `gcc` is, and that `cc` and `c++` are still GCC. It ends by requiring
-`/home/build` and `/tmp` to be as empty as they started, since anything a root-run
-build caches there would be unwritable for the uid you run the image as.
+installation `gcc` is, and that `cc` and `c++` are still GCC. The layer ends by
+requiring `/home/build` and `/tmp` to be as empty as they started, since anything
+a root-run build caches there would be unwritable for the uid you run the image
+as.
 
-The sources and the script stay in the image at `/opt/smoke-src`, so the same
-check runs against a published image:
+The sources and both scripts stay in the image at `/opt/smoke-src`, so the same
+checks run against a published image:
 
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
@@ -598,14 +601,8 @@ docker pull "$IMAGE"
 CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
 docker run --rm "$IMAGE" sh /opt/smoke-src/verify.sh /tmp/smoke
-
-# clang's ASan: the probe must fail, with this report, and the report must name the
-# source file - raw addresses there mean the symbolizer is missing
-docker run --rm -e CLANG="$CLANG" "$IMAGE" bash -c '
-  clang++-$CLANG -fsanitize=address -g /opt/smoke-src/use-after-scope.cpp -o /tmp/uas &&
-  { ! /tmp/uas > /tmp/uas.log 2>&1; } &&
-  grep "ERROR: AddressSanitizer: stack-use-after-scope" /tmp/uas.log &&
-  grep -q "use-after-scope\.cpp:" /tmp/uas.log'
+# clang's ASan must catch the probe's use-after-scope, with a symbolized report
+docker run --rm "$IMAGE" sh /opt/smoke-src/verify-clang.sh "$CLANG"
 ```
 
 ### Multi-Platform Support

@@ -1,6 +1,6 @@
-// Not part of the CMake project in this directory: the Dockerfile's verification
-// layer compiles it on its own with clang++-<version> -fsanitize=address, runs it,
-// and requires the report to say `stack-use-after-scope`.
+// Not part of the CMake project in this directory: verify-clang.sh beside it
+// compiles it on its own with clang++-<version> -fsanitize=address, runs it, and
+// requires the report to say `stack-use-after-scope`.
 //
 // It is the bug clang's ASan exists in this image to catch. A holder's destructor
 // calls a callback registered after the holder was declared, and the local that

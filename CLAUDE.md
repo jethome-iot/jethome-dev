@@ -346,13 +346,15 @@ before changing anything here.
   launcher and wrote the compile database, runs `clang-tidy` through it, and
   asserts that GoogleTest, GMock and paho, which the image dropped, are not back
   (why: the comment at host's apt layer). Beside it sits
-  `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
-  the use-after-scope GCC's ASan cannot see, so the layer requires that report —
-  symbolized — rather than a version print, which would pass with the runtime or
-  the symbolizer missing, and asserts that clang selected the GCC installation
-  `gcc` is (so both compile against one libstdc++) and that `cc`/`c++` stay GCC. The
+  `images/host/smoke/verify-clang.sh`, which the layer and the README run the same
+  way and with the clang major as its argument. It builds `use-after-scope.cpp`
+  outside CMake with clang's ASan: clang is there for the use-after-scope GCC's
+  ASan cannot see, so the script requires that report — symbolized — rather than a
+  version print, which would pass with the runtime or the symbolizer missing, and
+  asserts that clang selected the GCC installation `gcc` is (so both compile
+  against one libstdc++) and that `cc`/`c++` stay GCC. The
   symbolizer is found at `/usr/lib/llvm-<N>/bin/`, not through `PATH`, so hiding it
-  from `PATH` proves nothing; removing it fails the layer. Its own freeze
+  from `PATH` proves nothing; removing it fails the layer. host's own freeze
   goes to `/opt/qa-packages.txt`.
 - **A version an image installs by name is a version this repository chose**, and
   `./scripts/check-pins.sh` enforces that per package manager, because the price of
