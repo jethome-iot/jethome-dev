@@ -340,13 +340,13 @@ before changing anything here.
   same rule one step further, because a version print cannot reach what it
   promises: its layer asserts that `clang-format` and `clang-tidy` *report* the
   numbers pip was told to install (the wrapper and the wheel are two different
-  things), and then configures, builds and `ctest`s `images/host/smoke/` — a
-  project linking nothing but the standard library and threads, there to prove that
-  CMake took the ccache launcher and wrote the compile database, and to give
-  `clang-tidy` a real file to analyse through it. host carries no test framework and
-  no third-party library: its consumer fetches those at its own pins, and a system
-  copy would be what a stray `find_package` resolves to instead of failing. Beside
-  it sits `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
+  things), and then runs `images/host/smoke/verify.sh` — the one script the README
+  also runs against a published image — which configures, builds and `ctest`s a
+  project linking nothing but the standard library and threads, proves CMake took
+  the ccache launcher and wrote the compile database, runs `clang-tidy` through it,
+  and asserts that no test framework or third-party library is back in the image
+  (why there is none: the comment at host's apt layer). Beside it sits
+  `use-after-scope.cpp`, built outside CMake with clang's ASan: clang is there for
   the use-after-scope GCC's ASan cannot see, so the layer requires that report —
   symbolized — rather than a version print, which would pass with the runtime or
   the symbolizer missing, and asserts that clang selected the GCC installation

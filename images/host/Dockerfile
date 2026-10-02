@@ -388,15 +388,15 @@ WORKDIR /workspace
 # still leaves a green build until something asks it for its version, and a
 # toolchain that answers `--version` can still fail on the first real file.
 #
-# smoke/ holds a two-file CMake project that the layer configures, builds with Ninja
-# and runs under ctest. It covers what a version print cannot: that an ordinary
-# `cmake -S . -B build` compiles, links the standard library and threads, and runs -
-# and, through the two assertions after the configure, that CMake took the ccache
-# launcher and wrote the compile database clang-tidy is run against below. Its
-# build tree is deleted; the sources stay at /opt/smoke-src, so the same check can
-# be re-run against a published image (the README says how). Beside it sits
-# use-after-scope.cpp, which is not part of that project and must *fail* - see the
-# clang block at the end.
+# smoke/ holds a two-file CMake project and verify.sh, which configures it, builds
+# it with Ninja, runs it under ctest and then runs clang-tidy through the compile
+# database that build wrote. It covers what a version print cannot: that an
+# ordinary `cmake -S . -B build` compiles, links the standard library and threads,
+# and runs; that CMake took the ccache launcher and wrote the database; and that
+# none of the libraries the apt layer explains the absence of has come back. Its
+# build tree is deleted; the sources stay at /opt/smoke-src, so the README runs the
+# same script against a published image. Beside it sits use-after-scope.cpp, which
+# is not part of that project and must *fail* - see the clang block at the end.
 #
 # The two clang tools assert their number instead of printing it: what pip
 # installed and what the wrapper executes are two different things, and "some
@@ -521,20 +521,7 @@ RUN set -eu; \
     grep -qx "clang-tidy==${CLANG_TIDY_VERSION}" /opt/qa-packages.txt; \
     grep -qx "clang-format==${CLANG_FORMAT_VERSION}" /opt/qa-packages.txt; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
-    cmake -S /opt/smoke-src -B /tmp/smoke-build -G Ninja; \
-    grep -qx "CMAKE_CXX_COMPILER_LAUNCHER:STRING=ccache" /tmp/smoke-build/CMakeCache.txt; \
-# Written because CMAKE_EXPORT_COMPILE_COMMANDS is set above, and asserted because
-# clang-tidy given a `-p` with no database in it falls back to compiling with no
-# flags at all - which, on this file, still passes.
-    [ -s /tmp/smoke-build/compile_commands.json ] \
-      || { echo "cmake wrote no compile database - clang-tidy -p has nothing to read" >&2; \
-           exit 1; }; \
-    cmake --build /tmp/smoke-build; \
-    ctest --test-dir /tmp/smoke-build --output-on-failure; \
-# Real analysis over a real file: `--checks=-*` alone exits 0 whatever happens,
-# so the check set is what makes a compilation error - a missing resource
-# directory, an unusable system header - fail this layer.
-    clang-tidy --quiet "--checks=-*,bugprone-*" -p /tmp/smoke-build /opt/smoke-src/smoke.cpp; \
+    sh /opt/smoke-src/verify.sh /tmp/smoke-build; \
     rm -rf /tmp/smoke-build; \
 # clang is asserted by what it catches, not by the fact that it answers: the
 # property this image promises is that clang's ASan sees the use-after-scope GCC's

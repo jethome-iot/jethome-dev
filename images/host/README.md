@@ -569,13 +569,15 @@ lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `jsonschema` to appear at its
 pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
 must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
-URL that file re-enables — then configures, builds and `ctest`s the small CMake project in
-[`smoke/`](./smoke/) — proving that an ordinary CMake project builds with Ninja,
-links the standard library and threads and runs, that CMake took the ccache
-launcher, and that it wrote the compile database. It then runs `clang-tidy` over that
-project's own source against the compile database the build wrote, so an analyzer
-that answers `--version` but cannot find its resource directory fails the image
-instead of the user's first run. Last, it builds
+URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
+configures, builds and `ctest`s the small CMake project beside it — proving that
+an ordinary CMake project builds with Ninja, links the standard library and
+threads and runs, that CMake took the ccache launcher, and that it wrote the
+compile database. It then runs `clang-tidy` over that project's own source
+against the compile database the build wrote, so an analyzer that answers
+`--version` but cannot find its resource directory fails the image instead of the
+user's first run, and checks that no test framework or third-party library has
+come back into the image. Last, it builds
 [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
 requires a symbolized `stack-use-after-scope` report — the one assertion that
 catches a missing compiler, a missing or mismatched runtime, and a missing
@@ -584,8 +586,8 @@ installation `gcc` is, and that `cc` and `c++` are still GCC. It ends by requiri
 `/home/build` and `/tmp` to be as empty as they started, since anything a root-run
 build caches there would be unwritable for the uid you run the image as.
 
-The sources stay in the image at `/opt/smoke-src`, so the same check runs against
-a published image:
+The sources and the script stay in the image at `/opt/smoke-src`, so the same
+check runs against a published image:
 
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
@@ -595,11 +597,7 @@ IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
 docker pull "$IMAGE"
 CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
-docker run --rm "$IMAGE" bash -c '
-  cmake -S /opt/smoke-src -B /tmp/smoke -G Ninja >/dev/null &&
-  cmake --build /tmp/smoke >/dev/null &&
-  ctest --test-dir /tmp/smoke --output-on-failure &&
-  clang-tidy --quiet "--checks=-*,bugprone-*" -p /tmp/smoke /opt/smoke-src/smoke.cpp'
+docker run --rm "$IMAGE" sh /opt/smoke-src/verify.sh /tmp/smoke
 
 # clang's ASan: the probe must fail, with this report, and the report must name the
 # source file - raw addresses there mean the symbolizer is missing

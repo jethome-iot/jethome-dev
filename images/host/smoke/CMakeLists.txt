@@ -1,15 +1,12 @@
-# Build-time smoke project for the image's verification layer.
+# Build-time smoke project for the image's verification layer, built and checked
+# by verify.sh beside it.
 #
 # It is not a test suite for anything a user writes - it exists so the last layer
 # of the Dockerfile can prove, rather than assume, that an ordinary CMake project
 # configures, builds with Ninja through the ccache launcher, links the standard
 # library and threads, and runs under ctest - and that the build leaves behind the
-# compile database clang-tidy is then run against.
-#
-# It links nothing but the standard library on purpose. The image carries no test
-# framework and no third-party C/C++ library: a project consuming it fetches its
-# own at a pin, and a system copy here is what a stray `find_package` would pick up
-# instead of failing.
+# compile database clang-tidy is then run against. It links nothing else because
+# the image carries nothing else to link (the Dockerfile's apt layer says why).
 #
 # It is compiled inside the image and its build tree is deleted afterwards. The
 # sources are not: they stay at /opt/smoke-src, so the same check can be re-run
