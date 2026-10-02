@@ -43,7 +43,8 @@ clang-tidy --quiet "--checks=-*,bugprone-*" -p "${build}" "${src}/smoke.cpp"
 # would be a list of exceptions. One walk, since a clean image matches nothing and
 # every pattern would otherwise walk the whole tree.
 found="$(find /usr /opt -xdev \( -name 'libgtest*' -o -name 'libgmock*' \
-           -o -name 'GTestConfig.cmake' -o -name 'GMockConfig.cmake' -o -name 'gtest.h' \
+           -o -name 'GTestConfig.cmake' -o -name 'GMockConfig.cmake' \
+           -o -name 'gtest.h' -o -name 'gmock.h' \
            -o -name 'libpaho-mqtt3*' -o -name 'MQTTAsync.h' \) -print -quit 2>/dev/null || true)"
 [ -z "${found}" ] \
   || { echo "${found} is in this image - GoogleTest, GMock and paho were dropped from it" >&2; \
