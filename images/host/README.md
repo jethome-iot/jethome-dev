@@ -1,10 +1,11 @@
 # Host Development Image
 
 Docker image for building, testing and QA-checking C++ projects **on the machine
-that runs them** — no cross-compiler, no target hardware. Ubuntu with GCC, CMake,
-Ninja, GTest/GMock and a from-source [Eclipse Paho MQTT C](https://github.com/eclipse-paho/paho.mqtt.c)
-client, plus the linters and analyzers a CI pipeline runs beside a build — and
-Node.js with corepack, for a web frontend that lives in the same tree.
+that runs them** — no cross-compiler, no target hardware. Ubuntu with GCC, clang,
+CMake and Ninja, plus the linters and analyzers a CI pipeline runs beside a build —
+and Node.js with corepack, for a web frontend that lives in the same tree. It
+carries a toolchain and nothing to link beyond the standard library: a project
+brings its test framework and its third-party code at its own pins.
 
 ## Overview
 
@@ -15,12 +16,12 @@ stays silent on the other. This image is the Linux answer, reproducible on any
 machine — a developer gets the CI verdict locally, on their own architecture,
 without waiting for a pull-request run to tell them.
 
-Everything it installs by name is pinned: the Python tools with `==`, the Paho
-client to a commit rather than a tag, and the Node.js, `lychee` and `docker`
-releases to a per-architecture SHA-256. pnpm is left out by design — the project
-pins it, not the image (see [Frontend](#frontend)). The versions are recorded as
-image labels, so a consumer can assert the image agrees with its own pins instead
-of assuming it (see [Verifying the pins](#verifying-the-pins)).
+Everything it installs by name is pinned: the Python tools with `==`, and the
+Node.js, `lychee` and `docker` releases to a per-architecture SHA-256. pnpm is
+left out by design — the project pins it, not the image (see
+[Frontend](#frontend)). The versions are recorded as image labels, so a consumer
+can assert the image agrees with its own pins instead of assuming it (see
+[Verifying the pins](#verifying-the-pins)).
 
 ## What's Inside
 
@@ -41,12 +42,6 @@ of assuming it (see [Verifying the pins](#verifying-the-pins)).
 - cmake, ninja-build, pkg-config
 - ccache, wired into CMake builds through `CMAKE_{C,CXX}_COMPILER_LAUNCHER`, with
   its cache at `/opt/ccache`
-
-**Libraries:**
-- GTest and GMock as headers plus static archives and a CMake package config, so
-  `find_package(GTest REQUIRED)` resolves
-- paho.mqtt.c, built from a pinned commit and installed into `/usr/local`
-  (`-DPAHO_WITH_SSL=FALSE -DPAHO_HIGH_PERFORMANCE=TRUE`, shared library)
 
 **QA Tools:**
 - clang-format, clang-tidy — same LLVM line, both pinned
@@ -301,7 +296,6 @@ docker inspect --format '{{json .Config.Labels}}' \
 ```
 
 ```text
-dev.jethome.paho.version, dev.jethome.paho.ref        # tag and the exact commit
 dev.jethome.clang.version                             # the compiler's major only
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
@@ -353,9 +347,11 @@ labels do not name.
   clang build differs from a GCC build in the compiler alone.
 - **No cross-compilers and no target SDKs.** Firmware targets are the job of the
   other images in [the repository index](../../README.md#current-images).
-- **No TLS in the MQTT client.** Paho is built with `PAHO_WITH_SSL=FALSE`, so
-  `paho-mqtt3a` and `paho-mqtt3c` are present and `paho-mqtt3as`/`paho-mqtt3cs`
-  are not.
+- **No test framework and no third-party C/C++ libraries.** GoogleTest, GMock
+  and an MQTT client are not here: a project fetches them at the versions it pins
+  (CMake's `FetchContent`, CPM and the like), so its build is the same on any
+  machine. A system copy would not be a fallback but a trap — a `find_package` or
+  `find_library` left in a project would quietly resolve to it instead of failing.
 - **The distribution's Python**, not a specific minor. If a project's own CI pins
   an interpreter version, its `pytest` legs run here on a different one; linters
   are unaffected where the target version is set in configuration
@@ -541,7 +537,6 @@ Or from the repository root: `./scripts/build.sh host`.
 docker build \
   --build-arg UBUNTU_BASE_TAG=<tag> \
   --build-arg CLANG_TIDY_VERSION=<version> \
-  --build-arg PAHO_REF=<commit> \
   -t jethome-dev-host:local .
 ```
 
@@ -555,9 +550,6 @@ Available build arguments (defaults: see the Dockerfile):
 - `CLANG_VERSION` — the clang major taken from the Ubuntu archive
   (`clang-<version>`, `libclang-rt-<version>-dev`, `llvm-<version>`). It has to be a
   major that base ships, so it moves together with `UBUNTU_BASE_TAG`
-- `PAHO_VERSION`, `PAHO_REF`, `PAHO_REPO` — the MQTT client's tag, exact commit and
-  origin. `PAHO_VERSION` is what the built library is checked against, so it and
-  `PAHO_REF` are bumped together
 - `LYCHEE_VERSION`, `LYCHEE_SHA256_AMD64`, `LYCHEE_SHA256_ARM64` — the link
   checker's release and its per-architecture checksums; a version bump edits all
   three
@@ -577,13 +569,15 @@ lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `jsonschema` to appear at its
 pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
 must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
-URL that file re-enables — then configures, builds and `ctest`s the small CMake project in
-[`smoke/`](./smoke/) — proving that `find_package(GTest)` resolves, that GMock
-links, that CMake took the ccache launcher, and that the Paho library loaded
-reports the pinned version. It then runs `clang-tidy` over that
-project's own source against the compile database the build wrote, so an analyzer
-that answers `--version` but cannot find its resource directory fails the image
-instead of the user's first run. Last, it builds
+URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
+configures, builds and `ctest`s the small CMake project beside it — proving that
+an ordinary CMake project builds with Ninja, finds Threads, links and runs a
+thread, that CMake took the ccache launcher, and that it wrote the compile
+database. It then runs `clang-tidy` over that project's own source
+against the compile database the build wrote, so an analyzer that answers
+`--version` but cannot find its resource directory fails the image instead of the
+user's first run, and checks that none of the libraries this image dropped —
+GoogleTest, GMock, paho — has come back. Last, it builds
 [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's ASan and
 requires a symbolized `stack-use-after-scope` report — the one assertion that
 catches a missing compiler, a missing or mismatched runtime, and a missing
@@ -592,22 +586,18 @@ installation `gcc` is, and that `cc` and `c++` are still GCC. It ends by requiri
 `/home/build` and `/tmp` to be as empty as they started, since anything a root-run
 build caches there would be unwritable for the uid you run the image as.
 
-The sources stay in the image at `/opt/smoke-src`, so the same check runs against
-a published image:
+The sources and the script stay in the image at `/opt/smoke-src`, so the same
+check runs against a published image:
 
 ```bash
 IMAGE=ghcr.io/jethome-iot/jethome-dev-host:latest
-# The version to check against comes from the image's own label, so this does not
-# repeat a number that lives in the Dockerfile. inspect reads the local copy
-# only, hence the pull
+# The clang major comes from the image's own label, so this does not repeat a
+# number that lives in the Dockerfile. inspect reads the local copy only, hence
+# the pull
 docker pull "$IMAGE"
-PAHO=$(docker inspect --format '{{index .Config.Labels "dev.jethome.paho.version"}}' "$IMAGE")
 CLANG=$(docker inspect --format '{{index .Config.Labels "dev.jethome.clang.version"}}' "$IMAGE")
 
-docker run --rm -e PAHO="$PAHO" "$IMAGE" bash -c '
-  cmake -S /opt/smoke-src -B /tmp/smoke -G Ninja -DPAHO_EXPECTED_VERSION="$PAHO" >/dev/null &&
-  cmake --build /tmp/smoke >/dev/null &&
-  ctest --test-dir /tmp/smoke --output-on-failure'
+docker run --rm "$IMAGE" sh /opt/smoke-src/verify.sh /tmp/smoke
 
 # clang's ASan: the probe must fail, with this report, and the report must name the
 # source file - raw addresses there mean the symbolizer is missing
@@ -626,8 +616,6 @@ Silicon developer gets a native image rather than an emulated one.
 
 ## Additional Resources
 
-- [GoogleTest](https://google.github.io/googletest/)
-- [Eclipse Paho MQTT C](https://eclipse.dev/paho/index.php?page=clients/c/index.php)
 - [clang-tidy](https://clang.llvm.org/extra/clang-tidy/)
 - [lychee](https://lychee.cli.rs/)
 - [corepack](https://github.com/nodejs/corepack)
