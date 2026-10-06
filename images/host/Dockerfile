@@ -120,9 +120,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # from its own tree, and nothing here can read another repository at build time.
 # The LABELs at the bottom are what let the consumer verify the two agree instead
 # of assuming it.
+#
+# pytest-xdist is pytest's plugin for running one suite in several worker
+# processes. It sits beside pytest because the consumer's tooling suite is long
+# enough that a single process on a shared runner can run out of its job's time
+# limit (jethome-iot/jetcontrol-cpp#1489).
 ARG RUFF_VERSION=0.16.5
 ARG MYPY_VERSION=2.3.1
 ARG PYTEST_VERSION=9.1.1
+ARG PYTEST_XDIST_VERSION=3.8.0
 ARG JSONSCHEMA_VERSION=4.26.0
 ARG CLANG_FORMAT_VERSION=23.1.0
 ARG CLANG_TIDY_VERSION=22.1.8
@@ -133,6 +139,7 @@ RUN python3 -m venv "${VIRTUAL_ENV}" \
       "ruff==${RUFF_VERSION}" \
       "mypy==${MYPY_VERSION}" \
       "pytest==${PYTEST_VERSION}" \
+      "pytest-xdist==${PYTEST_XDIST_VERSION}" \
       "jsonschema==${JSONSCHEMA_VERSION}" \
       "clang-format==${CLANG_FORMAT_VERSION}" \
       "clang-tidy==${CLANG_TIDY_VERSION}" \
@@ -367,7 +374,7 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI, Node.js with corepack" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest with pytest-xdist, lychee, docker CLI, Node.js with corepack" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.clang.version="${CLANG_VERSION}" \
@@ -376,6 +383,7 @@ LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-de
       dev.jethome.ruff.version="${RUFF_VERSION}" \
       dev.jethome.mypy.version="${MYPY_VERSION}" \
       dev.jethome.pytest.version="${PYTEST_VERSION}" \
+      dev.jethome.pytest-xdist.version="${PYTEST_XDIST_VERSION}" \
       dev.jethome.jsonschema.version="${JSONSCHEMA_VERSION}" \
       dev.jethome.lychee.version="${LYCHEE_VERSION}" \
       dev.jethome.docker-cli.version="${DOCKER_VERSION}" \
@@ -405,8 +413,8 @@ WORKDIR /workspace
 # "some clang-tidy" one step further along.
 #
 # The freeze goes to a file rather than a pipe, so the image carries its own
-# snapshot and nothing can swallow a failure - and jsonschema is asserted from it
-# because it is the one pin no tool here prints a version for.
+# snapshot and nothing can swallow a failure - and jsonschema and pytest-xdist are
+# asserted from it because they are the pins no tool here prints a version for.
 #
 # Nothing below pipes a tool's output anywhere, and that is deliberate rather than
 # tidy: this image sets no SHELL, so these layers run under dash, which has no
@@ -514,6 +522,7 @@ RUN set -eu; \
     grep -qx "clang-tidy==${CLANG_TIDY_VERSION}" /opt/qa-packages.txt; \
     grep -qx "clang-format==${CLANG_FORMAT_VERSION}" /opt/qa-packages.txt; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
+    grep -qx "pytest-xdist==${PYTEST_XDIST_VERSION}" /opt/qa-packages.txt; \
     sh /opt/smoke-src/verify.sh /tmp/smoke-build; \
     rm -rf /tmp/smoke-build; \
 # clang is asserted by what it catches - its ASan has to report the use-after-scope

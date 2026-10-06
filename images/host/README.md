@@ -45,7 +45,7 @@ can assert the image agrees with its own pins instead of assuming it (see
 
 **QA Tools:**
 - clang-format, clang-tidy — same LLVM line, both pinned
-- ruff, mypy, pytest, jsonschema
+- ruff, mypy, pytest with pytest-xdist, jsonschema
 - lychee — offline markdown link checker
 - the Docker **client** — for starting sibling containers through a mounted
   daemon socket; there is no daemon in this image (see
@@ -298,7 +298,7 @@ docker inspect --format '{{json .Config.Labels}}' \
 ```text
 dev.jethome.clang.version                             # the compiler's major only
 dev.jethome.clang-tidy.version, …clang-format.version
-dev.jethome.ruff.version, …mypy.version, …pytest.version, …jsonschema.version
+dev.jethome.ruff.version, …mypy.version, …pytest.version, …pytest-xdist.version, …jsonschema.version
 dev.jethome.lychee.version, …docker-cli.version
 dev.jethome.node.version                              # exact version, no leading v
 ```
@@ -544,8 +544,8 @@ docker build \
 Available build arguments (defaults: see the Dockerfile):
 - `UBUNTU_BASE_TAG` — the Ubuntu base image tag; the only argument CI passes, and
   the one the image tag names
-- `RUFF_VERSION`, `MYPY_VERSION`, `PYTEST_VERSION`, `JSONSCHEMA_VERSION` — the
-  Python QA tools
+- `RUFF_VERSION`, `MYPY_VERSION`, `PYTEST_VERSION`, `PYTEST_XDIST_VERSION`,
+  `JSONSCHEMA_VERSION` — the Python QA tools
 - `CLANG_FORMAT_VERSION`, `CLANG_TIDY_VERSION` — the LLVM tools; the verification
   layer asserts the installed binaries report these numbers
 - `CLANG_VERSION` — the clang major taken from the Ubuntu archive
@@ -567,8 +567,8 @@ Available build arguments (defaults: see the Dockerfile):
 
 The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
-client and `node` to report the pinned numbers, `jsonschema` to appear at its
-pinned version in the freeze and `pnpm` to resolve to corepack's shim — which
+client and `node` to report the pinned numbers, `jsonschema` and `pytest-xdist`
+to appear at their pinned versions in the freeze and `pnpm` to resolve to corepack's shim — which
 must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
 URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
 configures, builds and `ctest`s the small CMake project beside it — proving that
