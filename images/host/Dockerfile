@@ -398,7 +398,7 @@ WORKDIR /workspace
 # toolchain that answers `--version` can still fail on the first real file.
 #
 # smoke/verify.sh covers what a version print cannot, with a small CMake project
-# beside it - what it checks and why is in its own comments, kept there because the
+# and a pytest file beside it - what it checks and why is in its own comments, kept there because the
 # README runs the same script against a published image. Its build tree is
 # deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
 # which builds use-after-scope.cpp - not part of that project - and requires it to

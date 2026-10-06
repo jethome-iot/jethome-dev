@@ -568,17 +568,20 @@ Available build arguments (defaults: see the Dockerfile):
 The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `jsonschema` and `pytest-xdist`
-to appear at their pinned versions in the freeze and `pnpm` to resolve to corepack's shim — which
-must ignore a checkout's `.corepack.env`, shown by refusing a `packageManager`
-URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
+to appear at their pinned versions in the freeze and `pnpm` to resolve to
+corepack's shim — which must ignore a checkout's `.corepack.env`, shown by
+refusing a `packageManager` URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
 configures, builds and `ctest`s the small CMake project beside it — proving that
 an ordinary CMake project builds with Ninja, finds Threads, links and runs a
 thread, that CMake took the ccache launcher, and that it wrote the compile
 database. It then runs `clang-tidy` over that project's own source
 against the compile database the build wrote, so an analyzer that answers
 `--version` but cannot find its resource directory fails the image instead of the
-user's first run, and checks that none of the libraries this image dropped —
-GoogleTest, GMock, paho — has come back. Last, the layer runs
+user's first run. It runs [`smoke/test_xdist.py`](./smoke/test_xdist.py) with
+`pytest -n auto`, the way a consumer parallelises its suite, and the test requires
+that it ran in an xdist worker — so a plugin missing, not loading, or incompatible
+with the pinned pytest fails the image. And it checks that none of the libraries
+this image dropped — GoogleTest, GMock, paho — has come back. Last, the layer runs
 [`smoke/verify-clang.sh`](./smoke/verify-clang.sh) with the clang major. That
 builds [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's
 ASan and requires a symbolized `stack-use-after-scope` report — the one assertion
