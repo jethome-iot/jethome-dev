@@ -343,8 +343,10 @@ before changing anything here.
   things), and then runs `images/host/smoke/verify.sh` — the one script the README
   also runs against a published image — which configures, builds and `ctest`s a
   project linking nothing but the standard library, proves CMake took the ccache
-  launcher and wrote the compile database, runs `clang-tidy` through it, and
-  asserts that GoogleTest, GMock and paho, which the image dropped, are not back
+  launcher and wrote the compile database, runs `clang-tidy` through it, runs a
+  one-test pytest file under `pytest -n auto` and requires it to have run in an
+  xdist worker (a version print cannot show the plugin loads under the pinned
+  pytest), and asserts that GoogleTest, GMock and paho, which the image dropped, are not back
   (why: the comment at host's apt layer). Beside it sits
   `images/host/smoke/verify-clang.sh`, which the layer and the README run the same
   way, with the clang major as its argument: clang is there for the

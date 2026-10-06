@@ -38,12 +38,15 @@ clang-tidy --quiet "--checks=-*,bugprone-*" -p "${build}" "${src}/smoke.cpp"
 # pytest-xdist is pinned so a consumer can run its suite with `-n auto`, so that is
 # what runs: the plugin loaded through its entry point, as a consumer's pytest
 # loads it, under the pinned pytest, with the test asserting it ran in a worker.
+# `auto` is capped at two: it counts the host's CPUs, which a container's CPU
+# quota does not narrow, and two prove the point as well as a hundred - the cap
+# keeps a large build host from starting a Python per core for a single test.
 # Writing nothing beside the sources - no .pytest_cache, no __pycache__ - is what
 # lets this run as any uid against a published image. The base temporary
 # directory goes into the build directory for the same reason, and because xdist
 # creates it even for a suite that asks for none: left at its default it would be
 # /tmp/pytest-of-root, which the build layer refuses to leave behind.
-PYTHONDONTWRITEBYTECODE=1 pytest -p no:cacheprovider -n auto -q \
+PYTHONDONTWRITEBYTECODE=1 pytest -p no:cacheprovider -n auto --maxprocesses 2 -q \
   --basetemp "${build}/pytest" "${src}/test_xdist.py"
 
 # GoogleTest, GMock and paho.mqtt.c were dropped from this image (the comment at

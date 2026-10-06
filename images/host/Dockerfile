@@ -2,8 +2,8 @@
 #
 # Builds and tests the POSIX target of a C++ firmware project on the machine it
 # runs on, and carries the QA gates that project runs beside the build: ruff,
-# mypy, pytest, clang-format, clang-tidy and lychee, plus Node.js with corepack
-# for the gate of a web frontend living in the same tree. It also carries the
+# mypy, pytest with pytest-xdist, clang-format, clang-tidy and lychee, plus
+# Node.js with corepack for the gate of a web frontend living in the same tree. It also carries the
 # Docker client — no daemon — so a suite that stands its own services up can do
 # it through a socket the caller mounts.
 #
@@ -398,9 +398,9 @@ WORKDIR /workspace
 # toolchain that answers `--version` can still fail on the first real file.
 #
 # smoke/verify.sh covers what a version print cannot, with a small CMake project
-# and a pytest file beside it - what it checks and why is in its own comments, kept there because the
-# README runs the same script against a published image. Its build tree is
-# deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
+# and a pytest file beside it - what it checks and why is in its own comments,
+# kept there because the README runs the same script against a published image.
+# Its build tree is deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
 # which builds use-after-scope.cpp - not part of that project - and requires it to
 # *fail*; see the clang block at the end.
 #
@@ -410,11 +410,13 @@ WORKDIR /workspace
 # client and node assert for a different reason: each version is a label a
 # consumer tests its own tree against, so a binary disagreeing with its label has
 # to fail here rather than downstream. verify.sh then *runs* clang-tidy, the same
-# "some clang-tidy" one step further along.
+# "some clang-tidy" one step further along. pytest-xdist is asserted from what
+# pytest itself registered (`-VV` lists its plugins), not from what pip recorded:
+# that is the copy a consumer's pytest loads, and verify.sh then runs it.
 #
 # The freeze goes to a file rather than a pipe, so the image carries its own
-# snapshot and nothing can swallow a failure - and jsonschema and pytest-xdist are
-# asserted from it because they are the pins no tool here prints a version for.
+# snapshot and nothing can swallow a failure - and jsonschema is asserted from it
+# because it is the one pin no tool here prints a version for.
 #
 # Nothing below pipes a tool's output anywhere, and that is deliberate rather than
 # tidy: this image sets no SHELL, so these layers run under dash, which has no
@@ -441,7 +443,12 @@ RUN set -eu; \
     python3 --version; \
     ruff --version; \
     mypy --version; \
-    pytest --version; \
+    pytest_reported="$(pytest -VV)"; \
+    echo "${pytest_reported}"; \
+    case "${pytest_reported}" in \
+      *"pytest-xdist-${PYTEST_XDIST_VERSION} at "*) ;; \
+      *) echo "pytest registers no pytest-xdist ${PYTEST_XDIST_VERSION}" >&2; exit 1 ;; \
+    esac; \
     lychee --version; \
     docker --version; \
 # Compared for equality, not for a substring: `*29.7.2*` also accepts 29.7.21.
@@ -522,7 +529,6 @@ RUN set -eu; \
     grep -qx "clang-tidy==${CLANG_TIDY_VERSION}" /opt/qa-packages.txt; \
     grep -qx "clang-format==${CLANG_FORMAT_VERSION}" /opt/qa-packages.txt; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
-    grep -qx "pytest-xdist==${PYTEST_XDIST_VERSION}" /opt/qa-packages.txt; \
     sh /opt/smoke-src/verify.sh /tmp/smoke-build; \
     rm -rf /tmp/smoke-build; \
 # clang is asserted by what it catches - its ASan has to report the use-after-scope
