@@ -2,8 +2,8 @@
 #
 # Builds and tests the POSIX target of a C++ firmware project on the machine it
 # runs on, and carries the QA gates that project runs beside the build: ruff,
-# mypy, pytest, clang-format, clang-tidy and lychee, plus Node.js with corepack
-# for the gate of a web frontend living in the same tree. It also carries the
+# mypy, pytest with pytest-xdist, clang-format, clang-tidy and lychee, plus
+# Node.js with corepack for the gate of a web frontend living in the same tree. It also carries the
 # Docker client — no daemon — so a suite that stands its own services up can do
 # it through a socket the caller mounts.
 #
@@ -120,9 +120,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # from its own tree, and nothing here can read another repository at build time.
 # The LABELs at the bottom are what let the consumer verify the two agree instead
 # of assuming it.
+#
+# pytest-xdist is pytest's plugin for running one suite in several worker
+# processes. It sits beside pytest because the consumer's tooling suite is long
+# enough that a single process on a shared runner can run out of its job's time
+# limit (jethome-iot/jetcontrol-cpp#1489).
 ARG RUFF_VERSION=0.16.5
 ARG MYPY_VERSION=2.3.1
 ARG PYTEST_VERSION=9.1.1
+ARG PYTEST_XDIST_VERSION=3.8.0
 ARG JSONSCHEMA_VERSION=4.26.0
 ARG CLANG_FORMAT_VERSION=23.1.0
 ARG CLANG_TIDY_VERSION=22.1.8
@@ -133,6 +139,7 @@ RUN python3 -m venv "${VIRTUAL_ENV}" \
       "ruff==${RUFF_VERSION}" \
       "mypy==${MYPY_VERSION}" \
       "pytest==${PYTEST_VERSION}" \
+      "pytest-xdist==${PYTEST_XDIST_VERSION}" \
       "jsonschema==${JSONSCHEMA_VERSION}" \
       "clang-format==${CLANG_FORMAT_VERSION}" \
       "clang-tidy==${CLANG_TIDY_VERSION}" \
@@ -367,7 +374,7 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest, lychee, docker CLI, Node.js with corepack" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest with pytest-xdist, lychee, docker CLI, Node.js with corepack" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.clang.version="${CLANG_VERSION}" \
@@ -376,6 +383,7 @@ LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-de
       dev.jethome.ruff.version="${RUFF_VERSION}" \
       dev.jethome.mypy.version="${MYPY_VERSION}" \
       dev.jethome.pytest.version="${PYTEST_VERSION}" \
+      dev.jethome.pytest-xdist.version="${PYTEST_XDIST_VERSION}" \
       dev.jethome.jsonschema.version="${JSONSCHEMA_VERSION}" \
       dev.jethome.lychee.version="${LYCHEE_VERSION}" \
       dev.jethome.docker-cli.version="${DOCKER_VERSION}" \
@@ -390,9 +398,9 @@ WORKDIR /workspace
 # toolchain that answers `--version` can still fail on the first real file.
 #
 # smoke/verify.sh covers what a version print cannot, with a small CMake project
-# beside it - what it checks and why is in its own comments, kept there because the
-# README runs the same script against a published image. Its build tree is
-# deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
+# and a pytest file beside it - what it checks and why is in its own comments,
+# kept there because the README runs the same script against a published image.
+# Its build tree is deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
 # which builds use-after-scope.cpp - not part of that project - and requires it to
 # *fail*; see the clang block at the end.
 #
@@ -402,7 +410,9 @@ WORKDIR /workspace
 # client and node assert for a different reason: each version is a label a
 # consumer tests its own tree against, so a binary disagreeing with its label has
 # to fail here rather than downstream. verify.sh then *runs* clang-tidy, the same
-# "some clang-tidy" one step further along.
+# "some clang-tidy" one step further along. pytest-xdist is asserted from what
+# pytest itself registered (`-VV` lists its plugins), not from what pip recorded:
+# that is the copy a consumer's pytest loads, and verify.sh then runs it.
 #
 # The freeze goes to a file rather than a pipe, so the image carries its own
 # snapshot and nothing can swallow a failure - and jsonschema is asserted from it
@@ -433,7 +443,12 @@ RUN set -eu; \
     python3 --version; \
     ruff --version; \
     mypy --version; \
-    pytest --version; \
+    pytest_reported="$(pytest -VV)"; \
+    echo "${pytest_reported}"; \
+    case "${pytest_reported}" in \
+      *"pytest-xdist-${PYTEST_XDIST_VERSION} at "*) ;; \
+      *) echo "pytest registers no pytest-xdist ${PYTEST_XDIST_VERSION}" >&2; exit 1 ;; \
+    esac; \
     lychee --version; \
     docker --version; \
 # Compared for equality, not for a substring: `*29.7.2*` also accepts 29.7.21.
