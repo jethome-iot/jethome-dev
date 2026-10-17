@@ -6,7 +6,7 @@
 # separator differs. CI pins the exact esp-idf image its own run produced; the
 # default below is what a local ./scripts/build.sh uses, and it also makes the
 # owner overridable instead of hardcoded, so a fork can build against its own base.
-ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.5.5
+ARG BASE_IMAGE=ghcr.io/jethome-iot/jethome-dev-esp-idf:idf-v5.5.6
 # The Matter specification this image carries. Descriptive only - what actually
 # gets checked out is ESP_MATTER_REF below.
 ARG ESP_MATTER_VERSION=v1.6
@@ -26,7 +26,7 @@ ARG ESP_MATTER_REF=2c125619610b9a16bb8e92f5ebbf55111638615e
 # from images/versions.json instead - taken there from the same `base_tag` the
 # digest was resolved from, with the checker refusing a value the variant's own
 # tag does not name.
-ARG IDF_VERSION=v5.5.5
+ARG IDF_VERSION=v5.5.6
 
 FROM ${BASE_IMAGE}
 
