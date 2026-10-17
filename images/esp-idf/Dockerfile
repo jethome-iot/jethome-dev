@@ -107,7 +107,7 @@ WORKDIR /workspace
 # dev.jethome.idf.version label near the top of this file is what a consumer reads
 # instead of pulling several gigabytes, and a label is only worth reading if the
 # image cannot publish one that contradicts itself. Compared for equality against
-# what the SDK reports (`ESP-IDF v5.5.5`), so a tag naming one version while the
+# what the SDK reports (`ESP-IDF v<version>`), so a tag naming one version while the
 # base carries another fails here rather than downstream.
 #
 # The esptool line is an assertion, not a listing: `grep -E '^esptool'` would pass
