@@ -163,6 +163,27 @@ docker run -it --rm \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest
 ```
 
+### Building as Your Own User
+
+Passing `-u $(id -u):$(id -g)` keeps the build output in a mounted workspace owned
+by you rather than by root. A writable `HOME` comes with it: the component manager
+keeps its cache under `~/.cache` and fails the configure when it cannot create it.
+
+```bash
+docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp \
+  -v $(pwd):/workspace \
+  ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
+  idf.py build
+```
+
+What the image does set up for this is the one directory outside the workspace
+that ESP-IDF writes on every configure: the component manager keeps a lock file
+under `$IDF_TOOLS_PATH/root_managed_components`, and that directory ships
+empty and world-writable (mode 1777, as `/tmp`). The first uid to configure in a
+container takes ownership of what goes in it, so one uid per container — what
+`docker run -u` gives — works on every target. A second uid in the same container
+does not: it fails as soon as it switches to another target.
+
 ## Supported Chips
 
 Every ESP32 series chip the pinned ESP-IDF release supports can be built for —

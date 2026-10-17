@@ -249,6 +249,16 @@ RUN export PW_NO_CIPD_CACHE_DIR=1 PIP_NO_CACHE_DIR=1 XDG_CACHE_HOME=/tmp/build-c
 # Set ESP-Matter environment variables
 ENV ESP_MATTER_PATH=/opt/esp-matter
 
+# The component manager's root directory, open to every uid - why it has to exist
+# and why empty at mode 1777 is in the esp-idf Dockerfile, which creates it too.
+# Repeated here rather than only inherited because BASE_IMAGE is overridable: the
+# esp-idf images published before that layer existed lack it, and so does a fork's
+# base, and on such a base every configure under `-u` would fail again. `install
+# -d` is idempotent, so on this repository's own base it changes nothing. The
+# verification layer below asserts the directory is still empty - install.sh runs
+# as root, and anything it configured would leave a root-owned subdirectory here.
+RUN install -d -m 1777 "${IDF_TOOLS_PATH}/root_managed_components"
+
 # Copy and set up custom entrypoint
 COPY entrypoint.sh /opt/esp/esp_matter_entrypoint.sh
 RUN chmod +x /opt/esp/esp_matter_entrypoint.sh
@@ -336,6 +346,13 @@ RUN source ${IDF_PATH}/export.sh && \
     { [ "${idf_reported}" = "ESP-IDF ${IDF_VERSION}" ] \
       || { echo "expected 'ESP-IDF ${IDF_VERSION}', got '${idf_reported}'" >&2; \
            exit 1; }; } && \
+# The component manager's root directory, as the layer above left it: mode 1777
+# and nothing in it. A subdirectory already there belongs to whoever configured
+# first - root, at build time - and refuses the caller's uid at their first
+# configure, which is the failure that directory exists to prevent.
+    rmc="${IDF_TOOLS_PATH}/root_managed_components" && \
+    { [ "$(stat -c %a "${rmc}")" = 1777 ] && [ -z "$(ls -A "${rmc}")" ] \
+      || { echo "${rmc} is not an empty mode-1777 directory" >&2; exit 1; }; } && \
 # The safe.directory entries, asserted rather than assumed: the build runs as root,
 # so nothing else here would notice their absence - which is exactly how the gap in
 # this image survived until a consumer running under `-u` hit it. Each grep is
