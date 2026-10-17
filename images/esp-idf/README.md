@@ -171,7 +171,7 @@ keeps its cache under `~/.cache` and fails the configure when it cannot create i
 
 ```bash
 docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp \
-  -v $(pwd):/workspace \
+  -v "$(pwd)":/workspace \
   ghcr.io/jethome-iot/jethome-dev-esp-idf:latest \
   idf.py build
 ```

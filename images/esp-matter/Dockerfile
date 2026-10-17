@@ -257,7 +257,10 @@ ENV ESP_MATTER_PATH=/opt/esp-matter
 # -d` is idempotent, so on this repository's own base it changes nothing. The
 # verification layer below asserts the directory is still empty - install.sh runs
 # as root, and anything it configured would leave a root-owned subdirectory here.
-RUN install -d -m 1777 "${IDF_TOOLS_PATH}/root_managed_components"
+# `:?` because such a base may not set IDF_TOOLS_PATH at all: the path would then
+# collapse to /root_managed_components, and the check below would look at the
+# same wrong place and pass.
+RUN install -d -m 1777 "${IDF_TOOLS_PATH:?}/root_managed_components"
 
 # Copy and set up custom entrypoint
 COPY entrypoint.sh /opt/esp/esp_matter_entrypoint.sh
@@ -350,7 +353,7 @@ RUN source ${IDF_PATH}/export.sh && \
 # and nothing in it. A subdirectory already there belongs to whoever configured
 # first - root, at build time - and refuses the caller's uid at their first
 # configure, which is the failure that directory exists to prevent.
-    rmc="${IDF_TOOLS_PATH}/root_managed_components" && \
+    rmc="${IDF_TOOLS_PATH:?}/root_managed_components" && \
     { [ "$(stat -c %a "${rmc}")" = 1777 ] && [ -z "$(ls -A "${rmc}")" ] \
       || { echo "${rmc} is not an empty mode-1777 directory" >&2; exit 1; }; } && \
 # The safe.directory entries, asserted rather than assumed: the build runs as root,
