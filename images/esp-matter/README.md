@@ -493,7 +493,7 @@ Available build arguments:
   instead of this repository's.
 - `IDF_VERSION` - the ESP-IDF version that base carries, for the
   `dev.jethome.idf.version` label. Same spelling the SDK itself reports, leading
-  `v` included (`v5.5.5`), and distinct from `ESP_MATTER_VERSION` — the two are
+  `v` included (`v<idf-version>`), and distinct from `ESP_MATTER_VERSION` — the two are
   different versions and the placeholders above keep them apart. **Pass it whenever `BASE_IMAGE` is not the
   default**: it does not follow the base, so a build on `idf-v<other>` would
   otherwise assert the default version and fail — after the SDK install, which is

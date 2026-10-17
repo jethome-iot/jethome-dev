@@ -2,7 +2,7 @@
 # Based on official Espressif image
 # Original: https://github.com/espressif/esp-idf/blob/master/tools/docker/Dockerfile
 
-ARG IDF_BASE_TAG=v5.5.5
+ARG IDF_BASE_TAG=v5.5.6
 
 FROM espressif/idf:${IDF_BASE_TAG}
 
@@ -32,10 +32,10 @@ LABEL dev.jethome.idf.version="${IDF_BASE_TAG}" \
 # so a version bump cannot move one without the other: `check-versions.sh` holds
 # `args` and the ARG defaults to each other, and requires the tag to *name* every
 # version it is built with. Note what that is not - it is a token-boundary match,
-# not equality, so a variant tagged `idf-v5.5.5-slim` would pass the checker while
-# this label read `idf-v5.5.5`. The label states the version the image was built
-# with; the index annotation states the tag. No such variant exists today, and
-# both answers are true ones to different questions.
+# not equality, so a variant tagged `idf-v<version>-slim` would pass the checker
+# while this label read `idf-v<version>`. The label states the version the image
+# was built with; the index annotation states the tag. No such variant exists
+# today, and both answers are true ones to different questions.
 #
 # The index annotations the manifest job writes carry the same field, and cannot
 # be inherited at all; these labels are what an image already pulled reports, and
@@ -107,7 +107,7 @@ WORKDIR /workspace
 # dev.jethome.idf.version label near the top of this file is what a consumer reads
 # instead of pulling several gigabytes, and a label is only worth reading if the
 # image cannot publish one that contradicts itself. Compared for equality against
-# what the SDK reports (`ESP-IDF v5.5.5`), so a tag naming one version while the
+# what the SDK reports (`ESP-IDF v<version>`), so a tag naming one version while the
 # base carries another fails here rather than downstream.
 #
 # The esptool line is an assertion, not a listing: `grep -E '^esptool'` would pass
