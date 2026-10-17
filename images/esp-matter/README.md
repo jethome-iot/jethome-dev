@@ -397,7 +397,10 @@ Passing `-u $(id -u):$(id -g)` keeps build output in a mounted workspace owned b
 you rather than by root. This section covers **git** under that flag, which is what
 the image provisions for; a full firmware build as a non-root uid additionally
 wants a writable `HOME` and cache directories, which this image does not set up
-(the [host image](../host/README.md#running-as-the-invoking-user) does).
+(the [host image](../host/README.md#running-as-the-invoking-user) does). The one
+directory outside the workspace that ESP-IDF itself writes on every configure is
+set up, as in the base image — see
+[Building as Your Own User](../esp-idf/README.md#building-as-your-own-user).
 
 - **`$ESP_MATTER_PATH` is marked safe, so git works there.** The checkout belongs
   to root — the build created it — while the process is your uid, and git refuses

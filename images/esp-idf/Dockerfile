@@ -88,6 +88,33 @@ RUN export IDF_PATH_FORCE=1 && \
     esptool==5.3.1 \
  && python -m pip check
 
+# A directory the component manager writes on every configure, open to every uid.
+#
+# ESP-IDF 5.5.6 ships tools/idf_extra_components.yml (every line of it commented
+# out). Its presence alone is enough: `prepare_dep_dirs` then resolves it on each
+# CMake configure and writes the result to
+# $IDF_TOOLS_PATH/root_managed_components/idf<major.minor>/dependencies.lock,
+# creating the directories first. The base image has them nowhere and /opt/esp
+# belongs to root, so under the documented `-u $(id -u):$(id -g)` every project
+# stops at configure with a PermissionError - while every check run as root, this
+# image's own included, stays green. 5.5.5 had no such file.
+#
+# The directory is derived from IDF_TOOLS_PATH alone (idf_component_tools
+# config_dir(), falling back to ~/.espressif); the component manager reads no
+# variable of its own for it, and IDF_TOOLS_PATH is also where the toolchains are
+# found, so it cannot be pointed elsewhere. Hence the directory, created here.
+#
+# Only the top level, and empty. The lock records the target and is rewritten in
+# place (`open(path, 'w')`) whenever that changes, so a lock root wrote at build
+# time would refuse the caller at their first `set-target` - the version
+# subdirectory is left to the first uid that configures, which then owns it.
+# Mode 1777 as on /tmp. What this covers is one uid per container, which is what
+# `docker run -u` gives: a second uid in the same container finds the first
+# one's subdirectory and fails the moment it changes the target. The verification
+# layer below configures a project as an arbitrary uid and returns this directory
+# empty.
+RUN install -d -m 1777 "${IDF_TOOLS_PATH:?}/root_managed_components"
+
 # Set working directory
 WORKDIR /workspace
 
@@ -115,6 +142,27 @@ WORKDIR /workspace
 # ships 4.12.0 and anything reinstalling it would go unnoticed. It repeats the
 # number from the pip layer on purpose; the two disagreeing fails the build here,
 # loudly, instead of publishing an image whose flasher contradicts its Dockerfile.
+#
+# The last step configures a project the way the documented invocation does, as a
+# uid that is not root - an arbitrary one with no passwd entry, as `docker run -u
+# $(id -u):$(id -g)` gives - because every other line here runs as root, and root is
+# the one caller the root_managed_components layer above changes nothing for. It
+# goes through the image's entrypoint, which sources export.sh as that uid, as
+# `docker run` does; HOME and TMPDIR point at the scratch directory, so nothing the
+# run caches outlives it - export.sh alone would otherwise leave
+# /tmp/esp_idf_activate behind, owned by this uid, which is the directory it reaches
+# for under every uid that has no passwd entry. Nothing of that uid may remain in
+# /tmp or /var/tmp afterwards. It configures for the default target and then
+# switches to another one, because the switch is what rewrites the lock in place.
+# Where the SDK carries idf_extra_components.yml, the lock must then exist and
+# belong to that uid - otherwise the probe could pass without having touched the
+# directory at all (5.4.1, also built from this file, has no such file and writes
+# nothing there). What the run leaves in root_managed_components is deleted before
+# the layer is committed: shipped, it would refuse every other uid. The mode is then
+# asserted, since the directory is only useful if it reaches the image as created. A
+# builder without setpriv, or where it cannot drop privileges, skips the configure
+# and says so, as the esp-matter layer does for its own unprivileged probe; the mode
+# is checked either way.
 RUN export IDF_PATH_FORCE=1 && \
     source ${IDF_PATH}/export.sh && \
     python --version && \
@@ -133,6 +181,36 @@ RUN export IDF_PATH_FORCE=1 && \
       else \
         echo "IDF_BASE_TAG '${IDF_BASE_TAG}' is not an exact version - label not asserted"; \
       fi; } && \
+    rmc="${IDF_TOOLS_PATH:?}/root_managed_components" && \
+    { if ! command -v setpriv >/dev/null 2>&1; then \
+        echo "setpriv unavailable - configure as another uid not run"; \
+      elif ! setpriv --reuid=54321 --regid=54321 --clear-groups true 2>/dev/null; then \
+        echo "setpriv cannot drop privileges here - configure as another uid not run"; \
+      else \
+        smoke="$(mktemp -d)" && \
+        cp -r "${IDF_PATH}/examples/get-started/hello_world" "${smoke}/project" && \
+        mkdir "${smoke}/tmp" && \
+        chown -R 54321:54321 "${smoke}" && \
+        { setpriv --reuid=54321 --regid=54321 --clear-groups \
+            env HOME="${smoke}" TMPDIR="${smoke}/tmp" \
+            /opt/esp/entrypoint.sh sh -c \
+              'idf.py -C "$1" reconfigure && idf.py -C "$1" set-target esp32c3' \
+              sh "${smoke}/project" > "${smoke}/configure.log" 2>&1 \
+          || { tail -n 30 "${smoke}/configure.log" >&2; \
+               echo "configure as uid 54321 failed" >&2; exit 1; }; } && \
+        { [ ! -f "${IDF_PATH}/tools/idf_extra_components.yml" ] \
+          || [ -n "$(find "${rmc}" -mindepth 2 -name dependencies.lock -user 54321)" ] \
+          || { echo "the configure wrote no lock under ${rmc} - its reason moved" >&2; \
+               exit 1; }; } && \
+        echo "configure as uid 54321, esp32 then esp32c3: ok" && \
+        rm -rf "${smoke}" && \
+        { [ -z "$(find /tmp /var/tmp -user 54321)" ] \
+          || { echo "uid 54321 left files outside its scratch directory:" >&2; \
+               find /tmp /var/tmp -user 54321 >&2; exit 1; }; }; \
+      fi; } && \
+    find "${rmc}" -mindepth 1 -delete && \
+    { [ "$(stat -c %a "${rmc}")" = 1777 ] \
+        || { echo "${rmc} is not mode 1777" >&2; exit 1; }; } && \
     echo "ESP-IDF installation verified successfully"
 
 CMD ["/bin/bash"]
