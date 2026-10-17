@@ -32,10 +32,10 @@ LABEL dev.jethome.idf.version="${IDF_BASE_TAG}" \
 # so a version bump cannot move one without the other: `check-versions.sh` holds
 # `args` and the ARG defaults to each other, and requires the tag to *name* every
 # version it is built with. Note what that is not - it is a token-boundary match,
-# not equality, so a variant tagged `idf-v5.5.5-slim` would pass the checker while
-# this label read `idf-v5.5.5`. The label states the version the image was built
-# with; the index annotation states the tag. No such variant exists today, and
-# both answers are true ones to different questions.
+# not equality, so a variant tagged `idf-v<version>-slim` would pass the checker
+# while this label read `idf-v<version>`. The label states the version the image
+# was built with; the index annotation states the tag. No such variant exists
+# today, and both answers are true ones to different questions.
 #
 # The index annotations the manifest job writes carry the same field, and cannot
 # be inherited at all; these labels are what an image already pulled reports, and

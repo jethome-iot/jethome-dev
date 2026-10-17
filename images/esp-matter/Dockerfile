@@ -125,8 +125,8 @@ RUN git config --system --add safe.directory /opt/esp-matter && \
 # index annotation carries this repository's commit, in full 40 hex.
 #
 # `image.version` names the whole variant - the published tag - rather than the
-# Matter specification alone, because an image built on ESP-IDF 5.4.1 and one
-# built on 5.5.5 can carry the same specification and are not the same image. The
+# Matter specification alone, because two images built on different ESP-IDF
+# releases can carry the same specification and are not the same image. The
 # specification keeps its own field beside it.
 LABEL dev.jethome.matter.ref="${ESP_MATTER_REF}" \
       dev.jethome.matter.version="${ESP_MATTER_VERSION}" \
