@@ -46,6 +46,10 @@ can assert the image agrees with its own pins instead of assuming it (see
 **QA Tools:**
 - clang-format, clang-tidy — same LLVM line, both pinned
 - ruff, mypy, pytest with pytest-xdist, jsonschema
+- segno and zxing-cpp — an independent QR encoder and decoder, for checking a
+  project's own QR code against both; zxing-cpp comes as a prebuilt wheel on both
+  platforms and reads a `memoryview` of grayscale pixels, so neither numpy nor
+  Pillow is needed (and neither is in the image)
 - lychee — offline markdown link checker
 - the Docker **client** — for starting sibling containers through a mounted
   daemon socket; there is no daemon in this image (see
@@ -299,6 +303,7 @@ docker inspect --format '{{json .Config.Labels}}' \
 dev.jethome.clang.version                             # the compiler's major only
 dev.jethome.clang-tidy.version, …clang-format.version
 dev.jethome.ruff.version, …mypy.version, …pytest.version, …pytest-xdist.version, …jsonschema.version
+dev.jethome.segno.version, …zxing-cpp.version
 dev.jethome.lychee.version, …docker-cli.version
 dev.jethome.node.version                              # exact version, no leading v
 ```
@@ -546,6 +551,9 @@ Available build arguments (defaults: see the Dockerfile):
   the one the image tag names
 - `RUFF_VERSION`, `MYPY_VERSION`, `PYTEST_VERSION`, `PYTEST_XDIST_VERSION`,
   `JSONSCHEMA_VERSION` — the Python QA tools
+- `SEGNO_VERSION`, `ZXING_CPP_VERSION` — the QR encoder and decoder. zxing-cpp is
+  installed from a wheel only, so a version with no wheel for the platform fails
+  the build rather than compiling from source
 - `CLANG_FORMAT_VERSION`, `CLANG_TIDY_VERSION` — the LLVM tools; the verification
   layer asserts the installed binaries report these numbers
 - `CLANG_VERSION` — the clang major taken from the Ubuntu archive
@@ -568,8 +576,8 @@ Available build arguments (defaults: see the Dockerfile):
 The last layer of the build is a verification step, and it asserts rather than
 lists: it prints every tool's version, requires the two clang tools, the Docker
 client and `node` to report the pinned numbers, `pytest` to list `pytest-xdist`
-among its plugins at its pinned version, `jsonschema` to appear at its pinned
-version in the freeze and `pnpm` to resolve to corepack's shim — which must ignore a checkout's `.corepack.env`, shown by
+among its plugins at its pinned version, `jsonschema`, `segno` and `zxing-cpp` to
+appear at their pinned versions in the freeze and `pnpm` to resolve to corepack's shim — which must ignore a checkout's `.corepack.env`, shown by
 refusing a `packageManager` URL that file re-enables — then runs [`smoke/verify.sh`](./smoke/verify.sh). That
 configures, builds and `ctest`s the small CMake project beside it — proving that
 an ordinary CMake project builds with Ninja, finds Threads, links and runs a
@@ -580,7 +588,10 @@ against the compile database the build wrote, so an analyzer that answers
 user's first run. It runs [`smoke/test_xdist.py`](./smoke/test_xdist.py) with
 `pytest -n auto`, the way a consumer parallelises its suite (capped at two
 workers), and the test requires that it ran in an xdist worker — so a plugin missing, not loading, or incompatible
-with the pinned pytest fails the image. And it checks that none of the libraries
+with the pinned pytest fails the image. In the same run
+[`smoke/test_qr.py`](./smoke/test_qr.py) encodes a QR code with segno and reads it
+back with zxing-cpp, which is what exercises zxing-cpp's native part on the
+platform at hand. And it checks that none of the libraries
 this image dropped — GoogleTest, GMock, paho — has come back. Last, the layer runs
 [`smoke/verify-clang.sh`](./smoke/verify-clang.sh) with the clang major. That
 builds [`smoke/use-after-scope.cpp`](./smoke/use-after-scope.cpp) with clang's
