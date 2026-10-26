@@ -6,8 +6,9 @@
 #   sh /opt/smoke-src/verify.sh <build-dir>
 #
 # Configures, builds and ctests the project beside it, then runs clang-tidy over
-# its source through the compile database that build wrote, runs the pytest file
-# beside it under pytest-xdist, and last checks that none of the libraries the
+# its source through the compile database that build wrote, runs the pytest files
+# beside it under pytest-xdist - one asserting it ran in a worker, one encoding a
+# QR with segno and reading it back with zxing-cpp - and last checks that none of the libraries the
 # image dropped - GoogleTest, GMock, paho - has come back. The build directory is
 # left for the caller to remove.
 set -eu
@@ -47,7 +48,7 @@ clang-tidy --quiet "--checks=-*,bugprone-*" -p "${build}" "${src}/smoke.cpp"
 # creates it even for a suite that asks for none: left at its default it would be
 # /tmp/pytest-of-root, which the build layer refuses to leave behind.
 PYTHONDONTWRITEBYTECODE=1 pytest -p no:cacheprovider -n auto --maxprocesses 2 -q \
-  --basetemp "${build}/pytest" "${src}/test_xdist.py"
+  --basetemp "${build}/pytest" "${src}/test_xdist.py" "${src}/test_qr.py"
 
 # GoogleTest, GMock and paho.mqtt.c were dropped from this image (the comment at
 # its apt layer says why), and an absence is kept by nothing unless something

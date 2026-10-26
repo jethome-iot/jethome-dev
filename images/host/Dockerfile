@@ -2,8 +2,9 @@
 #
 # Builds and tests the POSIX target of a C++ firmware project on the machine it
 # runs on, and carries the QA gates that project runs beside the build: ruff,
-# mypy, pytest with pytest-xdist, clang-format, clang-tidy and lychee, plus
-# Node.js with corepack for the gate of a web frontend living in the same tree. It also carries the
+# mypy, pytest with pytest-xdist, clang-format, clang-tidy and lychee, the QR
+# pair segno and zxing-cpp, plus Node.js with corepack for the gate of a web
+# frontend living in the same tree. It also carries the
 # Docker client — no daemon — so a suite that stands its own services up can do
 # it through a socket the caller mounts.
 #
@@ -125,22 +126,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # processes. It sits beside pytest because the consumer's tooling suite is long
 # enough that a single process on a shared runner can run out of its job's time
 # limit (jethome-iot/jetcontrol-cpp#1489).
+#
+# segno and zxing-cpp are an independent QR encoder and decoder. The consumer
+# ships its own QR encoder and checks it against both: segno regenerates the test
+# vectors its tree carries, zxing-cpp reads the codes back out of its screen
+# snapshots (jethome-iot/jetcontrol-cpp#2525). zxing-cpp is a native extension,
+# and both platforms get a prebuilt wheel - abi3 for CPython 3.12, manylinux_2_28,
+# amd64 and arm64. `--only-binary` keeps it that way: with build-essential and
+# CMake in this image, a release missing one platform's wheel would otherwise be
+# compiled from its sdist without a word, and the build would go on green.
 ARG RUFF_VERSION=0.16.5
 ARG MYPY_VERSION=2.3.1
 ARG PYTEST_VERSION=9.1.1
 ARG PYTEST_XDIST_VERSION=3.8.0
 ARG JSONSCHEMA_VERSION=4.26.0
+ARG SEGNO_VERSION=1.6.6
+ARG ZXING_CPP_VERSION=3.1.1
 ARG CLANG_FORMAT_VERSION=23.1.0
 ARG CLANG_TIDY_VERSION=22.1.8
 ENV VIRTUAL_ENV=/opt/qa-venv
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 RUN python3 -m venv "${VIRTUAL_ENV}" \
-    && pip install --no-cache-dir \
+    && pip install --no-cache-dir --only-binary zxing-cpp \
       "ruff==${RUFF_VERSION}" \
       "mypy==${MYPY_VERSION}" \
       "pytest==${PYTEST_VERSION}" \
       "pytest-xdist==${PYTEST_XDIST_VERSION}" \
       "jsonschema==${JSONSCHEMA_VERSION}" \
+      "segno==${SEGNO_VERSION}" \
+      "zxing-cpp==${ZXING_CPP_VERSION}" \
       "clang-format==${CLANG_FORMAT_VERSION}" \
       "clang-tidy==${CLANG_TIDY_VERSION}" \
     && pip check
@@ -374,7 +388,7 @@ ENV CMAKE_EXPORT_COMPILE_COMMANDS=ON
 ARG UBUNTU_BASE_TAG
 
 LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-dev" \
-      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest with pytest-xdist, lychee, docker CLI, Node.js with corepack" \
+      org.opencontainers.image.description="Host (POSIX) build, test and QA image: GCC, clang with its ASan runtime, CMake, Ninja, clang-format, clang-tidy, ruff, mypy, pytest with pytest-xdist, segno, zxing-cpp, lychee, docker CLI, Node.js with corepack" \
       org.opencontainers.image.version="ubuntu-${UBUNTU_BASE_TAG}" \
       org.opencontainers.image.base.name="ubuntu:${UBUNTU_BASE_TAG}" \
       dev.jethome.clang.version="${CLANG_VERSION}" \
@@ -385,6 +399,8 @@ LABEL org.opencontainers.image.source="https://github.com/jethome-iot/jethome-de
       dev.jethome.pytest.version="${PYTEST_VERSION}" \
       dev.jethome.pytest-xdist.version="${PYTEST_XDIST_VERSION}" \
       dev.jethome.jsonschema.version="${JSONSCHEMA_VERSION}" \
+      dev.jethome.segno.version="${SEGNO_VERSION}" \
+      dev.jethome.zxing-cpp.version="${ZXING_CPP_VERSION}" \
       dev.jethome.lychee.version="${LYCHEE_VERSION}" \
       dev.jethome.docker-cli.version="${DOCKER_VERSION}" \
       dev.jethome.node.version="${NODE_VERSION}"
@@ -398,7 +414,7 @@ WORKDIR /workspace
 # toolchain that answers `--version` can still fail on the first real file.
 #
 # smoke/verify.sh covers what a version print cannot, with a small CMake project
-# and a pytest file beside it - what it checks and why is in its own comments,
+# and two pytest files beside it - what it checks and why is in its own comments,
 # kept there because the README runs the same script against a published image.
 # Its build tree is deleted; the sources stay at /opt/smoke-src. Beside them sits verify-clang.sh,
 # which builds use-after-scope.cpp - not part of that project - and requires it to
@@ -415,8 +431,9 @@ WORKDIR /workspace
 # that is the copy a consumer's pytest loads, and verify.sh then runs it.
 #
 # The freeze goes to a file rather than a pipe, so the image carries its own
-# snapshot and nothing can swallow a failure - and jsonschema is asserted from it
-# because it is the one pin no tool here prints a version for.
+# snapshot and nothing can swallow a failure - and jsonschema, segno and zxing-cpp
+# are asserted from it because they are the pins no tool here prints a version
+# for. verify.sh then encodes a QR with one and reads it back with the other.
 #
 # Nothing below pipes a tool's output anywhere, and that is deliberate rather than
 # tidy: this image sets no SHELL, so these layers run under dash, which has no
@@ -529,6 +546,8 @@ RUN set -eu; \
     grep -qx "clang-tidy==${CLANG_TIDY_VERSION}" /opt/qa-packages.txt; \
     grep -qx "clang-format==${CLANG_FORMAT_VERSION}" /opt/qa-packages.txt; \
     grep -qx "jsonschema==${JSONSCHEMA_VERSION}" /opt/qa-packages.txt; \
+    grep -qx "segno==${SEGNO_VERSION}" /opt/qa-packages.txt; \
+    grep -qx "zxing-cpp==${ZXING_CPP_VERSION}" /opt/qa-packages.txt; \
     sh /opt/smoke-src/verify.sh /tmp/smoke-build; \
     rm -rf /tmp/smoke-build; \
 # clang is asserted by what it catches - its ASan has to report the use-after-scope
